@@ -9,8 +9,11 @@ Pen-based PDF annotation for Android 10 and newer.
 
 1. **Open PDF** through Android's document picker.
 2. Write with a stylus. Pressure changes line width; fingers pan and pinch to zoom.
-3. Choose **Touch ink** to write with a finger. Use **Undo** or **Redo** to revise notes.
-4. Use **Previous / Next** to change pages, then **Save copy** to export the whole document.
+   Pick ink colour and pen width from the strip at the bottom; they stay as you
+   left them.
+3. Tap the finger icon to write with a finger. Use **Undo** or **Redo** to revise notes.
+4. Change pages with the arrows on the page pill (tap the page number to jump),
+   then **Save copy** to export the whole document.
 
 Ink becomes vector page content in the exported PDF. Original text remains
 selectable; existing artwork and pages are preserved. Repeated exports do not

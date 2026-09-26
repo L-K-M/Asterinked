@@ -15,14 +15,15 @@
     <string name="touch_hint">Finger or pen writes · Two fingers zoom</string>
     <string name="working">Working…</string>
     <string name="page_count">Page %1$d of %2$d</string>
+    <string name="page_position">%1$d / %2$d</string>
+    <string name="go_to_page">Go to page</string>
+    <string name="no_notes">No notes yet</string>
     <string name="open_another">Open another PDF?</string>
     <string name="unsaved_prompt">This PDF has notes you haven’t exported. Opening another PDF replaces the current draft.</string>
     <string name="keep_editing">Keep editing</string>
     <string name="open_anyway">Open another</string>
     <string name="unsaved">Unexported notes</string>
     <string name="saved">All notes exported</string>
-    <string name="width_label">Pen width</string>
-    <string name="color_label">Ink color</string>
     <string name="black">Graphite</string>
     <string name="blue">Blue</string>
     <string name="red">Red</string>

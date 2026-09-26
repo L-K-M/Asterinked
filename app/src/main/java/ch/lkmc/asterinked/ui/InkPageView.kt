@@ -21,6 +21,11 @@ internal enum class InputMode { PEN, TOUCH }
 internal class InkPageView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
     private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val pageShadow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        val density = resources.displayMetrics.density
+        setShadowLayer(SHADOW_RADIUS_DP * density, 0f, SHADOW_OFFSET_DP * density, SHADOW_COLOR)
+    }
     private val pageRect = RectF()
     private var preview: Bitmap? = null
     private var spec: PageSpec? = null
@@ -53,7 +58,7 @@ internal class InkPageView(context: Context) : View(context) {
     })
 
     init {
-        setBackgroundColor(Color.rgb(232, 235, 231))
+        setBackgroundColor(Color.rgb(232, 236, 243))
         contentDescription = "PDF page. Write with a pen. Pinch to zoom; drag with a finger to pan."
         isFocusable = true
     }
@@ -107,6 +112,7 @@ internal class InkPageView(context: Context) : View(context) {
         panX = panX.coerceIn(-maxPan(pageWidth, width), maxPan(pageWidth, width))
         panY = panY.coerceIn(-maxPan(pageHeight, height), maxPan(pageHeight, height))
         pageRect.set((width - pageWidth) / 2f + panX, (height - pageHeight) / 2f + panY, (width + pageWidth) / 2f + panX, (height + pageHeight) / 2f + panY)
+        canvas.drawRect(pageRect, pageShadow)
         canvas.drawBitmap(bitmap, null, pageRect, bitmapPaint)
         canvas.save()
         canvas.clipRect(pageRect)
@@ -229,5 +235,8 @@ internal class InkPageView(context: Context) : View(context) {
         const val TOUCH_PRESSURE = 0.65f
         const val MAX_ZOOM = 5f
         const val PAGE_MARGIN = 24f
+        const val SHADOW_RADIUS_DP = 6f
+        const val SHADOW_OFFSET_DP = 1.5f
+        val SHADOW_COLOR = Color.argb(56, 30, 40, 60)
     }
 }
