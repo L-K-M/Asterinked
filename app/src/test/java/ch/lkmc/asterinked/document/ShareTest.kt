@@ -38,7 +38,8 @@ class ShareTest {
         assertEquals("ab-annotated.pdf", name("a\u0000b.pdf"))
         val long = name("x".repeat(400) + ".pdf")
         assertTrue(long.toByteArray().size <= 255)
-        assertFalse("No split surrogate pair", name("😀".repeat(40)).removeSuffix("-annotated.pdf").last().isHighSurrogate())
+        // 81 UTF-16 units: truncating to 64 would end on a lone high surrogate.
+        assertFalse("No split surrogate pair", name("x" + "😀".repeat(40)).removeSuffix("-annotated.pdf").last().isHighSurrogate())
     }
 
     @Test fun aHostileDisplayNameCannotEscapeTheShareFolder() {
