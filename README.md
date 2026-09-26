@@ -1,0 +1,86 @@
+# Asterinked
+
+Pen-based PDF annotation for Android 10 and newer.
+
+1. **Open PDF** through Android's document picker.
+2. Write with a stylus. Pressure changes line width; fingers pan and pinch to zoom.
+3. Choose **Touch ink** to write with a finger. Use **Undo** or **Redo** to revise notes.
+4. Use **Previous / Next** to change pages, then **Save copy** to export the whole document.
+
+Ink becomes vector page content in the exported PDF. Original text remains
+selectable; existing artwork and pages are preserved. Repeated exports do not
+accumulate duplicate ink. The imported file stays untouched unless you explicitly
+choose it as an export destination through a document provider.
+
+The current PDF and completed strokes are stored privately on the device and
+restored after reopening. Opening another PDF replaces that draft; export notes
+you want to keep first. Drafts are not cloud-synced or included in Android backups.
+
+## Build
+
+Install JDK 17 and the Android SDK. Set `ANDROID_HOME` or `sdk.dir` in
+`local.properties`, then run:
+
+```sh
+./gradlew testDebugUnitTest lintDebug assembleDebug
+python3 -m pip install -r scripts/pdf-test-requirements.txt
+python3 scripts/verify_pdf.py
+```
+
+APK: `app/build/outputs/apk/debug/app-debug.apk`. PR builds also publish it as the
+`asterinked-debug` GitHub Actions artifact. Dependency versions live in
+`gradle/libs.versions.toml`.
+
+## Design
+
+```text
+Activity / pen view
+        |
+   EditorViewModel       InkGeometry (shared preview/export curves)
+        |
+   DocumentService
+        |
+   DocumentStore         PdfEngine
+   (picker + drafts)     (PdfRenderer + PDFBox)
+```
+
+PDF and storage work runs on one background worker. Imported PDFs are copied to
+private storage so document providers need not offer seekable input. Export is
+built in a temporary file before the destination is opened. Provider write failures
+leave the local draft intact, but may leave an incomplete destination file; retry
+to a new destination.
+
+The pen pipeline takes inspiration from BangniDraw's pointer-ID tracking,
+historical input samples and pressure handling. It uses a small vector geometry
+implementation, with the same segments for preview and PDF export. PDF coordinate
+mapping accounts for crop offsets and all four page rotations.
+
+## Current limits
+
+- Password-protected PDFs are rejected. Digital signatures are not preserved as
+  valid signatures after modification.
+- Exported ink is permanent page content; reopen it to add more notes, not to
+  erase previous strokes. Undo/redo applies to strokes in the current draft.
+- Preview resolution is capped; high zoom can soften the underlying page. Ink
+  remains vector in the output.
+- The active, unfinished stroke and redo history are not restored after process
+  death. Completed strokes are queued for disk immediately.
+
+## Verification
+
+Tests cover pressure geometry, palm/cancel input, draft recovery, PDF text and
+vector preservation, page targeting, repeated saves and crop/rotation mapping.
+The Python check renders actual exports with PDFium and checks ink placement and
+preserved text/artwork for all rotations. Robolectric cannot run Android's
+PdfRenderer; this separate check also runs in CI.
+
+Device check: open a multipage PDF, write with light/heavy pressure while resting
+your palm, zoom, undo/redo, rotate the device, background/reopen, save, then open
+the exported PDF in another viewer. Check ink alignment and text selection.
+Real stylus latency and hardware palm rejection require a physical device.
+
+## Dependencies
+
+App source: [Unlicense](LICENSE). AndroidX and
+[PDFBox-Android](https://github.com/TomRoush/PdfBox-Android) are Apache-2.0;
+their bundled notices and dependency licenses continue to apply.

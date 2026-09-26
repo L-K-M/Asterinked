@@ -1,0 +1,34 @@
+<resources>
+    <string name="app_name">Asterinked</string>
+    <string name="open_pdf">Open PDF</string>
+    <string name="save_copy">Save copy</string>
+    <string name="undo">Undo</string>
+    <string name="redo">Redo</string>
+    <string name="pen_only">Pen only</string>
+    <string name="touch_ink">Touch ink</string>
+    <string name="fit">Fit page</string>
+    <string name="previous">Previous</string>
+    <string name="next">Next</string>
+    <string name="welcome_title">Make room for your thoughts.</string>
+    <string name="welcome_body">Open a PDF and write directly on its pages.\nSave a copy with your handwriting included.</string>
+    <string name="input_hint">Pen writes · Fingers pan and zoom</string>
+    <string name="touch_hint">Finger or pen writes · Two fingers zoom</string>
+    <string name="working">Working…</string>
+    <string name="page_count">Page %1$d of %2$d</string>
+    <string name="open_another">Open another PDF?</string>
+    <string name="unsaved_prompt">This PDF has notes you haven’t exported. Opening another PDF replaces the current draft.</string>
+    <string name="keep_editing">Keep editing</string>
+    <string name="open_anyway">Open another</string>
+    <string name="unsaved">Unexported notes</string>
+    <string name="saved">All notes exported</string>
+    <string name="width_label">Pen width</string>
+    <string name="color_label">Ink color</string>
+    <string name="black">Graphite</string>
+    <string name="blue">Blue</string>
+    <string name="red">Red</string>
+    <string name="green">Green</string>
+    <string name="fine">Fine</string>
+    <string name="medium">Medium</string>
+    <string name="bold">Bold</string>
+    <string name="no_picker">No document picker is available on this device.</string>
+</resources>
