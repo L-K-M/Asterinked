@@ -7,12 +7,14 @@
     <string name="pen_only">Pen only</string>
     <string name="touch_ink">Touch ink</string>
     <string name="fit">Fit page</string>
+    <string name="eraser">Eraser</string>
     <string name="previous">Previous</string>
     <string name="next">Next</string>
     <string name="welcome_title">Make room for your thoughts.</string>
     <string name="welcome_body">Open a PDF and write directly on its pages.\nSave a copy with your handwriting included.</string>
     <string name="input_hint">Pen writes · Fingers pan and zoom</string>
     <string name="touch_hint">Finger or pen writes · Two fingers zoom</string>
+    <string name="eraser_hint">Drag across strokes to erase them · Tap Eraser again to write</string>
     <string name="working">Working…</string>
     <string name="page_count">Page %1$d of %2$d</string>
     <string name="open_another">Open another PDF?</string>
