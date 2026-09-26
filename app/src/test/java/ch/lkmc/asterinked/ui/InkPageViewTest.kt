@@ -92,6 +92,7 @@ class InkPageViewTest {
         drag(view, MotionEvent.TOOL_TYPE_FINGER, fromY = 280f, toY = 420f, x = 200f)
 
         assertEquals(drawn, erased)
+        assertTrue("Erasing adds no ink", strokes.isEmpty())
     }
 
     @Test fun cancelledEraseRemovesNothing() {

@@ -269,6 +269,7 @@ internal class InkPageView(context: Context) : View(context) {
     private fun cancelStroke() {
         points = mutableListOf()
         erasing.clear()
+        eraser.reset()
         eraserAt = null
         activeErasing = false
         activePointer = NO_POINTER

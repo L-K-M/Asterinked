@@ -19,6 +19,13 @@ class InkEraserTest {
         assertEquals(listOf(thin), eraser.hits(listOf(thin), InkPoint(0f, 0f, 1f), InkPoint(100f, 0f, 1f), radius = 2f))
     }
 
+    @Test fun resetForgetsStrokesButKeepsHitTestingCorrect() {
+        val eraser = InkEraser()
+        eraser.hits(listOf(line), null, InkPoint(50f, 0f, 1f), radius = 5f)
+        eraser.reset()
+        assertEquals(listOf(line), eraser.hits(listOf(line), null, InkPoint(50f, 6f, 1f), radius = 5f))
+    }
+
     @Test fun dotsAreErasableAndOnlyTouchedStrokesAreReturned() {
         val dot = InkStroke(listOf(InkPoint(200f, 200f, 1f)), 0, 2f)
         val far = InkStroke(listOf(InkPoint(400f, 400f, 1f), InkPoint(420f, 420f, 1f)), 0, 2f)

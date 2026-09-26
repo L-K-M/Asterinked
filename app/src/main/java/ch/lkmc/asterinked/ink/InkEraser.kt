@@ -8,13 +8,16 @@ import kotlin.math.max
 /**
  * Finds strokes under a moving eraser, in page units. A stroke is hit when
  * the eraser disc touches its centerline widened by half the stroke's full
- * width. Bounds are cached per stroke instance so most strokes are rejected
- * without walking their points.
+ * width. Within one gesture, bounds are cached per stroke instance so most
+ * strokes are rejected without walking their points.
  */
 internal class InkEraser {
     private class Bounds(val left: Float, val top: Float, val right: Float, val bottom: Float)
 
     private val bounds = IdentityHashMap<InkStroke, Bounds>()
+
+    /** Ends a gesture: forgets cached bounds so erased or off-page strokes can be collected. */
+    fun reset() = bounds.clear()
 
     /**
      * Returns strokes touched while the eraser moved from [from] (null at the
