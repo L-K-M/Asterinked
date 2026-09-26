@@ -1,5 +1,10 @@
 # Asterinked
 
+> [!IMPORTANT]
+> LLM disclosure: This codebase was written with substantial help from large language models: AI coding agents working from the [`AGENTS.md`](AGENTS.md) brief in this repo.
+
+**Latest release:** v<!-- version -->0.1.0<!-- /version --> · [Download](https://github.com/L-K-M/Asterinked/releases/latest)
+
 Pen-based PDF annotation for Android 10 and newer.
 
 1. **Open PDF** through Android's document picker.
@@ -18,18 +23,22 @@ you want to keep first. Drafts are not cloud-synced or included in Android backu
 
 ## Build
 
-Install JDK 17 and the Android SDK. Set `ANDROID_HOME` or `sdk.dir` in
-`local.properties`, then run:
+Install JDK 17 and the Android SDK (CI uses the runner's preinstalled SDK).
+Set `ANDROID_HOME` or `sdk.dir` in `local.properties`, then run:
 
 ```sh
-./gradlew testDebugUnitTest lintDebug assembleDebug
+./gradlew testDebugUnitTest lintDebug assembleDebug   # exactly what CI runs
 python3 -m pip install -r scripts/pdf-test-requirements.txt
-python3 scripts/verify_pdf.py
+python3 scripts/verify_pdf.py                         # re-renders test exports
+scripts/build.sh                                      # release APK staged into dist/
+scripts/install.sh                                    # build + install + launch
 ```
 
-APK: `app/build/outputs/apk/debug/app-debug.apk`. PR builds also publish it as the
-`asterinked-debug` GitHub Actions artifact. Dependency versions live in
-`gradle/libs.versions.toml`.
+Debug APK: `app/build/outputs/apk/debug/app-debug.apk`. PR builds also publish
+it as the `asterinked-debug-<sha>` GitHub Actions artifact; `scripts/build.sh`
+stages `dist/asterinked-v<version>-<variant>.apk`. Both build types are signed
+with the checked-in `app/debug.keystore` — sideload-only, deliberate
+(docs/decisions/0001). Dependency versions live in `gradle/libs.versions.toml`.
 
 ## Design
 
