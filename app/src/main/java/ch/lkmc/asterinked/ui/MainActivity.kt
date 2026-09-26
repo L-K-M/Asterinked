@@ -205,11 +205,12 @@ internal class MainActivity : ComponentActivity() {
             model.acknowledgeShare()
             sendToShareSheet(it)
         }
-        // Cleared only once the user decides, so a rotation during the prompt asks again.
+        // Cleared only once the user decides, so a rotation during the prompt asks
+        // again; a newer PDF that arrived meanwhile stays pending.
         val uri = incoming
         if (uri != null && !state.busy && confirming == null) {
-            confirmReplacing(keep = { incoming = null }) {
-                incoming = null
+            confirmReplacing(keep = { if (incoming == uri) incoming = null }) {
+                if (incoming == uri) incoming = null
                 model.open(uri)
             }
         }

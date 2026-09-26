@@ -29,6 +29,32 @@ class ShareTest {
         assertEquals("Notes-annotated.pdf", name("Notes"))
     }
 
+    @Test fun exportNamesFromOtherAppsStayOneSafeSegment() {
+        fun name(original: String) = Draft(File("x.pdf"), original).exportName
+        assertEquals("evil-annotated.pdf", name("../../../files/documents/evil.pdf"))
+        assertEquals("evil-annotated.pdf", name("..\\..\\evil.pdf"))
+        assertEquals("Document-annotated.pdf", name(""))
+        assertEquals("Document-annotated.pdf", name("folder/"))
+        assertEquals("ab-annotated.pdf", name("a\u0000b.pdf"))
+        val long = name("x".repeat(400) + ".pdf")
+        assertTrue(long.toByteArray().size <= 255)
+        assertFalse("No split surrogate pair", name("😀".repeat(40)).removeSuffix("-annotated.pdf").last().isHighSurrogate())
+    }
+
+    @Test fun aHostileDisplayNameCannotEscapeTheShareFolder() {
+        val service = DocumentService(app)
+        val source = File(app.filesDir, "documents/hostile-source.pdf").apply {
+            parentFile!!.mkdirs()
+            PDDocument().use { document ->
+                document.addPage(PDPage())
+                document.save(this)
+            }
+        }
+        val shared = service.share(Draft(source, "../../../files/documents/hostile-source.pdf"))
+        assertEquals(File(app.cacheDir, DocumentService.SHARED_DIRECTORY), shared.parentFile!!.parentFile)
+        assertTrue(source.length() > 0)
+    }
+
     @Test fun sharedCopyCarriesInkUnderTheProviderPathAndReplacesTheLastOne() {
         val service = DocumentService(app)
         val source = File(app.filesDir, "documents/share-source.pdf").apply {
