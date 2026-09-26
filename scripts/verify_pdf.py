@@ -45,10 +45,15 @@ for name, rotation in CASES:
     original, before_text = render(FIXTURES / f"source-{name}.pdf")
     exported, after_text = render(FIXTURES / f"export-{name}.pdf")
     assert f"Original text {rotation}" in before_text
+    source_revision, source_permissions = security(FIXTURES / f"source-{name}.pdf")
+    revision, permissions = security(FIXTURES / f"export-{name}.pdf")
     if name == "encrypted":
-        revision, permissions = security(FIXTURES / f"export-{name}.pdf")
+        assert source_revision != NOT_ENCRYPTED, "Fixture premise broken: the source is not encrypted"
+        assert not source_permissions & PRINT_PERMISSION, "Fixture premise broken: the source allows printing"
         assert revision != NOT_ENCRYPTED, "Export dropped the source's encryption"
         assert not permissions & PRINT_PERMISSION, "Export dropped the source's no-print restriction"
+    else:
+        assert revision == NOT_ENCRYPTED, f"Export of the plain {name} fixture was encrypted"
     assert before_text == after_text, f"Text changed in {name}"
     assert original.size == exported.size
 

@@ -41,7 +41,7 @@ internal class DocumentService(context: Context) {
 
     fun render(draft: Draft): Bitmap = during(DocumentProblem.NOT_A_PDF) { engine.render(draft.source, draft.page) }
 
-    fun saveDraft(draft: Draft) = store.saveDraft(draft)
+    fun saveDraft(draft: Draft) = during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(draft) }
 
     fun export(draft: Draft, destination: Uri) {
         val output = File.createTempFile("annotated-", ".pdf", cache)

@@ -58,6 +58,17 @@ class PdfEngineSecurityTest {
         }
     }
 
+    @Test fun plainPdfExportsStayUnencrypted() {
+        val source = file("plain")
+        PDDocument().use { document ->
+            document.addPage(PDPage())
+            document.save(source)
+        }
+        val exported = file("plain-exported")
+        engine.export(source, exported, mapOf(0 to listOf(InkStroke(listOf(InkPoint(10f, 10f, 1f)), 0, 2f))))
+        PDDocument.load(exported).use { assertFalse(it.isEncrypted) }
+    }
+
     @Test fun pdfThatNeedsAPasswordIsReportedAsSuch() {
         assertProblem(DocumentProblem.PASSWORD_PROTECTED) { engine.inspect(protectedPdf(user = "secret")) }
     }

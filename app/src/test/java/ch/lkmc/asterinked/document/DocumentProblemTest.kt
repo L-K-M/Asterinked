@@ -28,6 +28,11 @@ class DocumentProblemTest {
         assertEquals(DocumentProblem.OUT_OF_SPACE, IOException("write failed: ENOSPC (No space left on device)").toProblem(DocumentProblem.DRAFT_NOT_SAVED))
     }
 
+    @Test fun exhaustionWinsOverAnEarlierLabel() {
+        val labelled = DocumentException(DocumentProblem.EXPORT_FAILED, IOException("write failed", ErrnoException("write", OsConstants.ENOSPC)))
+        assertEquals(DocumentProblem.OUT_OF_SPACE, labelled.toProblem(DocumentProblem.UNEXPECTED))
+    }
+
     @Test fun anythingElseBlamesTheStage() {
         assertEquals(DocumentProblem.DESTINATION_UNWRITABLE, IOException("EACCES").toProblem(DocumentProblem.DESTINATION_UNWRITABLE))
         assertEquals(DocumentProblem.NOT_A_PDF, IOException("Error: End-of-File, expected line").toProblem(DocumentProblem.NOT_A_PDF))

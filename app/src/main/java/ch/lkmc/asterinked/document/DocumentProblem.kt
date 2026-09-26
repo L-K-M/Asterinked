@@ -23,14 +23,14 @@ internal enum class DocumentProblem {
 internal class DocumentException(val problem: DocumentProblem, cause: Throwable? = null) : IOException(problem.name, cause)
 
 /**
- * Keeps a problem that was already identified, recognizes exhausted memory or
- * storage anywhere in the cause chain, and otherwise blames [stage]: the step
- * that was running when the failure happened.
+ * Recognizes exhausted memory or storage anywhere in the cause chain (the
+ * most actionable answer), then keeps a problem that was already identified,
+ * and otherwise blames [stage]: the step that was running when it failed.
  */
 internal fun Throwable.toProblem(stage: DocumentProblem): DocumentProblem = when {
-    this is DocumentException -> problem
     causes().any { it is OutOfMemoryError } -> DocumentProblem.OUT_OF_MEMORY
     causes().any(::isOutOfSpace) -> DocumentProblem.OUT_OF_SPACE
+    this is DocumentException -> problem
     else -> stage
 }
 
