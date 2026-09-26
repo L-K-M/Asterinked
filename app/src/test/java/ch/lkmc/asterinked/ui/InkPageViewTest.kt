@@ -63,6 +63,23 @@ class InkPageViewTest {
         assertTrue("Committed stroke is drawn", darkPixelsNear(view, 300, 300))
     }
 
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun batchedHistoricalSamplesShapeTheLiveStroke() {
+        val view = pageView(InputMode.PEN, mutableListOf())
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+        // One MOVE carrying a historical sample at (250, 250) and the current one at (350, 300).
+        val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 7; toolType = MotionEvent.TOOL_TYPE_STYLUS })
+        val coordinates = { x: Float, y: Float -> arrayOf(MotionEvent.PointerCoords().apply { this.x = x; this.y = y; pressure = 0.6f }) }
+        val move = MotionEvent.obtain(0, 20, MotionEvent.ACTION_MOVE, 1, properties, coordinates(250f, 250f), 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_STYLUS, 0)
+        move.addBatch(30, coordinates(350f, 300f), 0)
+        try { view.onTouchEvent(move) } finally { move.recycle() }
+
+        // The smoothed curve peaks near y = 262 at x = 250; a stroke that skipped
+        // the historical sample would be a straight line at y = 300.
+        assertTrue("Live stroke bends through the historical sample", darkPixelsNear(view, 250, 262))
+        assertFalse("Live stroke is not a straight line", darkPixelsNear(view, 250, 300))
+    }
+
     private val page: Bitmap = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
 
     private fun darkPixelsNear(view: InkPageView, x: Int, y: Int): Boolean {

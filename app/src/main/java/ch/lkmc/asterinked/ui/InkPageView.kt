@@ -255,7 +255,9 @@ internal class InkPageView(context: Context) : View(context) {
 
     private fun finishStroke() {
         val stroke = InkStroke(points.toList(), activeColor, activeWidth)
-        // The live builder already smoothed these exact samples.
+        // The live builder already smoothed these exact samples with this width:
+        // activeWidth is fixed when a stroke starts, and configure() cancels any
+        // live stroke before the pen settings change.
         liveStroke?.let { geometryCache.seed(stroke, it.segments()) }
         cancelStroke()
         onStroke(stroke)

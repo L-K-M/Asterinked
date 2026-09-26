@@ -78,7 +78,7 @@ internal object InkGeometry {
  */
 internal class InkStrokeBuilder(width: Float) {
     private val width = InkGeometry.strokeWidth(width)
-    private val points = ArrayList<InkPoint>()
+    private var previous: InkPoint? = null
     private val settledSegments = ArrayList<InkSegment>()
     private var tailSegments = emptyList<InkSegment>()
     private var spanStart: InkPoint? = null
@@ -91,15 +91,16 @@ internal class InkStrokeBuilder(width: Float) {
 
     fun add(sample: InkPoint) {
         val point = InkGeometry.sanitize(sample) ?: return
-        points.add(point)
-        if (points.size == 1) {
+        val control = previous
+        previous = point
+        if (control == null) {
             tailSegments = listOf(InkGeometry.dot(point, width))
             return
         }
 
-        val control = points[points.size - 2]
+        // Only the first span starts at a sample (the first one) rather than a midpoint.
         val end = InkGeometry.midpoint(control, point)
-        InkGeometry.appendSpan(settledSegments, spanStart ?: points.first(), control, end, width)
+        InkGeometry.appendSpan(settledSegments, spanStart ?: control, control, end, width)
         spanStart = end
         tailSegments = ArrayList<InkSegment>().also { InkGeometry.appendSpan(it, end, point, point, width) }
     }
