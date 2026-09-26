@@ -83,5 +83,10 @@ for name, rotation in CASES:
     # For "highlight" this also proves multiply blending: text under the marker stays dark.
     assert dark and all(max(exported.getpixel(pixel)) < COLOR_THRESHOLD for pixel in dark), f"Artwork changed in {name}"
     assert bool(yellow) == (name == "highlight"), f"Highlight presence wrong in {name}"
+    if yellow:
+        # The blending proof above only counts if the marker actually covers text.
+        left, right = min(x for x, _ in yellow), max(x for x, _ in yellow)
+        top, bottom = min(y for _, y in yellow), max(y for _, y in yellow)
+        assert any(left <= x <= right and top <= y <= bottom for x, y in dark), f"Highlight in {name} covers no text"
     exported.save(FIXTURES / f"export-{name}.png")
     print(f"{name}: ink aligned; text and artwork preserved")
