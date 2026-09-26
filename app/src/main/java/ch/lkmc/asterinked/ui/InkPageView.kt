@@ -43,6 +43,7 @@ internal class InkPageView(context: Context) : View(context) {
     private var lastFocusX = 0f
     private var lastFocusY = 0f
     private var gestureScaled = false
+    private var penGesture = false
     private var zoomAnimator: ValueAnimator? = null
     private var inputMode = InputMode.PEN
     private var inkColor = Color.rgb(25, 38, 46)
@@ -174,6 +175,7 @@ internal class InkPageView(context: Context) : View(context) {
             gestureDetector.onTouchEvent(event)
             return true
         }
+        if (action == MotionEvent.ACTION_DOWN) penGesture = false
 
         // Track the pen by pointer ID: a palm may become pointer index zero.
         if (activePointer != NO_POINTER) {
@@ -195,6 +197,7 @@ internal class InkPageView(context: Context) : View(context) {
 
         val index = event.actionIndex
         val stylus = event.getToolType(index) == MotionEvent.TOOL_TYPE_STYLUS
+        if (stylus || event.getToolType(index) == MotionEvent.TOOL_TYPE_ERASER) penGesture = true
         if ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) &&
             (stylus || (inputMode == InputMode.TOUCH && event.pointerCount == 1))) {
             if (pageRect.contains(event.getX(index), event.getY(index))) {
@@ -208,6 +211,9 @@ internal class InkPageView(context: Context) : View(context) {
             }
         }
         if (stylus || event.getToolType(index) == MotionEvent.TOOL_TYPE_ERASER) return true
+        // A palm that touched while the pen was down stays inert until every pointer
+        // lifts, so it cannot pan, zoom or turn the page on its way off the screen.
+        if (penGesture) return true
 
         if (action == MotionEvent.ACTION_DOWN) {
             gestureScaled = false

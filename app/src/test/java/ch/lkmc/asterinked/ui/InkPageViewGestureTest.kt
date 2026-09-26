@@ -79,6 +79,32 @@ class InkPageViewGestureTest {
 
         val after = pageAt(view, 300f, 400f)
         assertEquals("A resting palm must not pan the page", before.x, after.x, 0.01f)
+        assertTrue("A moving palm must not turn the page", turns.isEmpty())
+    }
+
+    @Test fun palmSlidingAwayAfterWritingNeitherTurnsNorPans() {
+        val view = pageView(InputMode.PEN)
+        swipe(view, from = 500f, to = 510f) // an earlier finger gesture leaves detector state behind
+        turns.clear()
+        val before = pageAt(view, 300f, 400f)
+
+        val pen = { x: Float -> Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, x, 300f) }
+        send(view, MotionEvent.ACTION_DOWN, listOf(pen(250f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(pen(255f), finger(1, 450f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_MOVE, listOf(pen(270f), finger(1, 450f)))
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(pen(280f), finger(1, 450f)), actionIndex = 0)
+        // The stylus is up; the palm slides away fast and lifts.
+        for (step in 1..4) {
+            clock += 8
+            send(view, MotionEvent.ACTION_MOVE, listOf(finger(1, 450f - 80f * step)))
+        }
+        send(view, MotionEvent.ACTION_UP, listOf(finger(1, 130f)))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
+
+        assertEquals("The stroke is kept", 1, strokes.size)
+        strokes.clear()
+        assertTrue("A palm leaving the screen must not turn the page", turns.isEmpty())
+        assertEquals(before.x, pageAt(view, 300f, 400f).x, 0.01f)
     }
 
     @Test fun pinchFollowsTheFingers() {
@@ -95,12 +121,13 @@ class InkPageViewGestureTest {
 
     @Test fun liftingTheFirstFingerDoesNotJump() {
         val view = pageView(InputMode.PEN)
-        pinch(view, 200f to 400f, 100f to 500f, lift = false)
-        send(view, MotionEvent.ACTION_POINTER_UP, listOf(finger(0, 100f), finger(1, 500f)), actionIndex = 0)
-        redraw(view)
+        pinch(view, 200f to 400f, 100f to 500f)
         val unitsPer100px = unitsPer100px(view)
         val before = pageAt(view, 300f, 400f)
 
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 100f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(finger(0, 100f), finger(1, 500f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(finger(0, 100f), finger(1, 500f)), actionIndex = 0)
         send(view, MotionEvent.ACTION_MOVE, listOf(finger(1, 505f)))
         send(view, MotionEvent.ACTION_MOVE, listOf(finger(1, 510f)))
         send(view, MotionEvent.ACTION_UP, listOf(finger(1, 510f)))
@@ -183,7 +210,7 @@ class InkPageViewGestureTest {
         return strokes.removeAt(strokes.lastIndex).points.first()
     }
 
-    private fun pinch(view: InkPageView, from: Pair<Float, Float>, to: Pair<Float, Float>, lift: Boolean = true) {
+    private fun pinch(view: InkPageView, from: Pair<Float, Float>, to: Pair<Float, Float>) {
         send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, from.first)))
         send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(finger(0, from.first), finger(1, from.second)), actionIndex = 1)
         for (step in 1..STEPS) {
@@ -193,10 +220,8 @@ class InkPageViewGestureTest {
                 finger(1, from.second + (to.second - from.second) * t),
             ))
         }
-        if (lift) {
-            send(view, MotionEvent.ACTION_POINTER_UP, listOf(finger(0, to.first), finger(1, to.second)), actionIndex = 1)
-            send(view, MotionEvent.ACTION_UP, listOf(finger(0, to.first)))
-        }
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(finger(0, to.first), finger(1, to.second)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_UP, listOf(finger(0, to.first)))
         redraw(view)
     }
 
