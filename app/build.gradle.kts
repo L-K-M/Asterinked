@@ -50,6 +50,13 @@ android {
     }
 }
 
+// PdfEngineRasterTest writes the fixtures that scripts/verify_pdf.py re-renders.
+// Declaring them as an output makes a build-cache hit restore them instead of
+// skipping the test run and leaving the PDFium check without input.
+tasks.withType<Test>().matching { it.name == "testDebugUnitTest" }.configureEach {
+    outputs.dir(layout.buildDirectory.dir("test-output/raster-proof"))
+}
+
 dependencies {
     implementation(libs.activity)
     implementation(libs.lifecycle)
