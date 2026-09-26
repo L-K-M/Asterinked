@@ -1,0 +1,20 @@
+version: 2
+updates:
+  # Gradle catalog (gradle/libs.versions.toml) + plugins.
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  # Workflow actions.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  # PDF-verification Python deps (scripts/pdf-test-requirements.txt).
+  - package-ecosystem: pip
+    directory: /scripts
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
