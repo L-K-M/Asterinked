@@ -2,15 +2,18 @@ package ch.lkmc.asterinked.ui
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BlendMode
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import ch.lkmc.asterinked.document.PageSpec
 import ch.lkmc.asterinked.ink.InkGeometry
+import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkSegment
 import ch.lkmc.asterinked.ink.InkStroke
@@ -20,16 +23,24 @@ internal enum class InputMode { PEN, TOUCH }
 
 internal class InkPageView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    // Multiplying with the page keeps text under a highlight dark, like the export.
+    private val highlighter = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        blendMode = BlendMode.MULTIPLY
+    }
     private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val pageRect = RectF()
     private var preview: Bitmap? = null
     private var spec: PageSpec? = null
     private var strokes = emptyList<InkStroke>()
-    private var geometry = emptyList<Pair<InkStroke, List<InkSegment>>>()
+    private var geometry = emptyList<Shape>()
     private var points = mutableListOf<InkPoint>()
     private var activePointer = NO_POINTER
     private var activeColor = Color.BLACK
     private var activeWidth = DEFAULT_WIDTH
+    private var activeKind = InkKind.PEN
     private var pageKey: String? = null
     private var zoom = 1f
     private var panX = 0f
@@ -39,6 +50,7 @@ internal class InkPageView(context: Context) : View(context) {
     private var inputMode = InputMode.PEN
     private var inkColor = Color.rgb(25, 38, 46)
     private var inkWidth = DEFAULT_WIDTH
+    private var inkKind = InkKind.PEN
     private var onStroke: (InkStroke) -> Unit = {}
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -58,11 +70,12 @@ internal class InkPageView(context: Context) : View(context) {
         isFocusable = true
     }
 
-    fun configure(mode: InputMode, color: Int, width: Float, onStroke: (InkStroke) -> Unit) {
+    fun configure(mode: InputMode, color: Int, width: Float, kind: InkKind = InkKind.PEN, onStroke: (InkStroke) -> Unit) {
         cancelStroke()
         inputMode = mode
         inkColor = color
         inkWidth = width
+        inkKind = kind
         this.onStroke = onStroke
     }
 
@@ -83,7 +96,7 @@ internal class InkPageView(context: Context) : View(context) {
         val nextStrokes = draft?.ink?.get(draft.page).orEmpty()
         if (nextStrokes != strokes) {
             strokes = nextStrokes
-            geometry = strokes.map { it to InkGeometry.segments(it) }
+            geometry = strokes.map(::shapeOf)
         }
         invalidate()
     }
@@ -112,11 +125,8 @@ internal class InkPageView(context: Context) : View(context) {
         canvas.clipRect(pageRect)
         canvas.translate(pageRect.left, pageRect.top)
         canvas.scale(scale, scale)
-        for ((stroke, segments) in geometry) drawInk(canvas, stroke, segments)
-        if (points.isNotEmpty()) {
-            val stroke = InkStroke(points, activeColor, activeWidth)
-            drawInk(canvas, stroke, InkGeometry.segments(stroke))
-        }
+        for (shape in geometry) drawShape(canvas, shape)
+        if (points.isNotEmpty()) drawShape(canvas, shapeOf(InkStroke(points, activeColor, activeWidth, activeKind)))
         canvas.restore()
     }
 
@@ -154,6 +164,7 @@ internal class InkPageView(context: Context) : View(context) {
                 activePointer = event.getPointerId(index)
                 activeColor = inkColor
                 activeWidth = inkWidth
+                activeKind = inkKind
                 if (stylus) requestUnbufferedDispatch(event)
                 addSamples(event, index)
                 parent?.requestDisallowInterceptTouchEvent(true)
@@ -198,7 +209,7 @@ internal class InkPageView(context: Context) : View(context) {
     }
 
     private fun finishStroke() {
-        val stroke = InkStroke(points.toList(), activeColor, activeWidth)
+        val stroke = InkStroke(points.toList(), activeColor, activeWidth, activeKind)
         cancelStroke()
         onStroke(stroke)
     }
@@ -209,6 +220,30 @@ internal class InkPageView(context: Context) : View(context) {
         parent?.requestDisallowInterceptTouchEvent(false)
         invalidate()
     }
+
+    private fun shapeOf(stroke: InkStroke): Shape = when (stroke.kind) {
+        InkKind.PEN -> Shape(stroke, InkGeometry.segments(stroke), null)
+        InkKind.HIGHLIGHTER -> Shape(stroke, emptyList(), highlightPath(stroke))
+    }
+
+    private fun highlightPath(stroke: InkStroke): Path = Path().apply {
+        val line = InkGeometry.centerline(stroke)
+        if (line.isEmpty()) return@apply
+        moveTo(line.first().x, line.first().y)
+        // A zero-length segment with round caps keeps a tap visible.
+        lineTo(line.first().x, line.first().y)
+        for (point in line.drop(1)) lineTo(point.x, point.y)
+    }
+
+    private fun drawShape(canvas: Canvas, shape: Shape) {
+        val path = shape.highlight ?: return drawInk(canvas, shape.stroke, shape.segments)
+        highlighter.color = shape.stroke.color
+        highlighter.strokeWidth = shape.stroke.width
+        canvas.drawPath(path, highlighter)
+    }
+
+    /** A stroke with the geometry it is drawn from: segments for a pen, one path for a highlighter. */
+    private class Shape(val stroke: InkStroke, val segments: List<InkSegment>, val highlight: Path?)
 
     private fun drawInk(canvas: Canvas, stroke: InkStroke, segments: List<InkSegment>) {
         paint.color = stroke.color

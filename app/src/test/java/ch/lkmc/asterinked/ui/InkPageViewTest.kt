@@ -7,6 +7,7 @@ import android.view.InputDevice
 import android.view.MotionEvent
 import ch.lkmc.asterinked.document.Draft
 import ch.lkmc.asterinked.document.PageSpec
+import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkStroke
 import org.junit.Assert.*
 import org.junit.Test
@@ -14,6 +15,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
@@ -47,6 +49,34 @@ class InkPageViewTest {
         send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 120f, 120f)))
         send(view, MotionEvent.ACTION_CANCEL, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 180f, 180f)))
         assertTrue(strokes.isEmpty())
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun highlighterTintsThePageButKeepsDarkContentDark() {
+        val strokes = mutableListOf<InkStroke>()
+        // A white page with a vertical black bar at page x 150..170 (screen x ~237..262).
+        val page = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.WHITE)
+            Canvas(this).drawRect(150f, 0f, 170f, 600f, android.graphics.Paint().apply { color = Color.BLACK })
+        }
+        val view = InkPageView(RuntimeEnvironment.getApplication()).apply {
+            configure(InputMode.PEN, Color.rgb(255, 228, 92), 12f, InkKind.HIGHLIGHTER) { strokes.add(it) }
+            show(EditorState(Draft(File("test.pdf"), "test.pdf"), listOf(PageSpec(0f, 0f, 400f, 600f, 0)), page, busy = false))
+            layout(0, 0, 600, 800)
+            draw(Canvas(Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888)))
+        }
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 250f, 302f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 350f, 304f)))
+        val marker = strokes.single()
+        assertEquals(InkKind.HIGHLIGHTER, marker.kind)
+
+        view.show(EditorState(Draft(File("test.pdf"), "test.pdf", ink = mapOf(0 to listOf(marker))), listOf(PageSpec(0f, 0f, 400f, 600f, 0)), page, busy = false))
+        val image = Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888).also { view.draw(Canvas(it)) }
+        val tinted = image.getPixel(200, 302)
+        assertTrue("White page turns yellow", Color.red(tinted) > 200 && Color.blue(tinted) < 150)
+        val bar = image.getPixel(250, 302)
+        assertTrue("Black content stays black under the highlight", Color.red(bar) < 60 && Color.green(bar) < 60)
     }
 
     private fun pageView(mode: InputMode, strokes: MutableList<InkStroke>): InkPageView {

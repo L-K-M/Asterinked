@@ -6,6 +6,9 @@ import pypdfium2 as pdfium
 
 FIXTURES = Path(__file__).resolve().parents[1] / "app/build/test-output/raster-proof"
 ROTATIONS = (0, 90, 180, 270)
+# Fixture name -> page rotation. "highlight" adds a highlighter stroke across
+# the text line; multiply blending must keep the text dark under it.
+CASES = [(str(rotation), rotation) for rotation in ROTATIONS] + [("highlight", 0)]
 INK_POSITION = (0.23, 0.31)
 COLOR_THRESHOLD = 100
 POSITION_TOLERANCE = 3
@@ -27,9 +30,9 @@ def render(path):
         document.close()
 
 
-for rotation in ROTATIONS:
-    original, before_text = render(FIXTURES / f"source-{rotation}.pdf")
-    exported, after_text = render(FIXTURES / f"export-{rotation}.pdf")
+for name, rotation in CASES:
+    original, before_text = render(FIXTURES / f"source-{name}.pdf")
+    exported, after_text = render(FIXTURES / f"export-{name}.pdf")
     assert f"Original text {rotation}" in before_text
     assert before_text == after_text, f"Text changed at rotation {rotation}"
     assert original.size == exported.size
@@ -37,11 +40,14 @@ for rotation in ROTATIONS:
     # Asymmetric placement catches errors hidden by a center probe.
     red = []
     dark = []
+    yellow = []
     for y in range(exported.height):
         for x in range(exported.width):
             r, g, b = exported.getpixel((x, y))
             if r > 150 and g < COLOR_THRESHOLD and b < COLOR_THRESHOLD:
                 red.append((x, y))
+            if r > 200 and g > 180 and b < 140:
+                yellow.append((x, y))
             if max(original.getpixel((x, y))) < COLOR_THRESHOLD:
                 dark.append((x, y))
 
@@ -52,6 +58,8 @@ for rotation in ROTATIONS:
     expected_y = INK_POSITION[1] * exported.height
     assert abs(actual_x - expected_x) <= POSITION_TOLERANCE, (rotation, actual_x, expected_x)
     assert abs(actual_y - expected_y) <= POSITION_TOLERANCE, (rotation, actual_y, expected_y)
-    assert dark and all(max(exported.getpixel(pixel)) < COLOR_THRESHOLD for pixel in dark), f"Artwork changed at {rotation}"
-    exported.save(FIXTURES / f"export-{rotation}.png")
-    print(f"Rotation {rotation}: ink aligned; text and artwork preserved")
+    # For "highlight" this also proves multiply blending: text under the marker stays dark.
+    assert dark and all(max(exported.getpixel(pixel)) < COLOR_THRESHOLD for pixel in dark), f"Artwork changed in {name}"
+    assert bool(yellow) == (name == "highlight"), f"Highlight presence wrong in {name}"
+    exported.save(FIXTURES / f"export-{name}.png")
+    print(f"{name}: ink aligned; text and artwork preserved")
