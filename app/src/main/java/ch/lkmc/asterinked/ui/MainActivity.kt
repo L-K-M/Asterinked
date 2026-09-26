@@ -224,7 +224,7 @@ internal class MainActivity : ComponentActivity() {
         val ready = draft != null && !state.busy
         title.text = draft?.name ?: getString(R.string.app_name)
         status.text = state.statusText()?.let(::getString).orEmpty()
-        status.setTextColor(if (ready && draft!!.dirty) ACCENT else MUTED)
+        status.setTextColor(if (draft?.dirty == true && !state.busy) ACCENT else MUTED)
         status.visibility = if (status.text.isEmpty()) View.GONE else View.VISIBLE
 
         // Editor controls exist only once there is a document to edit.
@@ -323,7 +323,7 @@ internal class MainActivity : ComponentActivity() {
         isAllCaps = false
         textSize = BUTTON_TEXT_SIZE
         typeface = Typeface.create(MEDIUM_FONT, Typeface.NORMAL)
-        setTextColor(enabledColors(Color.WHITE, Color.WHITE))
+        setTextColor(enabledColors(Color.WHITE, MUTED))
         stateListAnimator = null
         minHeight = dp(PILL_BUTTON_HEIGHT_DP)
         minimumHeight = dp(PILL_BUTTON_HEIGHT_DP)
