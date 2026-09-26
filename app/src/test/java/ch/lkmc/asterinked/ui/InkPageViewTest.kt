@@ -74,7 +74,7 @@ class InkPageViewTest {
         view.show(EditorState(Draft(File("test.pdf"), "test.pdf", ink = mapOf(0 to listOf(marker))), listOf(PageSpec(0f, 0f, 400f, 600f, 0)), page, busy = false))
         val image = Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888).also { view.draw(Canvas(it)) }
         val tinted = image.getPixel(200, 302)
-        assertTrue("White page turns yellow", Color.red(tinted) > 200 && Color.blue(tinted) < 150)
+        assertTrue("White page turns yellow", Color.red(tinted) > 200 && Color.green(tinted) > 180 && Color.blue(tinted) < 150)
         val bar = image.getPixel(250, 302)
         assertTrue("Black content stays black under the highlight", Color.red(bar) < 60 && Color.green(bar) < 60)
     }
