@@ -19,26 +19,27 @@ internal class DocumentService(context: Context) {
     }
 
     fun open(uri: Uri): OpenDocument {
-        val draft = store.import(uri)
+        val draft = during(DocumentProblem.SOURCE_UNREADABLE) { store.import(uri) }
         try {
-            val pages = engine.inspect(draft.source)
-            val preview = engine.render(draft.source, draft.page)
-            store.saveDraft(draft)
-            return OpenDocument(draft, pages, preview)
+            val document = during(DocumentProblem.NOT_A_PDF) {
+                OpenDocument(draft, engine.inspect(draft.source), engine.render(draft.source, draft.page))
+            }
+            during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(draft) }
+            return document
         } catch (error: Exception) {
             draft.source.delete()
             throw error
         }
     }
 
-    fun restore(): OpenDocument? {
-        val draft = store.restore() ?: return null
+    fun restore(): OpenDocument? = during(DocumentProblem.DRAFT_UNREADABLE) {
+        val draft = store.restore() ?: return@during null
         val pages = engine.inspect(draft.source)
         require(draft.page in pages.indices) { "The saved page is invalid." }
-        return OpenDocument(draft, pages, engine.render(draft.source, draft.page))
+        OpenDocument(draft, pages, engine.render(draft.source, draft.page))
     }
 
-    fun render(draft: Draft): Bitmap = engine.render(draft.source, draft.page)
+    fun render(draft: Draft): Bitmap = during(DocumentProblem.NOT_A_PDF) { engine.render(draft.source, draft.page) }
 
     fun saveDraft(draft: Draft) = store.saveDraft(draft)
 
@@ -46,10 +47,20 @@ internal class DocumentService(context: Context) {
         val output = File.createTempFile("annotated-", ".pdf", cache)
         try {
             // Always derive from the imported PDF, so repeated saves never duplicate ink.
-            engine.export(draft.source, output, draft.ink)
-            store.writePdf(output, destination)
+            during(DocumentProblem.EXPORT_FAILED) { engine.export(draft.source, output, draft.ink) }
+            during(DocumentProblem.DESTINATION_UNWRITABLE) { store.writePdf(output, destination) }
         } finally {
             output.delete()
         }
+    }
+
+    // Tags failures with the step that was running; OutOfMemoryError is caught
+    // too because a single oversized page or bitmap is recoverable here.
+    private inline fun <T> during(stage: DocumentProblem, work: () -> T): T = try {
+        work()
+    } catch (error: Exception) {
+        throw DocumentException(error.toProblem(stage), error)
+    } catch (error: OutOfMemoryError) {
+        throw DocumentException(DocumentProblem.OUT_OF_MEMORY, error)
     }
 }

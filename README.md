@@ -66,8 +66,11 @@ mapping accounts for crop offsets and all four page rotations.
 
 ## Current limits
 
-- Password-protected PDFs are rejected. Digital signatures are not preserved as
-  valid signatures after modification.
+- PDFs that need a password to open are rejected. PDFs that open without one
+  but carry owner restrictions work if they allow changes; the exported copy
+  stays encrypted with the same restrictions (a new random owner password,
+  AES for 128-bit keys). Digital signatures are not preserved as valid
+  signatures after modification.
 - Exported ink is permanent page content; reopen it to add more notes, not to
   erase previous strokes. Undo/redo applies to strokes in the current draft.
 - Preview resolution is capped; high zoom can soften the underlying page. Ink

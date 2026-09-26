@@ -9,8 +9,12 @@ import ch.lkmc.asterinked.ink.InkStroke
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
+import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
+import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
 import com.tom_roush.pdfbox.util.Matrix
 import java.io.File
+import java.util.UUID
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -28,14 +32,15 @@ internal data class PageSpec(val left: Float, val bottom: Float, val width: Floa
 }
 
 internal class PdfEngine(private val scratchDirectory: File) {
+    // Encrypted PDFs that open without a password (owner restrictions only) are
+    // accepted; a PDF that needs a password fails in load().
     fun inspect(source: File): List<PageSpec> = load(source).use { document ->
-        require(!document.isEncrypted) { "Password-protected PDFs are not supported yet." }
-        require(document.currentAccessPermission.canModify()) { "This PDF does not allow changes." }
-        require(document.numberOfPages > 0) { "This PDF has no pages." }
+        if (!document.currentAccessPermission.canModify()) throw DocumentException(DocumentProblem.EDITING_NOT_ALLOWED)
+        if (document.numberOfPages == 0) throw DocumentException(DocumentProblem.NO_PAGES)
         document.pages.map { page ->
             val crop = page.cropBox
-            require(crop.width.isFinite() && crop.height.isFinite() && crop.width > 0 && crop.height > 0) {
-                "This PDF has an invalid page size."
+            if (!crop.width.isFinite() || !crop.height.isFinite() || crop.width <= 0 || crop.height <= 0) {
+                throw DocumentException(DocumentProblem.NOT_A_PDF)
             }
             PageSpec(crop.lowerLeftX, crop.lowerLeftY, crop.width, crop.height, page.rotation)
         }
@@ -103,13 +108,32 @@ internal class PdfEngine(private val scratchDirectory: File) {
                     stream.restoreGraphicsState()
                 }
             }
+            if (document.isEncrypted) keepProtection(document)
             document.save(destination)
         }
     }
 
-    private fun load(source: File): PDDocument = PDDocument.load(
-        source, MemoryUsageSetting.setupMixed(PDF_MEMORY_BYTES).setTempDir(scratchDirectory),
-    )
+    private fun load(source: File): PDDocument = try {
+        PDDocument.load(source, MemoryUsageSetting.setupMixed(PDF_MEMORY_BYTES).setTempDir(scratchDirectory))
+    } catch (error: InvalidPasswordException) {
+        throw DocumentException(DocumentProblem.PASSWORD_PROTECTED, error)
+    }
+
+    // PDFBox refuses to save a decrypted document under its old encryption
+    // dictionary. Re-encrypt the copy with the source's permissions and an empty
+    // user password (the source opened without one), so owner restrictions such
+    // as "no printing" carry over instead of being silently stripped. The owner
+    // password is random: the original one is unknown to the app. 128-bit copies
+    // use AES (PDFBox 2 would pick RC4), so an AES source is never downgraded.
+    private fun keepProtection(document: PDDocument) {
+        val permissions = AccessPermission(document.currentAccessPermission.permissionBytes)
+        val policy = StandardProtectionPolicy(UUID.randomUUID().toString(), "", permissions)
+        policy.encryptionKeyLength = supportedKeyLength(document.encryption.length)
+        policy.isPreferAES = true
+        document.protect(policy)
+    }
+
+    private fun supportedKeyLength(bits: Int): Int = SUPPORTED_KEY_LENGTHS.firstOrNull { bits <= it } ?: SUPPORTED_KEY_LENGTHS.last()
 
     private fun drawDot(stream: PDPageContentStream, x: Float, y: Float, radius: Float) {
         val handle = radius * CIRCLE_BEZIER
@@ -126,5 +150,6 @@ internal class PdfEngine(private val scratchDirectory: File) {
         const val PDF_MEMORY_BYTES = 32L * 1024 * 1024
         const val ROUND_CAP = 1
         const val CIRCLE_BEZIER = 0.55228475f
+        val SUPPORTED_KEY_LENGTHS = intArrayOf(40, 128, 256)
     }
 }

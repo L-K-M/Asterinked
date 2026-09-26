@@ -43,8 +43,10 @@ python3 scripts/verify_pdf.py                         # PDFium re-render of test
   Robolectric cannot run Android's PdfRenderer, so the JVM tests write export
   fixtures to `app/build/test-output/raster-proof/` and the Python script
   re-renders them with PDFium — independent of PDFBox — checking ink
-  placement and preserved text/artwork at all four rotations. It only works
-  after `testDebugUnitTest` ran in the same checkout.
+  placement and preserved text/artwork at all four rotations, and that an
+  owner-restricted encrypted export stays encrypted without regaining print
+  permission. It only works after `testDebugUnitTest` ran in the same
+  checkout.
 - The debug build carries `applicationIdSuffix ".debug"` (and `-debug` on
   versionName) so it can sit next to a release install on the same device.
 
