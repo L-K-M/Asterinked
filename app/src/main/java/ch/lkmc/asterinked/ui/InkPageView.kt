@@ -6,14 +6,16 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.RenderNode
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import ch.lkmc.asterinked.document.PageSpec
-import ch.lkmc.asterinked.ink.InkGeometry
+import ch.lkmc.asterinked.ink.InkGeometryCache
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkSegment
 import ch.lkmc.asterinked.ink.InkStroke
+import ch.lkmc.asterinked.ink.InkStrokeBuilder
 import kotlin.math.min
 
 internal enum class InputMode { PEN, TOUCH }
@@ -25,8 +27,18 @@ internal class InkPageView(context: Context) : View(context) {
     private var preview: Bitmap? = null
     private var spec: PageSpec? = null
     private var strokes = emptyList<InkStroke>()
-    private var geometry = emptyList<Pair<InkStroke, List<InkSegment>>>()
+    private val geometryCache = InkGeometryCache()
+    private var geometry = emptyList<List<InkSegment>>()
     private var points = mutableListOf<InkPoint>()
+    private var liveStroke: InkStrokeBuilder? = null
+    // Committed ink is recorded once per edit (page units) and replayed under the
+    // current zoom, so frames drawn while writing no longer re-issue every segment.
+    // The outer node applies the view transform and is kept as a GPU layer, so
+    // unchanged ink is not re-rasterized for each pen sample either.
+    private val inkNode = RenderNode("committedInk").apply { setClipToBounds(false) }
+    private val inkLayer = RenderNode("committedInkLayer").apply { setUseCompositingLayer(true, null) }
+    private val recordedLayerRect = RectF()
+    private var inkNodeStale = true
     private var activePointer = NO_POINTER
     private var activeColor = Color.BLACK
     private var activeWidth = DEFAULT_WIDTH
@@ -81,9 +93,10 @@ internal class InkPageView(context: Context) : View(context) {
         preview = state.preview
         spec = draft?.let { state.pages[it.page] }
         val nextStrokes = draft?.ink?.get(draft.page).orEmpty()
-        if (nextStrokes != strokes) {
+        if (nextStrokes !== strokes) {
             strokes = nextStrokes
-            geometry = strokes.map { it to InkGeometry.segments(it) }
+            geometry = geometryCache.update(strokes)
+            inkNodeStale = true
         }
         invalidate()
     }
@@ -108,16 +121,56 @@ internal class InkPageView(context: Context) : View(context) {
         panY = panY.coerceIn(-maxPan(pageHeight, height), maxPan(pageHeight, height))
         pageRect.set((width - pageWidth) / 2f + panX, (height - pageHeight) / 2f + panY, (width + pageWidth) / 2f + panX, (height + pageHeight) / 2f + panY)
         canvas.drawBitmap(bitmap, null, pageRect, bitmapPaint)
+        val cached = canvas.isHardwareAccelerated
+        if (cached) drawCommittedInk(canvas, page, scale)
         canvas.save()
         canvas.clipRect(pageRect)
         canvas.translate(pageRect.left, pageRect.top)
         canvas.scale(scale, scale)
-        for ((stroke, segments) in geometry) drawInk(canvas, stroke, segments)
-        if (points.isNotEmpty()) {
-            val stroke = InkStroke(points, activeColor, activeWidth)
-            drawInk(canvas, stroke, InkGeometry.segments(stroke))
+        if (!cached) drawStrokes(canvas)
+        liveStroke?.let { live ->
+            drawInk(canvas, activeColor, live.settled)
+            drawInk(canvas, activeColor, live.tail)
         }
         canvas.restore()
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        inkNode.discardDisplayList()
+        inkLayer.discardDisplayList()
+        inkNodeStale = true
+    }
+
+    private fun drawCommittedInk(canvas: Canvas, page: PageSpec, scale: Float) {
+        val rerecordInk = inkNodeStale || !inkNode.hasDisplayList()
+        if (rerecordInk) {
+            inkNode.setPosition(0, 0, page.displayWidth.toInt() + 1, page.displayHeight.toInt() + 1)
+            val recording = inkNode.beginRecording()
+            try { drawStrokes(recording) } finally { inkNode.endRecording() }
+            inkNodeStale = false
+        }
+        // Re-record the layer whenever its content or transform changes; otherwise
+        // HWUI reuses the rasterized layer as-is.
+        if (rerecordInk || recordedLayerRect != pageRect || !inkLayer.hasDisplayList() ||
+            inkLayer.width != width || inkLayer.height != height) {
+            inkLayer.setPosition(0, 0, width, height)
+            val recording = inkLayer.beginRecording()
+            try {
+                recording.clipRect(pageRect)
+                recording.translate(pageRect.left, pageRect.top)
+                recording.scale(scale, scale)
+                recording.drawRenderNode(inkNode)
+            } finally {
+                inkLayer.endRecording()
+            }
+            recordedLayerRect.set(pageRect)
+        }
+        canvas.drawRenderNode(inkLayer)
+    }
+
+    private fun drawStrokes(canvas: Canvas) {
+        for (index in strokes.indices) drawInk(canvas, strokes[index].color, geometry[index])
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -187,7 +240,10 @@ internal class InkPageView(context: Context) : View(context) {
             val point = InkPoint((x - pageRect.left) / pageRect.width() * page.displayWidth,
                 (y - pageRect.top) / pageRect.height() * page.displayHeight,
                 if (event.getToolType(index) == MotionEvent.TOOL_TYPE_STYLUS) pressure else TOUCH_PRESSURE)
-            if (point.x.isFinite() && point.y.isFinite()) points.add(point)
+            if (point.x.isFinite() && point.y.isFinite()) {
+                points.add(point)
+                (liveStroke ?: InkStrokeBuilder(activeWidth).also { liveStroke = it }).add(point)
+            }
         }
         // Historical samples retain curves during fast writing and batched input.
         for (history in 0 until event.historySize) {
@@ -199,19 +255,22 @@ internal class InkPageView(context: Context) : View(context) {
 
     private fun finishStroke() {
         val stroke = InkStroke(points.toList(), activeColor, activeWidth)
+        // The live builder already smoothed these exact samples.
+        liveStroke?.let { geometryCache.seed(stroke, it.segments()) }
         cancelStroke()
         onStroke(stroke)
     }
 
     private fun cancelStroke() {
         points = mutableListOf()
+        liveStroke = null
         activePointer = NO_POINTER
         parent?.requestDisallowInterceptTouchEvent(false)
         invalidate()
     }
 
-    private fun drawInk(canvas: Canvas, stroke: InkStroke, segments: List<InkSegment>) {
-        paint.color = stroke.color
+    private fun drawInk(canvas: Canvas, color: Int, segments: List<InkSegment>) {
+        paint.color = color
         for (segment in segments) {
             paint.strokeWidth = segment.width
             val start = segment.start

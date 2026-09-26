@@ -14,6 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
@@ -47,6 +48,27 @@ class InkPageViewTest {
         send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 120f, 120f)))
         send(view, MotionEvent.ACTION_CANCEL, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 180f, 180f)))
         assertTrue(strokes.isEmpty())
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun committedAndLiveInkRenderInSoftware() {
+        val strokes = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, strokes)
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f)))
+        assertTrue("Live stroke is drawn before it is committed", darkPixelsNear(view, 200, 300))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 350f, 300f)))
+        val committed = strokes.single()
+        view.show(EditorState(Draft(File("test.pdf"), "test.pdf", ink = mapOf(0 to listOf(committed))), listOf(PageSpec(0f, 0f, 400f, 600f, 0)), page, busy = false))
+        assertTrue("Committed stroke is drawn", darkPixelsNear(view, 300, 300))
+    }
+
+    private val page: Bitmap = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
+
+    private fun darkPixelsNear(view: InkPageView, x: Int, y: Int): Boolean {
+        val image = Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(image))
+        return (-3..3).any { dy -> Color.red(image.getPixel(x, y + dy)) < 128 }
     }
 
     private fun pageView(mode: InputMode, strokes: MutableList<InkStroke>): InkPageView {
