@@ -19,6 +19,7 @@ import ch.lkmc.asterinked.document.PageSpec
 import ch.lkmc.asterinked.document.toProblem
 import ch.lkmc.asterinked.ink.InkHistory
 import ch.lkmc.asterinked.ink.InkStroke
+import java.io.File
 import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.concurrent.ExecutorService
@@ -36,6 +37,8 @@ internal data class EditorState(
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
     val message: String? = null,
+    /** An annotated copy ready for the share sheet; acknowledge once handed over. */
+    val shared: File? = null,
 )
 
 internal class EditorViewModel internal constructor(
@@ -138,6 +141,20 @@ internal class EditorViewModel internal constructor(
         perform({ service.export(draft, uri); service.saveDraft(saved) }) {
             publish(current.copy(draft = saved, busy = false, message = text(R.string.pdf_saved)))
         }
+    }
+
+    /**
+     * Builds an annotated copy to share. Sharing does not count as exporting:
+     * the notes stay marked unexported until they are saved to a file.
+     */
+    fun share() {
+        val draft = current.draft ?: return
+        if (current.busy) return
+        perform({ service.share(draft) }) { publish(current.copy(busy = false, shared = it)) }
+    }
+
+    fun acknowledgeShare() {
+        publish(current.copy(shared = null))
     }
 
     fun acknowledgeMessage() {

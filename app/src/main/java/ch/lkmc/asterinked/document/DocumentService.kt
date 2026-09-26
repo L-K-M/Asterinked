@@ -6,6 +6,7 @@ import android.net.Uri
 import android.util.LruCache
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import java.io.File
+import java.util.UUID
 
 internal data class OpenDocument(val draft: Draft, val pages: List<PageSpec>, val preview: Bitmap)
 
@@ -23,6 +24,9 @@ internal interface DocumentOperations {
     fun cachedPreview(draft: Draft): Bitmap?
     fun saveDraft(draft: Draft)
     fun export(draft: Draft, destination: Uri)
+
+    /** Writes an annotated copy for the share sheet and returns it. */
+    fun share(draft: Draft): File
     fun close()
 }
 
@@ -75,6 +79,25 @@ internal class DocumentService(context: Context) : DocumentOperations {
         engine.close()
     }
 
+    /**
+     * Builds an annotated copy for the share sheet under cache/shared/, in its own
+     * folder so it keeps the document's name. Starting a new share deletes the
+     * previous copies; a recipient that has not read its copy by then loses it.
+     */
+    override fun share(draft: Draft): File = during(DocumentProblem.EXPORT_FAILED) {
+        val shared = File(cache, SHARED_DIRECTORY)
+        shared.deleteRecursively()
+        val folder = File(shared, UUID.randomUUID().toString()).apply { mkdirs() }
+        val output = File(folder, draft.exportName)
+        try {
+            engine.export(draft.source, output, draft.ink)
+            output
+        } catch (error: Exception) {
+            folder.deleteRecursively()
+            throw error
+        }
+    }
+
     override fun export(draft: Draft, destination: Uri) {
         val output = File.createTempFile("annotated-", ".pdf", cache)
         try {
@@ -101,7 +124,9 @@ internal class DocumentService(context: Context) : DocumentOperations {
         throw DocumentException(DocumentProblem.OUT_OF_MEMORY, error)
     }
 
-    private companion object {
-        const val PREVIEW_HEAP_SHARE = 6
+    companion object {
+        /** Matches the cache-path in res/xml/shared_files.xml. */
+        const val SHARED_DIRECTORY = "shared"
+        private const val PREVIEW_HEAP_SHARE = 6
     }
 }

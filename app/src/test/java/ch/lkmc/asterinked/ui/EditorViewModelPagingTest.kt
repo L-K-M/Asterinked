@@ -153,6 +153,7 @@ class EditorViewModelPagingTest {
 
         override fun open(uri: Uri): OpenDocument = throw UnsupportedOperationException()
         override fun export(draft: Draft, destination: Uri) = throw UnsupportedOperationException()
+        override fun share(draft: Draft): File = throw UnsupportedOperationException()
         override fun close() = Unit
     }
 }
