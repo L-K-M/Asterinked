@@ -1,0 +1,18 @@
+[versions]
+agp = "9.3.2"
+activity = "1.13.0"
+lifecycle = "2.11.0"
+pdfbox = "2.0.27.0"
+junit = "4.13.2"
+robolectric = "4.16.1"
+
+[libraries]
+activity = { module = "androidx.activity:activity-ktx", version.ref = "activity" }
+lifecycle = { module = "androidx.lifecycle:lifecycle-viewmodel-ktx", version.ref = "lifecycle" }
+livedata = { module = "androidx.lifecycle:lifecycle-livedata-ktx", version.ref = "lifecycle" }
+pdfbox = { module = "com.tom-roush:pdfbox-android", version.ref = "pdfbox" }
+junit = { module = "junit:junit", version.ref = "junit" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
