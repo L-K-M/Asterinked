@@ -22,7 +22,11 @@ scripts/build.sh --debug                              # debug APK -> dist/
 scripts/install.sh                                    # build + install + launch on a device
 python3 -m pip install -r scripts/pdf-test-requirements.txt
 python3 scripts/verify_pdf.py                         # PDFium re-render of test exports
+python3 scripts/generate_launcher_icon.py             # launcher icon from media-sources/icon.png
 ```
+
+The adaptive icon's foreground webp files are generated; regenerate them from
+`media-sources/icon.png` instead of editing them by hand.
 
 - JDK 17. Android SDK via `ANDROID_HOME` or `sdk.dir` in `local.properties`.
 - Versions are pinned ONLY in `gradle/libs.versions.toml`. Never add an ad-hoc

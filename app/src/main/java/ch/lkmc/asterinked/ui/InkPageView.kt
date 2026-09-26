@@ -44,7 +44,11 @@ internal class InkPageView(context: Context) : View(context) {
         blendMode = BlendMode.MULTIPLY
     }
     private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG)
-    private val blankPagePaint = Paint().apply { color = Color.WHITE }
+    private val pageShadow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        val density = resources.displayMetrics.density
+        setShadowLayer(SHADOW_RADIUS_DP * density, 0f, SHADOW_OFFSET_DP * density, SHADOW_COLOR)
+    }
     private val pageRect = RectF()
     private var preview: Bitmap? = null
     private var spec: PageSpec? = null
@@ -141,7 +145,7 @@ internal class InkPageView(context: Context) : View(context) {
     })
 
     init {
-        setBackgroundColor(Color.rgb(232, 235, 231))
+        setBackgroundColor(Color.rgb(232, 236, 243))
         contentDescription = "PDF page. Write with a pen. Pinch to zoom; drag with a finger to pan."
         isFocusable = true
     }
@@ -208,8 +212,8 @@ internal class InkPageView(context: Context) : View(context) {
         clampPan()
         pageRect.set((width - pageWidth) / 2f + panX, (height - pageHeight) / 2f + panY, (width + pageWidth) / 2f + panX, (height + pageHeight) / 2f + panY)
         // A page still rendering is drawn blank so its ink and the pen work at once.
-        val bitmap = preview
-        if (bitmap != null) canvas.drawBitmap(bitmap, null, pageRect, bitmapPaint) else canvas.drawRect(pageRect, blankPagePaint)
+        canvas.drawRect(pageRect, pageShadow)
+        preview?.let { canvas.drawBitmap(it, null, pageRect, bitmapPaint) }
         val cached = canvas.isHardwareAccelerated
         if (cached) {
             // Multiply needs the page underneath, which the transparent pen layer
@@ -544,5 +548,8 @@ internal class InkPageView(context: Context) : View(context) {
         const val ERASER_RADIUS_DP = 10f
         // Most pens report the side button as primary; older S Pens report secondary.
         const val STYLUS_BUTTONS = MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_SECONDARY
+        const val SHADOW_RADIUS_DP = 6f
+        const val SHADOW_OFFSET_DP = 1.5f
+        val SHADOW_COLOR = Color.argb(56, 30, 40, 60)
     }
 }
