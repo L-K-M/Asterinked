@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import java.io.File
+import java.util.UUID
 
 internal data class OpenDocument(val draft: Draft, val pages: List<PageSpec>, val preview: Bitmap)
 
@@ -42,6 +43,25 @@ internal class DocumentService(context: Context) {
 
     fun saveDraft(draft: Draft) = store.saveDraft(draft)
 
+    /**
+     * Builds an annotated copy for the share sheet under cache/shared/, in its own
+     * folder so it keeps the document's name. Starting a new share deletes the
+     * previous copies; a recipient that has not read its copy by then loses it.
+     */
+    fun share(draft: Draft): File {
+        val shared = File(cache, SHARED_DIRECTORY)
+        shared.deleteRecursively()
+        val folder = File(shared, UUID.randomUUID().toString()).apply { mkdirs() }
+        val output = File(folder, draft.exportName)
+        try {
+            engine.export(draft.source, output, draft.ink)
+            return output
+        } catch (error: Exception) {
+            folder.deleteRecursively()
+            throw error
+        }
+    }
+
     fun export(draft: Draft, destination: Uri) {
         val output = File.createTempFile("annotated-", ".pdf", cache)
         try {
@@ -51,5 +71,10 @@ internal class DocumentService(context: Context) {
         } finally {
             output.delete()
         }
+    }
+
+    companion object {
+        /** Matches the cache-path in res/xml/shared_files.xml. */
+        const val SHARED_DIRECTORY = "shared"
     }
 }

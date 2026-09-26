@@ -20,6 +20,17 @@ internal data class Draft(
     val savedInk: Map<Int, List<InkStroke>> = emptyMap(),
 ) {
     val dirty: Boolean get() = ink.filterValues { it.isNotEmpty() } != savedInk.filterValues { it.isNotEmpty() }
+
+    /** File name for an exported copy: "Report.pdf" becomes "Report-annotated.pdf", once. */
+    val exportName: String get() {
+        val base = name.replace(PDF_EXTENSION, "")
+        return if (base.endsWith(ANNOTATED_SUFFIX)) "$base.pdf" else "$base$ANNOTATED_SUFFIX.pdf"
+    }
+
+    private companion object {
+        val PDF_EXTENSION = Regex("(?i)\\.pdf$")
+        const val ANNOTATED_SUFFIX = "-annotated"
+    }
 }
 
 internal class DocumentStore(context: Context) {

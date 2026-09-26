@@ -2,7 +2,11 @@ package ch.lkmc.asterinked.ui
 
 import android.app.AlertDialog
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ComponentName
+import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -14,9 +18,13 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.core.content.FileProvider
+import androidx.core.content.IntentCompat
+import androidx.core.os.BundleCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import ch.lkmc.asterinked.R
+import java.io.File
 
 internal class MainActivity : ComponentActivity() {
     private val model: EditorViewModel by viewModels()
@@ -28,6 +36,7 @@ internal class MainActivity : ComponentActivity() {
     private lateinit var welcome: LinearLayout
     private lateinit var open: Button
     private lateinit var save: Button
+    private lateinit var share: Button
     private lateinit var undo: Button
     private lateinit var redo: Button
     private lateinit var previous: Button
@@ -39,6 +48,9 @@ internal class MainActivity : ComponentActivity() {
     private var mode = InputMode.PEN
     private var colorIndex = 0
     private var widthIndex = 1
+    // A PDF handed over by another app, waiting until the editor is idle so the
+    // unsaved-notes check sees the restored draft.
+    private var incoming: Uri? = null
 
     private val openPdf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(model::open)
@@ -46,21 +58,37 @@ internal class MainActivity : ComponentActivity() {
     private val savePdf = registerForActivityResult(ActivityResultContracts.CreateDocument(PDF_MIME)) { uri ->
         uri?.let(model::export)
     }
+    private var confirming: AlertDialog? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         colorIndex = savedInstanceState?.getInt(COLOR_KEY)?.coerceIn(COLORS.indices) ?: 0
         widthIndex = savedInstanceState?.getInt(WIDTH_KEY)?.coerceIn(WIDTHS.indices) ?: 1
         mode = savedInstanceState?.getString(MODE_KEY)?.let { InputMode.valueOf(it) } ?: InputMode.PEN
+        incoming = savedInstanceState?.let { BundleCompat.getParcelable(it, INCOMING_KEY, Uri::class.java) }
         buildLayout()
         configurePen()
+        if (savedInstanceState == null) receive(intent)
         model.state.observe(this, ::show)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        receive(intent)
+        model.state.value?.let(::show)
+    }
+
+    override fun onDestroy() {
+        confirming?.dismiss()
+        super.onDestroy()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putInt(COLOR_KEY, colorIndex)
         outState.putInt(WIDTH_KEY, widthIndex)
         outState.putString(MODE_KEY, mode.name)
+        incoming?.let { outState.putParcelable(INCOMING_KEY, it) }
         super.onSaveInstanceState(outState)
     }
 
@@ -83,6 +111,7 @@ internal class MainActivity : ComponentActivity() {
         val actions = row()
         open = button(R.string.open_pdf, actions) { requestOpen() }
         save = button(R.string.save_copy, actions) { launchPicker { savePdf.launch(exportName()) } }
+        share = button(R.string.share, actions, model::share)
         undo = button(R.string.undo, actions, model::undo)
         redo = button(R.string.redo, actions, model::redo)
         root.addView(scroll(actions))
@@ -153,6 +182,7 @@ internal class MainActivity : ComponentActivity() {
         title.text = draft?.name ?: getString(R.string.app_name)
         open.isEnabled = !state.busy
         save.isEnabled = ready
+        share.isEnabled = ready
         undo.isEnabled = ready && !draft?.ink?.get(draft.page).isNullOrEmpty()
         redo.isEnabled = ready && state.canRedo
         previous.isEnabled = ready && draft!!.page > 0
@@ -171,25 +201,64 @@ internal class MainActivity : ComponentActivity() {
             Toast.makeText(this, it, Toast.LENGTH_LONG).show()
             model.acknowledgeMessage()
         }
+        state.shared?.let {
+            model.acknowledgeShare()
+            sendToShareSheet(it)
+        }
+        // Cleared only once the user decides, so a rotation during the prompt asks again.
+        val uri = incoming
+        if (uri != null && !state.busy && confirming == null) {
+            confirmReplacing(keep = { incoming = null }) {
+                incoming = null
+                model.open(uri)
+            }
+        }
+    }
+
+    // VIEW carries the PDF as data, SEND as a stream extra. A task relaunched from
+    // Recents replays its original intent, whose read grant has usually expired.
+    private fun receive(intent: Intent) {
+        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        incoming = when (intent.action) {
+            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+            else -> null
+        } ?: incoming
     }
 
     private fun requestOpen() {
         if (model.state.value?.busy != false) return
+        confirmReplacing { launchPicker { openPdf.launch(arrayOf(PDF_MIME)) } }
+    }
+
+    private fun confirmReplacing(keep: () -> Unit = {}, open: () -> Unit) {
         if (model.state.value?.draft?.dirty != true) {
-            launchPicker { openPdf.launch(arrayOf(PDF_MIME)) }
+            open()
             return
         }
-        AlertDialog.Builder(this)
+        confirming = AlertDialog.Builder(this)
             .setTitle(R.string.open_another).setMessage(R.string.unsaved_prompt)
-            .setNegativeButton(R.string.keep_editing, null)
-            .setPositiveButton(R.string.open_anyway) { _, _ -> launchPicker { openPdf.launch(arrayOf(PDF_MIME)) } }
+            .setNegativeButton(R.string.keep_editing) { _, _ -> keep() }
+            .setPositiveButton(R.string.open_anyway) { _, _ -> open() }
+            .setOnCancelListener { keep() }
+            .setOnDismissListener { confirming = null }
             .show()
     }
 
-    private fun exportName(): String {
-        val original = model.state.value?.draft?.name ?: "Document.pdf"
-        return original.replace(Regex("(?i)\\.pdf$"), "") + "-annotated.pdf"
+    private fun sendToShareSheet(file: File) {
+        val uri = FileProvider.getUriForFile(this, "$packageName$FILE_AUTHORITY_SUFFIX", file)
+        val send = Intent(Intent.ACTION_SEND)
+            .setType(PDF_MIME)
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        // Explicit ClipData carries the read grant through the chooser on every version.
+        send.clipData = ClipData.newRawUri(file.name, uri)
+        val chooser = Intent.createChooser(send, getString(R.string.share_title))
+            .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(ComponentName(this, MainActivity::class.java)))
+        launchPicker { startActivity(chooser) }
     }
+
+    private fun exportName(): String = model.state.value?.draft?.exportName ?: DEFAULT_EXPORT_NAME
 
     private fun launchPicker(action: () -> Unit) {
         try { action() } catch (_: ActivityNotFoundException) {
@@ -215,6 +284,10 @@ internal class MainActivity : ComponentActivity() {
         const val COLOR_KEY = "penColor"
         const val WIDTH_KEY = "penWidth"
         const val MODE_KEY = "inputMode"
+        const val INCOMING_KEY = "incomingPdf"
+        // Matches android:authorities="${'$'}{applicationId}.files" in the manifest.
+        const val FILE_AUTHORITY_SUFFIX = ".files"
+        const val DEFAULT_EXPORT_NAME = "Document-annotated.pdf"
         const val MATCH = LinearLayout.LayoutParams.MATCH_PARENT
         const val WRAP = LinearLayout.LayoutParams.WRAP_CONTENT
         val PAPER_COLOR = Color.rgb(248, 247, 242)
