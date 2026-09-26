@@ -31,7 +31,8 @@ internal class DocumentService(context: Context) : DocumentOperations {
     private val engine = PdfEngine(context.cacheDir)
     private val cache = context.cacheDir
     // A preview is ~13 MB. A sixth of the heap holds the visible page and both
-    // neighbours on typical devices, and fewer on small heaps.
+    // neighbours with a 256 MB heap, and only the most recent preview with 128 MB.
+    // Below about 80 MB nothing fits: pages still render, but prefetch is wasted.
     private val previews = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / PREVIEW_HEAP_SHARE).toInt()) {
         override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
     }

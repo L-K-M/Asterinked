@@ -171,9 +171,11 @@ internal class EditorViewModel internal constructor(
     }
 
     // Renders the neighbours into the service's cache so the next turn is instant.
-    // Failures stay silent here; they surface if the user actually visits the page.
+    // The next page goes last: in a cache with room for one preview it is the one
+    // that survives, and turning forward is the common case. Failures stay silent
+    // here; they surface if the user actually visits the page.
     private fun prefetchAround(draft: Draft) {
-        for (page in listOf(draft.page + 1, draft.page - 1)) {
+        for (page in listOf(draft.page - 1, draft.page + 1)) {
             if (page !in current.pages.indices) continue
             worker.execute {
                 if (abs(page - visiblePage.get()) <= 1) runCatching { service.render(draft.copy(page = page)) }
