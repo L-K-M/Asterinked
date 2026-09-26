@@ -54,13 +54,16 @@ internal class DocumentService(context: Context) {
         }
     }
 
-    // Tags failures with the step that was running; OutOfMemoryError is caught
-    // too because a single oversized page or bitmap is recoverable here.
+    // Tags failures with the step that was running. Two errors are recoverable
+    // here too: OutOfMemoryError from a single oversized page or bitmap, and
+    // StackOverflowError from PDFBox's recursive parser on a deeply nested file.
     private inline fun <T> during(stage: DocumentProblem, work: () -> T): T = try {
         work()
     } catch (error: Exception) {
         throw DocumentException(error.toProblem(stage), error)
     } catch (error: OutOfMemoryError) {
         throw DocumentException(DocumentProblem.OUT_OF_MEMORY, error)
+    } catch (error: StackOverflowError) {
+        throw DocumentException(stage, error)
     }
 }
