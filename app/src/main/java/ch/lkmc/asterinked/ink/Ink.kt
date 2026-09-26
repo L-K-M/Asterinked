@@ -5,7 +5,14 @@ import kotlin.math.ceil
 import kotlin.math.hypot
 
 internal data class InkPoint(val x: Float, val y: Float, val pressure: Float)
-internal data class InkStroke(val points: List<InkPoint>, val color: Int, val width: Float)
+
+/**
+ * How a stroke is drawn. A pen tapers with pressure. A highlighter keeps its full
+ * width and multiplies its colour with the page, so text underneath stays readable.
+ */
+internal enum class InkKind { PEN, HIGHLIGHTER }
+
+internal data class InkStroke(val points: List<InkPoint>, val color: Int, val width: Float, val kind: InkKind = InkKind.PEN)
 internal data class InkSegment(val start: InkPoint, val end: InkPoint, val width: Float)
 
 internal object InkGeometry {
@@ -18,6 +25,16 @@ internal object InkGeometry {
         val builder = InkStrokeBuilder(stroke.width)
         stroke.points.forEach(builder::add)
         return builder.segments()
+    }
+
+    /**
+     * The smoothed centerline of a stroke: the same curve as [segments], as one
+     * polyline. Highlighter strokes are drawn along it at constant width.
+     */
+    fun centerline(stroke: InkStroke): List<InkPoint> {
+        val segments = segments(stroke)
+        if (segments.isEmpty()) return emptyList()
+        return listOf(segments.first().start) + segments.map { it.end }
     }
 
     internal fun sanitize(point: InkPoint): InkPoint? {

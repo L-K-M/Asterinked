@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.AtomicFile
+import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import org.json.JSONArray
@@ -81,7 +82,10 @@ internal class DocumentStore(context: Context) {
                 for (stroke in strokes) {
                     put(JSONObject().put("color", stroke.color).put("width", stroke.width).put("points", JSONArray().apply {
                         for (point in stroke.points) put(JSONArray(listOf(point.x, point.y, point.pressure)))
-                    }))
+                    }).apply {
+                        // Pen strokes omit the key, so drafts stay readable by older versions.
+                        if (stroke.kind != InkKind.PEN) put(KIND_KEY, stroke.kind.name.lowercase())
+                    })
                 }
             })
         }
@@ -95,7 +99,14 @@ internal class DocumentStore(context: Context) {
             InkStroke(List(points.length()) { pointIndex ->
                 val point = points.getJSONArray(pointIndex)
                 InkPoint(point.getDouble(0).toFloat(), point.getDouble(1).toFloat(), point.getDouble(2).toFloat())
-            }, stroke.getInt("color"), stroke.getDouble("width").toFloat())
+            }, stroke.getInt("color"), stroke.getDouble("width").toFloat(), kindOf(stroke.optString(KIND_KEY)))
         }
+    }
+
+    // Unknown kinds (from a newer version) fall back to pen rather than losing the stroke.
+    private fun kindOf(name: String): InkKind = InkKind.entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: InkKind.PEN
+
+    private companion object {
+        const val KIND_KEY = "kind"
     }
 }

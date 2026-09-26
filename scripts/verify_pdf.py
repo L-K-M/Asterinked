@@ -9,7 +9,9 @@ FIXTURES = Path(__file__).resolve().parents[1] / "app/build/test-output/raster-p
 ROTATIONS = (0, 90, 180, 270)
 # Fixture name -> page rotation. "encrypted" opens without a password but
 # forbids printing; its export must stay encrypted with the same restriction.
-CASES = [(str(rotation), rotation) for rotation in ROTATIONS] + [("encrypted", 0)]
+# "highlight" adds a highlighter stroke across the text line; multiply
+# blending must keep the text dark under it.
+CASES = [(str(rotation), rotation) for rotation in ROTATIONS] + [("encrypted", 0), ("highlight", 0)]
 NOT_ENCRYPTED = -1
 PRINT_PERMISSION = 1 << 2
 INK_POSITION = (0.23, 0.31)
@@ -60,11 +62,14 @@ for name, rotation in CASES:
     # Asymmetric placement catches errors hidden by a center probe.
     red = []
     dark = []
+    yellow = []
     for y in range(exported.height):
         for x in range(exported.width):
             r, g, b = exported.getpixel((x, y))
             if r > 150 and g < COLOR_THRESHOLD and b < COLOR_THRESHOLD:
                 red.append((x, y))
+            if r > 200 and g > 180 and b < 140:
+                yellow.append((x, y))
             if max(original.getpixel((x, y))) < COLOR_THRESHOLD:
                 dark.append((x, y))
 
@@ -75,6 +80,8 @@ for name, rotation in CASES:
     expected_y = INK_POSITION[1] * exported.height
     assert abs(actual_x - expected_x) <= POSITION_TOLERANCE, (name, actual_x, expected_x)
     assert abs(actual_y - expected_y) <= POSITION_TOLERANCE, (name, actual_y, expected_y)
+    # For "highlight" this also proves multiply blending: text under the marker stays dark.
     assert dark and all(max(exported.getpixel(pixel)) < COLOR_THRESHOLD for pixel in dark), f"Artwork changed in {name}"
+    assert bool(yellow) == (name == "highlight"), f"Highlight presence wrong in {name}"
     exported.save(FIXTURES / f"export-{name}.png")
     print(f"{name}: ink aligned; text and artwork preserved")

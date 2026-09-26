@@ -18,6 +18,7 @@ import androidx.activity.viewModels
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import ch.lkmc.asterinked.R
+import ch.lkmc.asterinked.ink.InkKind
 
 internal class MainActivity : ComponentActivity() {
     private val model: EditorViewModel by viewModels()
@@ -34,12 +35,14 @@ internal class MainActivity : ComponentActivity() {
     private lateinit var previous: Button
     private lateinit var next: Button
     private lateinit var input: Button
+    private lateinit var highlight: Button
     private lateinit var color: Button
     private lateinit var thickness: Button
     private lateinit var eraser: Button
     private lateinit var fit: Button
     private var mode = InputMode.PEN
     private var tool = InkTool.PEN
+    private var kind = InkKind.PEN
     private var colorIndex = 0
     private var widthIndex = 1
 
@@ -56,6 +59,7 @@ internal class MainActivity : ComponentActivity() {
         widthIndex = savedInstanceState?.getInt(WIDTH_KEY)?.coerceIn(WIDTHS.indices) ?: 1
         mode = savedInstanceState?.getString(MODE_KEY)?.let { InputMode.valueOf(it) } ?: InputMode.PEN
         tool = savedInstanceState?.getString(TOOL_KEY)?.let { InkTool.valueOf(it) } ?: InkTool.PEN
+        kind = savedInstanceState?.getString(KIND_KEY)?.let { InkKind.valueOf(it) } ?: InkKind.PEN
         buildLayout()
         configurePen()
         model.state.observe(this, ::show)
@@ -66,6 +70,7 @@ internal class MainActivity : ComponentActivity() {
         outState.putInt(WIDTH_KEY, widthIndex)
         outState.putString(MODE_KEY, mode.name)
         outState.putString(TOOL_KEY, tool.name)
+        outState.putString(KIND_KEY, kind.name)
         super.onSaveInstanceState(outState)
     }
 
@@ -97,9 +102,13 @@ internal class MainActivity : ComponentActivity() {
             mode = if (mode == InputMode.PEN) InputMode.TOUCH else InputMode.PEN
             configurePen()
         }
+        highlight = button(R.string.highlighter, tools) {
+            kind = if (kind == InkKind.HIGHLIGHTER) InkKind.PEN else InkKind.HIGHLIGHTER
+            configurePen()
+        }
         color = button(COLOR_NAMES[colorIndex], tools) {
             AlertDialog.Builder(this).setTitle(R.string.color_label)
-                .setSingleChoiceItems(COLOR_NAMES.map(::getString).toTypedArray(), colorIndex) { dialog, index ->
+                .setSingleChoiceItems(colorNames().map(::getString).toTypedArray(), colorIndex) { dialog, index ->
                     colorIndex = index
                     configurePen()
                     dialog.dismiss()
@@ -149,12 +158,18 @@ internal class MainActivity : ComponentActivity() {
     }
 
     private fun configurePen() {
+        val highlighting = kind == InkKind.HIGHLIGHTER
+        // The same colour and width choices pick a highlighter tint and a line-height width.
+        val inkColor = (if (highlighting) HIGHLIGHT_COLORS else COLORS)[colorIndex]
+        val inkWidth = (if (highlighting) HIGHLIGHT_WIDTHS else WIDTHS)[widthIndex]
         input.setText(if (mode == InputMode.PEN) R.string.pen_only else R.string.touch_ink)
-        color.setText(COLOR_NAMES[colorIndex])
+        color.setText(colorNames()[colorIndex])
         color.setTextColor(COLORS[colorIndex])
         thickness.setText(WIDTH_NAMES[widthIndex])
+        highlight.backgroundTintList = if (highlighting) ColorStateList.valueOf(HIGHLIGHT_COLORS[colorIndex]) else null
         hint.setText(when {
             tool == InkTool.ERASER -> R.string.eraser_hint
+            highlighting -> R.string.highlight_hint
             mode == InputMode.PEN -> R.string.input_hint
             else -> R.string.touch_hint
         })
@@ -162,9 +177,11 @@ internal class MainActivity : ComponentActivity() {
         // disabled state still greys the label.
         eraser.isActivated = tool == InkTool.ERASER
         eraser.backgroundTintList = if (tool == InkTool.ERASER) ColorStateList.valueOf(ACTIVE_TOOL_COLOR) else null
-        page.configure(mode, COLORS[colorIndex], WIDTHS[widthIndex], model::addStroke)
+        page.configure(mode, inkColor, inkWidth, kind, model::addStroke)
         page.tool = tool
     }
+
+    private fun colorNames() = if (kind == InkKind.HIGHLIGHTER) HIGHLIGHT_NAMES else COLOR_NAMES
 
     private fun show(state: EditorState) {
         val draft = state.draft
@@ -176,7 +193,7 @@ internal class MainActivity : ComponentActivity() {
         redo.isEnabled = ready && state.canRedo
         previous.isEnabled = ready && draft!!.page > 0
         next.isEnabled = ready && draft!!.page < state.pages.lastIndex
-        listOf(input, color, thickness, eraser, fit).forEach { it.isEnabled = ready }
+        listOf(input, highlight, color, thickness, eraser, fit).forEach { it.isEnabled = ready }
         welcome.visibility = if (draft == null) View.VISIBLE else View.GONE
         counter.text = if (draft == null) "" else getString(R.string.page_count, draft.page + 1, state.pages.size)
         status.text = when {
@@ -239,6 +256,7 @@ internal class MainActivity : ComponentActivity() {
         const val WIDTH_KEY = "penWidth"
         const val MODE_KEY = "inputMode"
         const val TOOL_KEY = "inkTool"
+        const val KIND_KEY = "inkKind"
         const val MATCH = LinearLayout.LayoutParams.MATCH_PARENT
         const val WRAP = LinearLayout.LayoutParams.WRAP_CONTENT
         val PAPER_COLOR = Color.rgb(248, 247, 242)
@@ -248,5 +266,9 @@ internal class MainActivity : ComponentActivity() {
         val COLOR_NAMES = intArrayOf(R.string.black, R.string.blue, R.string.red, R.string.green)
         val WIDTHS = floatArrayOf(1.2f, 2.2f, 4f)
         val WIDTH_NAMES = intArrayOf(R.string.fine, R.string.medium, R.string.bold)
+        // Light tints: multiplied with the page they mark text without hiding it.
+        val HIGHLIGHT_COLORS = intArrayOf(Color.rgb(255, 228, 92), Color.rgb(159, 211, 255), Color.rgb(255, 168, 207), Color.rgb(168, 235, 158))
+        val HIGHLIGHT_NAMES = intArrayOf(R.string.yellow, R.string.blue, R.string.pink, R.string.green)
+        val HIGHLIGHT_WIDTHS = floatArrayOf(8f, 12f, 18f)
     }
 }

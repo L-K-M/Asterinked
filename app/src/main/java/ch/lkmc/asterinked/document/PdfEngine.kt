@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import ch.lkmc.asterinked.ink.InkGeometry
+import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkStroke
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
@@ -12,6 +13,8 @@ import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
+import com.tom_roush.pdfbox.pdmodel.graphics.blend.BlendMode
+import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
 import com.tom_roush.pdfbox.util.Matrix
 import java.io.File
 import java.util.UUID
@@ -113,6 +116,10 @@ internal class PdfEngine(private val scratchDirectory: File) {
                     for (stroke in strokes) {
                         stream.setStrokingColor(Color.red(stroke.color), Color.green(stroke.color), Color.blue(stroke.color))
                         stream.setNonStrokingColor(Color.red(stroke.color), Color.green(stroke.color), Color.blue(stroke.color))
+                        if (stroke.kind == InkKind.HIGHLIGHTER) {
+                            highlight(stream, stroke)
+                            continue
+                        }
                         for (segment in InkGeometry.segments(stroke)) {
                             val start = segment.start
                             val end = segment.end
@@ -155,6 +162,22 @@ internal class PdfEngine(private val scratchDirectory: File) {
     }
 
     private fun supportedKeyLength(bits: Int): Int = SUPPORTED_KEY_LENGTHS.firstOrNull { bits <= it } ?: SUPPORTED_KEY_LENGTHS.last()
+
+    // One constant-width path multiplied onto the page, as on screen: text under it
+    // stays dark, and the stroke never darkens where its own segments overlap.
+    private fun highlight(stream: PDPageContentStream, stroke: InkStroke) {
+        val line = InkGeometry.centerline(stroke)
+        if (line.isEmpty()) return
+        stream.saveGraphicsState()
+        stream.setGraphicsStateParameters(PDExtendedGraphicsState().apply { blendMode = BlendMode.MULTIPLY })
+        stream.setLineWidth(stroke.width)
+        stream.moveTo(line.first().x, line.first().y)
+        // A tap still leaves a round mark: a zero-length line with round caps.
+        if (line.size == 1) stream.lineTo(line.first().x, line.first().y)
+        for (point in line.drop(1)) stream.lineTo(point.x, point.y)
+        stream.stroke()
+        stream.restoreGraphicsState()
+    }
 
     private fun drawDot(stream: PDPageContentStream, x: Float, y: Float, radius: Float) {
         val handle = radius * CIRCLE_BEZIER

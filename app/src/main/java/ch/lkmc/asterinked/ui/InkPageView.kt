@@ -3,9 +3,11 @@ package ch.lkmc.asterinked.ui
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BlendMode
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.RenderNode
 import android.view.GestureDetector
@@ -15,7 +17,9 @@ import android.view.View
 import android.view.animation.DecelerateInterpolator
 import ch.lkmc.asterinked.document.PageSpec
 import ch.lkmc.asterinked.ink.InkEraser
+import ch.lkmc.asterinked.ink.InkGeometry
 import ch.lkmc.asterinked.ink.InkGeometryCache
+import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkSegment
 import ch.lkmc.asterinked.ink.InkStroke
@@ -32,6 +36,13 @@ internal enum class InkTool { PEN, ERASER }
 
 internal class InkPageView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    // Multiplying with the page keeps text under a highlight dark, like the export.
+    private val highlighter = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        blendMode = BlendMode.MULTIPLY
+    }
     private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val blankPagePaint = Paint().apply { color = Color.WHITE }
     private val pageRect = RectF()
@@ -40,6 +51,9 @@ internal class InkPageView(context: Context) : View(context) {
     private var strokes = emptyList<InkStroke>()
     private val geometryCache = InkGeometryCache()
     private var geometry = emptyList<List<InkSegment>>()
+    // Highlights are few and multiplied with the page, so they are drawn directly,
+    // outside the cached pen layer; their paths are cached per stroke instance.
+    private var highlightPaths = IdentityHashMap<InkStroke, Path>()
     private var points = mutableListOf<InkPoint>()
     private var liveStroke: InkStrokeBuilder? = null
     // Committed ink is recorded once per edit (page units) and replayed under the
@@ -58,6 +72,7 @@ internal class InkPageView(context: Context) : View(context) {
     private var activePointer = NO_POINTER
     private var activeColor = Color.BLACK
     private var activeWidth = DEFAULT_WIDTH
+    private var activeKind = InkKind.PEN
     private var pageKey: String? = null
     private var documentKey: String? = null
     private var zoom = 1f
@@ -72,6 +87,7 @@ internal class InkPageView(context: Context) : View(context) {
     private var inputMode = InputMode.PEN
     private var inkColor = Color.rgb(25, 38, 46)
     private var inkWidth = DEFAULT_WIDTH
+    private var inkKind = InkKind.PEN
     private var onStroke: (InkStroke) -> Unit = {}
     private val density = resources.displayMetrics.density
     private val pageMargin = PAGE_MARGIN_DP * density
@@ -130,11 +146,12 @@ internal class InkPageView(context: Context) : View(context) {
         isFocusable = true
     }
 
-    fun configure(mode: InputMode, color: Int, width: Float, onStroke: (InkStroke) -> Unit) {
+    fun configure(mode: InputMode, color: Int, width: Float, kind: InkKind = InkKind.PEN, onStroke: (InkStroke) -> Unit) {
         cancelStroke()
         inputMode = mode
         inkColor = color
         inkWidth = width
+        inkKind = kind
         this.onStroke = onStroke
     }
 
@@ -164,6 +181,9 @@ internal class InkPageView(context: Context) : View(context) {
         if (nextStrokes !== strokes) {
             strokes = nextStrokes
             geometry = geometryCache.update(strokes)
+            highlightPaths = IdentityHashMap<InkStroke, Path>().also { next ->
+                for (stroke in strokes) if (stroke.kind == InkKind.HIGHLIGHTER) next[stroke] = highlightPaths[stroke] ?: highlightPath(stroke)
+            }
             inkNodeStale = true
         }
         invalidate()
@@ -191,15 +211,29 @@ internal class InkPageView(context: Context) : View(context) {
         val bitmap = preview
         if (bitmap != null) canvas.drawBitmap(bitmap, null, pageRect, bitmapPaint) else canvas.drawRect(pageRect, blankPagePaint)
         val cached = canvas.isHardwareAccelerated
-        if (cached) drawCommittedInk(canvas, page, scale)
+        if (cached) {
+            // Multiply needs the page underneath, which the transparent pen layer
+            // lacks, so highlights are drawn directly and sit under all pen ink.
+            canvas.save()
+            canvas.clipRect(pageRect)
+            canvas.translate(pageRect.left, pageRect.top)
+            canvas.scale(scale, scale)
+            drawStrokes(canvas, InkKind.HIGHLIGHTER)
+            canvas.restore()
+            drawCommittedInk(canvas, page, scale)
+        }
         canvas.save()
         canvas.clipRect(pageRect)
         canvas.translate(pageRect.left, pageRect.top)
         canvas.scale(scale, scale)
         if (!cached) drawStrokes(canvas)
         liveStroke?.let { live ->
-            drawInk(canvas, activeColor, live.settled)
-            drawInk(canvas, activeColor, live.tail)
+            if (activeKind == InkKind.HIGHLIGHTER) {
+                drawHighlight(canvas, activeColor, activeWidth, highlightPath(InkStroke(points, activeColor, activeWidth, activeKind)))
+            } else {
+                drawInk(canvas, activeColor, live.settled)
+                drawInk(canvas, activeColor, live.tail)
+            }
         }
         eraserAt?.let {
             eraserRing.strokeWidth = resources.displayMetrics.density / scale
@@ -220,7 +254,7 @@ internal class InkPageView(context: Context) : View(context) {
         if (rerecordInk) {
             inkNode.setPosition(0, 0, page.displayWidth.toInt() + 1, page.displayHeight.toInt() + 1)
             val recording = inkNode.beginRecording()
-            try { drawStrokes(recording) } finally { inkNode.endRecording() }
+            try { drawStrokes(recording, InkKind.PEN) } finally { inkNode.endRecording() }
             inkNodeStale = false
         }
         // Re-record the layer whenever its content or transform changes; otherwise
@@ -243,8 +277,16 @@ internal class InkPageView(context: Context) : View(context) {
     }
 
     // Strokes under the eraser disappear at once and return if the gesture is cancelled.
-    private fun drawStrokes(canvas: Canvas) {
-        for (index in strokes.indices) if (strokes[index] !in erasing) drawInk(canvas, strokes[index].color, geometry[index])
+    // Without [only], every kind is drawn in list order (the software path).
+    private fun drawStrokes(canvas: Canvas, only: InkKind? = null) {
+        for (index in strokes.indices) {
+            val stroke = strokes[index]
+            if (stroke in erasing || (only != null && stroke.kind != only)) continue
+            when (stroke.kind) {
+                InkKind.PEN -> drawInk(canvas, stroke.color, geometry[index])
+                InkKind.HIGHLIGHTER -> drawHighlight(canvas, stroke.color, stroke.width, highlightPaths.getValue(stroke))
+            }
+        }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -290,6 +332,7 @@ internal class InkPageView(context: Context) : View(context) {
                 activePointer = event.getPointerId(index)
                 activeColor = inkColor
                 activeWidth = inkWidth
+                activeKind = inkKind
                 activeErasing = eraserEnd || tool == InkTool.ERASER || (stylus && event.buttonState and STYLUS_BUTTONS != 0)
                 if (stylus || eraserEnd) requestUnbufferedDispatch(event)
                 track(event, index)
@@ -435,7 +478,7 @@ internal class InkPageView(context: Context) : View(context) {
     }
 
     private fun finishStroke() {
-        val stroke = InkStroke(points.toList(), activeColor, activeWidth)
+        val stroke = InkStroke(points.toList(), activeColor, activeWidth, activeKind)
         // The live builder already smoothed these exact samples with this width:
         // activeWidth is fixed when a stroke starts, and configure() cancels any
         // live stroke before the pen settings change.
@@ -456,6 +499,21 @@ internal class InkPageView(context: Context) : View(context) {
         activePointer = NO_POINTER
         parent?.requestDisallowInterceptTouchEvent(false)
         invalidate()
+    }
+
+    private fun highlightPath(stroke: InkStroke): Path = Path().apply {
+        val line = InkGeometry.centerline(stroke)
+        if (line.isEmpty()) return@apply
+        moveTo(line.first().x, line.first().y)
+        // A zero-length segment with round caps keeps a tap visible.
+        lineTo(line.first().x, line.first().y)
+        for (point in line.drop(1)) lineTo(point.x, point.y)
+    }
+
+    private fun drawHighlight(canvas: Canvas, color: Int, width: Float, path: Path) {
+        highlighter.color = color
+        highlighter.strokeWidth = width
+        canvas.drawPath(path, highlighter)
     }
 
     private fun drawInk(canvas: Canvas, color: Int, segments: List<InkSegment>) {
