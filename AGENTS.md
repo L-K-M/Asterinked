@@ -144,6 +144,10 @@ and verification procedure. State any inability to reproduce the failure.
 - Validate the requested command, options, platform, and configuration.
   Unrelated green CI is not proof that the reported problem is fixed.
 - Recheck after the final edit. Distinguish local checks from CI results.
+- Gesture tests (`InkPageViewGestureTest`) assert where a stylus tap lands in
+  page units rather than reading private zoom state. `ScaleGestureDetector`
+  ignores spans under ~27mm (about 170px at the default mdpi test density),
+  so synthetic pinches need wider spans; double taps need real event times.
 
 ## Commit messages
 

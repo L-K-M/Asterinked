@@ -11,8 +11,8 @@
     <string name="next">Next</string>
     <string name="welcome_title">Make room for your thoughts.</string>
     <string name="welcome_body">Open a PDF and write directly on its pages.\nSave a copy with your handwriting included.</string>
-    <string name="input_hint">Pen writes · Fingers pan and zoom</string>
-    <string name="touch_hint">Finger or pen writes · Two fingers zoom</string>
+    <string name="input_hint">Pen writes · Swipe to turn pages · Double-tap to zoom</string>
+    <string name="touch_hint">Finger or pen writes · Two fingers pan and zoom</string>
     <string name="working">Working…</string>
     <string name="page_count">Page %1$d of %2$d</string>
     <string name="open_another">Open another PDF?</string>
