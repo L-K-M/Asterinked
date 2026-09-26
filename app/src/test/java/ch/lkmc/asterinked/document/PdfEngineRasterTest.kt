@@ -8,6 +8,8 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
+import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
+import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.util.Matrix
 import org.junit.Assert.assertTrue
@@ -27,9 +29,12 @@ class PdfEngineRasterTest {
         PDFBoxResourceLoader.init(app)
         val engine = PdfEngine(app.cacheDir)
         val output = File("build/test-output/raster-proof").apply { mkdirs() }
-        for (rotation in listOf(0, 90, 180, 270)) {
-            val source = File(output, "source-$rotation.pdf")
-            val exported = File(output, "export-$rotation.pdf")
+        // name to (rotation, owner-restricted encryption)
+        val cases = listOf(0, 90, 180, 270).map { "$it" to (it to false) } + ("encrypted" to (0 to true))
+        for ((name, options) in cases) {
+            val (rotation, encrypted) = options
+            val source = File(output, "source-$name.pdf")
+            val exported = File(output, "export-$name.pdf")
             PDDocument().use { document ->
                 val page = PDPage(PDRectangle.LETTER).apply {
                     this.rotation = rotation
@@ -46,6 +51,11 @@ class PdfEngineRasterTest {
                     stream.transform(Matrix(2f, 0f, 0f, 2f, 100f, 150f))
                     stream.addRect(0f, 0f, 5f, 5f)
                     stream.clip()
+                }
+                if (encrypted) {
+                    // Opens without a password but forbids printing: the export must keep that.
+                    val permissions = AccessPermission().apply { setCanPrint(false) }
+                    document.protect(StandardProtectionPolicy("owner", "", permissions).apply { encryptionKeyLength = 128 })
                 }
                 document.save(source)
             }

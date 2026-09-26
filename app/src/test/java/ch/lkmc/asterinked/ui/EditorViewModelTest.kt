@@ -2,6 +2,7 @@ package ch.lkmc.asterinked.ui
 
 import android.net.Uri
 import android.os.Looper
+import ch.lkmc.asterinked.R
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,6 +28,7 @@ class EditorViewModelTest {
             Thread.sleep(10)
         }
         assertNotNull("Picker result was dropped during restoration", model.state.value!!.message)
+        assertEquals("Users see guidance, not the raw exception", app.getString(R.string.error_source_unreadable), model.state.value!!.message)
         assertFalse(model.state.value!!.busy)
     }
 }

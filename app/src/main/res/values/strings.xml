@@ -31,4 +31,18 @@
     <string name="medium">Medium</string>
     <string name="bold">Bold</string>
     <string name="no_picker">No document picker is available on this device.</string>
+    <string name="pdf_saved">PDF saved.</string>
+    <string name="notes_not_saved">Your latest notes couldn’t be stored on this device. Save a PDF copy now.</string>
+    <string name="error_source_unreadable">Couldn’t read this file. The app that provides it may not allow access. Try downloading it first.</string>
+    <string name="error_not_a_pdf">This file isn’t a PDF, or it is damaged.</string>
+    <string name="error_password_protected">This PDF is protected by a password. Asterinked can’t open password-protected PDFs yet.</string>
+    <string name="error_editing_not_allowed">The author of this PDF doesn’t allow changes, so Asterinked can’t add notes to it.</string>
+    <string name="error_no_pages">This PDF has no pages.</string>
+    <string name="error_draft_unreadable">Your last document couldn’t be restored. Open the PDF again to continue.</string>
+    <string name="error_draft_not_saved">Couldn’t store this document on your device. Check that storage is available.</string>
+    <string name="error_export_failed">Couldn’t create the annotated copy. Your notes are safe.</string>
+    <string name="error_destination_unwritable">Couldn’t save to that location. Your notes are safe. Try saving somewhere else.</string>
+    <string name="error_out_of_space">Your device is out of storage. Free up some space and try again.</string>
+    <string name="error_out_of_memory">This PDF is too large to handle on this device.</string>
+    <string name="error_unexpected">Something went wrong. Please try again.</string>
 </resources>

@@ -5,13 +5,17 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import ch.lkmc.asterinked.R
+import ch.lkmc.asterinked.document.DocumentProblem
 import ch.lkmc.asterinked.document.DocumentService
 import ch.lkmc.asterinked.document.Draft
 import ch.lkmc.asterinked.document.OpenDocument
 import ch.lkmc.asterinked.document.PageSpec
+import ch.lkmc.asterinked.document.toProblem
 import ch.lkmc.asterinked.ink.InkStroke
 import java.util.concurrent.Executors
 
@@ -101,7 +105,7 @@ internal class EditorViewModel(application: Application) : AndroidViewModel(appl
         if (current.busy) return
         val saved = draft.copy(savedInk = draft.ink)
         perform({ service.export(draft, uri); service.saveDraft(saved) }) {
-            publish(current.copy(draft = saved, busy = false, message = "PDF saved."))
+            publish(current.copy(draft = saved, busy = false, message = text(R.string.pdf_saved)))
         }
     }
 
@@ -122,7 +126,8 @@ internal class EditorViewModel(application: Application) : AndroidViewModel(appl
             try {
                 service.saveDraft(draft)
             } catch (error: Exception) {
-                main.post { if (!cleared) publish(current.copy(message = "Draft could not be saved. Save a PDF copy now.")) }
+                Log.w(TAG, "Draft could not be saved", error)
+                main.post { if (!cleared) publish(current.copy(message = text(R.string.notes_not_saved))) }
             }
         }
     }
@@ -134,12 +139,20 @@ internal class EditorViewModel(application: Application) : AndroidViewModel(appl
             main.post {
                 if (cleared) return@post
                 result.fold(success) { error ->
-                    publish(current.copy(busy = false, message = error.message ?: "Could not complete this PDF operation."))
+                    publish(current.copy(busy = false, message = messageFor(error)))
                 }
                 completed()
             }
         }
     }
+
+    // Users see what went wrong and what to do; the raw exception goes to the log.
+    private fun messageFor(error: Throwable): String {
+        Log.w(TAG, "Document operation failed", error)
+        return text(error.toProblem(DocumentProblem.UNEXPECTED).userMessage)
+    }
+
+    private fun text(id: Int): String = getApplication<Application>().getString(id)
 
     private fun publish(value: EditorState) {
         mutableState.value = value
@@ -149,4 +162,23 @@ internal class EditorViewModel(application: Application) : AndroidViewModel(appl
         cleared = true
         worker.shutdown()
     }
+
+    private companion object {
+        const val TAG = "Asterinked"
+    }
+}
+
+private val DocumentProblem.userMessage: Int get() = when (this) {
+    DocumentProblem.SOURCE_UNREADABLE -> R.string.error_source_unreadable
+    DocumentProblem.NOT_A_PDF -> R.string.error_not_a_pdf
+    DocumentProblem.PASSWORD_PROTECTED -> R.string.error_password_protected
+    DocumentProblem.EDITING_NOT_ALLOWED -> R.string.error_editing_not_allowed
+    DocumentProblem.NO_PAGES -> R.string.error_no_pages
+    DocumentProblem.DRAFT_UNREADABLE -> R.string.error_draft_unreadable
+    DocumentProblem.DRAFT_NOT_SAVED -> R.string.error_draft_not_saved
+    DocumentProblem.EXPORT_FAILED -> R.string.error_export_failed
+    DocumentProblem.DESTINATION_UNWRITABLE -> R.string.error_destination_unwritable
+    DocumentProblem.OUT_OF_SPACE -> R.string.error_out_of_space
+    DocumentProblem.OUT_OF_MEMORY -> R.string.error_out_of_memory
+    DocumentProblem.UNEXPECTED -> R.string.error_unexpected
 }
