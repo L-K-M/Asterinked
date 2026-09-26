@@ -89,6 +89,16 @@ class PdfEngineSecurityTest {
         assertTrue("Failed imports leave no private copy", documents.listFiles().orEmpty().none { it.extension == "pdf" })
     }
 
+    @Test fun aPdfNestedTooDeepIsReportedInsteadOfCrashing() {
+        val service = DocumentService(app)
+        val documents = File(app.filesDir, "documents")
+
+        // PDFBox parses nested arrays recursively; this depth overflows its stack.
+        assertProblem(DocumentProblem.NOT_A_PDF) { service.open(Uri.fromFile(deeplyNestedPdf(depth = 100_000))) }
+
+        assertTrue("A failed import leaves no private copy", documents.listFiles().orEmpty().none { it.extension == "pdf" })
+    }
+
     private fun assertProblem(expected: DocumentProblem, work: () -> Unit) {
         try {
             work()
@@ -117,6 +127,24 @@ class PdfEngineSecurityTest {
             document.save(output)
         }
         return output
+    }
+
+    // A one-page PDF whose page dictionary carries an array nested [depth] levels deep.
+    private fun deeplyNestedPdf(depth: Int): File {
+        val bytes = StringBuilder("%PDF-1.4\n")
+        val offsets = mutableListOf<Int>()
+        fun obj(body: String) {
+            offsets += bytes.length
+            bytes.append("${offsets.size} 0 obj $body endobj\n")
+        }
+        obj("<< /Type /Catalog /Pages 2 0 R >>")
+        obj("<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+        obj("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Deep ${"[".repeat(depth)}${"]".repeat(depth)} >>")
+        val xref = bytes.length
+        bytes.append("xref\n0 ${offsets.size + 1}\n0000000000 65535 f \n")
+        offsets.forEach { bytes.append(String.format("%010d 00000 n \n", it)) }
+        bytes.append("trailer << /Root 1 0 R /Size ${offsets.size + 1} >>\nstartxref\n$xref\n%%EOF\n")
+        return file("deep").apply { writeText(bytes.toString(), Charsets.ISO_8859_1) }
     }
 
     private fun file(name: String) = File(app.cacheDir, "$name-${System.nanoTime()}.pdf")
