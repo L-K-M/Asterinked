@@ -113,7 +113,9 @@ internal class PdfEngine(private val scratchDirectory: File) {
                     stream.clip()
                     stream.setLineCapStyle(ROUND_CAP)
                     stream.setLineJoinStyle(ROUND_CAP)
-                    for (stroke in strokes) {
+                    // Highlights go under all pen ink, as on screen, where multiply must
+                    // blend with the page rather than with the cached pen layer.
+                    for (stroke in strokes.sortedBy { it.kind != InkKind.HIGHLIGHTER }) {
                         stream.setStrokingColor(Color.red(stroke.color), Color.green(stroke.color), Color.blue(stroke.color))
                         stream.setNonStrokingColor(Color.red(stroke.color), Color.green(stroke.color), Color.blue(stroke.color))
                         if (stroke.kind == InkKind.HIGHLIGHTER) {

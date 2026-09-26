@@ -8,6 +8,7 @@ import android.view.MotionEvent
 import ch.lkmc.asterinked.document.Draft
 import ch.lkmc.asterinked.document.PageSpec
 import ch.lkmc.asterinked.ink.InkKind
+import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import org.junit.Assert.*
 import org.junit.Test
@@ -182,6 +183,23 @@ class InkPageViewTest {
         send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, tool, x, fromY)), buttons)
         send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, tool, x, (fromY + toY) / 2f)), buttons)
         send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, tool, x, toY)), buttons)
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun highlightsSitUnderPenInkWhateverTheirOrder() {
+        val white = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
+        val blue = Color.rgb(32, 85, 184)
+        val pen = InkStroke(listOf(InkPoint(100f, 300f, 1f), InkPoint(300f, 300f, 1f)), blue, 6f)
+        val marker = InkStroke(listOf(InkPoint(200f, 250f, 1f), InkPoint(200f, 350f, 1f)), Color.rgb(255, 228, 92), 12f, InkKind.HIGHLIGHTER)
+        val view = InkPageView(RuntimeEnvironment.getApplication()).apply {
+            configure(InputMode.PEN, Color.BLACK, 2f) {}
+            show(EditorState(Draft(File("test.pdf"), "test.pdf", ink = mapOf(0 to listOf(pen, marker))), listOf(PageSpec(0f, 0f, 400f, 600f, 0)), white, busy = false))
+            layout(0, 0, 600, 800)
+        }
+        val image = Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888).also { view.draw(Canvas(it)) }
+        // Page (200, 300) lands at screen (300, 400): the pen crosses the highlight there.
+        val crossing = image.getPixel(300, 400)
+        assertTrue("Pen ink stays blue over a later highlight", Color.blue(crossing) > 150)
     }
 
     @GraphicsMode(GraphicsMode.Mode.NATIVE)

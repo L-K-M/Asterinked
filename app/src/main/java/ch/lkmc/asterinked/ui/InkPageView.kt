@@ -230,7 +230,10 @@ internal class InkPageView(context: Context) : View(context) {
         canvas.clipRect(pageRect)
         canvas.translate(pageRect.left, pageRect.top)
         canvas.scale(scale, scale)
-        if (!cached) drawStrokes(canvas)
+        if (!cached) {
+            drawStrokes(canvas, InkKind.HIGHLIGHTER)
+            drawStrokes(canvas, InkKind.PEN)
+        }
         liveStroke?.let { live ->
             if (activeKind == InkKind.HIGHLIGHTER) {
                 drawHighlight(canvas, activeColor, activeWidth, highlightPath(InkStroke(points, activeColor, activeWidth, activeKind)))
@@ -281,11 +284,11 @@ internal class InkPageView(context: Context) : View(context) {
     }
 
     // Strokes under the eraser disappear at once and return if the gesture is cancelled.
-    // Without [only], every kind is drawn in list order (the software path).
-    private fun drawStrokes(canvas: Canvas, only: InkKind? = null) {
+    // Callers draw highlights before pen ink, as the export does.
+    private fun drawStrokes(canvas: Canvas, kind: InkKind) {
         for (index in strokes.indices) {
             val stroke = strokes[index]
-            if (stroke in erasing || (only != null && stroke.kind != only)) continue
+            if (stroke in erasing || stroke.kind != kind) continue
             when (stroke.kind) {
                 InkKind.PEN -> drawInk(canvas, stroke.color, geometry[index])
                 InkKind.HIGHLIGHTER -> drawHighlight(canvas, stroke.color, stroke.width, highlightPaths.getValue(stroke))

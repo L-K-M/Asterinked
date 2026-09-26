@@ -229,6 +229,19 @@ class PdfEngineExportTest {
     }
 
     @Test
+    fun export_highlightsSitUnderPenInkWhateverTheirOrder() {
+        val source = sourcePdf()
+        val dest = tmp("highlight-order")
+        val pen = InkStroke(listOf(InkPoint(80f, 90f, 1f), InkPoint(200f, 90f, 1f)), 0xFFFF0000.toInt(), 2f)
+        val marker = InkStroke(listOf(InkPoint(140f, 60f, 1f), InkPoint(140f, 120f, 1f)), 0xFFFFE45C.toInt(), 12f, InkKind.HIGHLIGHTER)
+        engine.export(source, dest, mapOf(0 to listOf(pen, marker)))
+
+        // The editor draws highlights under all pen ink, so the export must too.
+        val contents = contentsOf(dest, 0)
+        assertTrue("Highlight drawn before pen ink", contents.indexOf(" gs") in 0 until contents.indexOf("1 0 0 RG"))
+    }
+
+    @Test
     fun inspect_reportsCropAndRotation() {
         val source = sourcePdf(rotation = 90, cropInset = 36f)
         val specs = engine.inspect(source)
