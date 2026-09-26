@@ -222,7 +222,7 @@ internal class InkPageView(context: Context) : View(context) {
             canvas.clipRect(pageRect)
             canvas.translate(pageRect.left, pageRect.top)
             canvas.scale(scale, scale)
-            drawStrokes(canvas, InkKind.HIGHLIGHTER)
+            drawHighlights(canvas)
             canvas.restore()
             drawCommittedInk(canvas, page, scale)
         }
@@ -231,16 +231,12 @@ internal class InkPageView(context: Context) : View(context) {
         canvas.translate(pageRect.left, pageRect.top)
         canvas.scale(scale, scale)
         if (!cached) {
-            drawStrokes(canvas, InkKind.HIGHLIGHTER)
+            drawHighlights(canvas)
             drawStrokes(canvas, InkKind.PEN)
         }
-        liveStroke?.let { live ->
-            if (activeKind == InkKind.HIGHLIGHTER) {
-                drawHighlight(canvas, activeColor, activeWidth, highlightPath(InkStroke(points, activeColor, activeWidth, activeKind)))
-            } else {
-                drawInk(canvas, activeColor, live.settled)
-                drawInk(canvas, activeColor, live.tail)
-            }
+        liveStroke?.takeIf { activeKind == InkKind.PEN }?.let { live ->
+            drawInk(canvas, activeColor, live.settled)
+            drawInk(canvas, activeColor, live.tail)
         }
         eraserAt?.let {
             eraserRing.strokeWidth = resources.displayMetrics.density / scale
@@ -281,6 +277,14 @@ internal class InkPageView(context: Context) : View(context) {
             recordedLayerRect.set(pageRect)
         }
         canvas.drawRenderNode(inkLayer)
+    }
+
+    // Committed highlights, then the one being drawn: all of them sit under pen ink.
+    private fun drawHighlights(canvas: Canvas) {
+        drawStrokes(canvas, InkKind.HIGHLIGHTER)
+        if (liveStroke == null || activeKind != InkKind.HIGHLIGHTER) return
+
+        drawHighlight(canvas, activeColor, activeWidth, highlightPath(InkStroke(points, activeColor, activeWidth, activeKind)))
     }
 
     // Strokes under the eraser disappear at once and return if the gesture is cancelled.

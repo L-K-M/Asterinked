@@ -203,6 +203,25 @@ class InkPageViewTest {
     }
 
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun aHighlightBeingDrawnAlsoSitsUnderPenInk() {
+        val white = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
+        val pen = InkStroke(listOf(InkPoint(100f, 300f, 1f), InkPoint(300f, 300f, 1f)), Color.rgb(32, 85, 184), 6f)
+        val view = InkPageView(RuntimeEnvironment.getApplication()).apply {
+            configure(InputMode.PEN, Color.rgb(255, 228, 92), 12f, InkKind.HIGHLIGHTER) {}
+            show(EditorState(Draft(File("test.pdf"), "test.pdf", ink = mapOf(0 to listOf(pen))), listOf(PageSpec(0f, 0f, 400f, 600f, 0)), white, busy = false))
+            layout(0, 0, 600, 800)
+            draw(Canvas(Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888)))
+        }
+        // A live stroke down page x = 200 crosses the blue line at screen (300, 400).
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 340f)))
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 400f)))
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 460f)))
+        val image = Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888).also { view.draw(Canvas(it)) }
+        assertTrue("The live highlight is visible", Color.blue(image.getPixel(300, 360)) < 150)
+        assertTrue("Pen ink stays blue under the live highlight", Color.blue(image.getPixel(300, 400)) > 150)
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     @Test fun highlighterTintsThePageButKeepsDarkContentDark() {
         val strokes = mutableListOf<InkStroke>()
         // A white page with a vertical black bar at page x 150..170 (screen x ~237..262).
