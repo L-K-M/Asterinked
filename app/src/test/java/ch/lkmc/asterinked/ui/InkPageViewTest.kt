@@ -14,6 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
@@ -62,6 +63,44 @@ class InkPageViewTest {
         send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f)))
 
         assertEquals(1, strokes.size)
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun committedAndLiveInkRenderInSoftware() {
+        val strokes = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, strokes)
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f)))
+        assertTrue("Live stroke is drawn before it is committed", darkPixelsNear(view, 200, 300))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 350f, 300f)))
+        val committed = strokes.single()
+        view.show(EditorState(Draft(File("test.pdf"), "test.pdf", ink = mapOf(0 to listOf(committed))), listOf(PageSpec(0f, 0f, 400f, 600f, 0)), page, busy = false))
+        assertTrue("Committed stroke is drawn", darkPixelsNear(view, 300, 300))
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun batchedHistoricalSamplesShapeTheLiveStroke() {
+        val view = pageView(InputMode.PEN, mutableListOf())
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+        // One MOVE carrying a historical sample at (250, 250) and the current one at (350, 300).
+        val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 7; toolType = MotionEvent.TOOL_TYPE_STYLUS })
+        val coordinates = { x: Float, y: Float -> arrayOf(MotionEvent.PointerCoords().apply { this.x = x; this.y = y; pressure = 0.6f }) }
+        val move = MotionEvent.obtain(0, 20, MotionEvent.ACTION_MOVE, 1, properties, coordinates(250f, 250f), 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_STYLUS, 0)
+        move.addBatch(30, coordinates(350f, 300f), 0)
+        try { view.onTouchEvent(move) } finally { move.recycle() }
+
+        // The smoothed curve peaks near y = 262 at x = 250; a stroke that skipped
+        // the historical sample would be a straight line at y = 300.
+        assertTrue("Live stroke bends through the historical sample", darkPixelsNear(view, 250, 262))
+        assertFalse("Live stroke is not a straight line", darkPixelsNear(view, 250, 300))
+    }
+
+    private val page: Bitmap = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
+
+    private fun darkPixelsNear(view: InkPageView, x: Int, y: Int): Boolean {
+        val image = Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(image))
+        return (-3..3).any { dy -> Color.red(image.getPixel(x, y + dy)) < 128 }
     }
 
     private fun pageView(mode: InputMode, strokes: MutableList<InkStroke>): InkPageView {

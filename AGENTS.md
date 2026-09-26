@@ -53,6 +53,15 @@ python3 scripts/verify_pdf.py                         # PDFium re-render of test
   checkout.
 - The debug build carries `applicationIdSuffix ".debug"` (and `-debug` on
   versionName) so it can sit next to a release install on the same device.
+- `InkPageView` replays committed ink from cached `RenderNode`s only on
+  hardware canvases. Robolectric draws in software, so JVM tests exercise the
+  direct-draw fallback, and pixel assertions need `@GraphicsMode(NATIVE)`
+  (the default LEGACY mode rasterizes nothing). The RenderNode path needs a
+  device check.
+- `InkGeometry.segments` is the export contract: `InkIncrementalTest` pins it
+  to the v0.1.0 algorithm, and the live `InkStrokeBuilder` must produce the
+  same segments for every prefix. Changing stroke geometry changes every
+  exported PDF, so do it deliberately and update that reference.
 
 ## CI/CD
 
