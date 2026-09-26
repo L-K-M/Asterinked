@@ -112,7 +112,7 @@ internal class MainActivity : ComponentActivity() {
         root.addView(scroll(tools))
 
         val workspace = android.widget.FrameLayout(this)
-        page = InkPageView(this)
+        page = InkPageView(this).apply { onTurnPage = ::turnPage }
         workspace.addView(page, android.widget.FrameLayout.LayoutParams(MATCH, MATCH))
         welcome = column().apply {
             gravity = Gravity.CENTER
@@ -128,10 +128,10 @@ internal class MainActivity : ComponentActivity() {
         hint = label("", 12f).apply { gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0) }
         root.addView(hint)
         val navigation = row().apply { gravity = Gravity.CENTER }
-        previous = button(R.string.previous, navigation) { model.state.value?.draft?.let { model.goToPage(it.page - 1) } }
+        previous = button(R.string.previous, navigation) { turnPage(-1) }
         counter = label("", 14f).apply { gravity = Gravity.CENTER }
         navigation.addView(counter, LinearLayout.LayoutParams(0, dp(48), 1f))
-        next = button(R.string.next, navigation) { model.state.value?.draft?.let { model.goToPage(it.page + 1) } }
+        next = button(R.string.next, navigation) { turnPage(1) }
         root.addView(navigation)
         status = label("", 12f).apply { gravity = Gravity.CENTER; setPadding(0, 0, 0, dp(8)) }
         root.addView(status)
@@ -171,6 +171,10 @@ internal class MainActivity : ComponentActivity() {
             Toast.makeText(this, it, Toast.LENGTH_LONG).show()
             model.acknowledgeMessage()
         }
+    }
+
+    private fun turnPage(delta: Int) {
+        model.state.value?.draft?.let { model.goToPage(it.page + delta) }
     }
 
     private fun requestOpen() {
