@@ -20,19 +20,20 @@ deleting them silently.
 
 Eight focused PRs, each cut from `main`, each green in CI and reviewed by
 the GLM bot until no valid important findings remained, plus #18, which
-combines all eight. They wait for a human merge.
+combines all eight, and #19, a CI fix. They wait for a human merge.
 
 | PR | Branch | Covers | Summary |
 |---|---|---|---|
 | [#10](https://github.com/L-K-M/Asterinked/pull/10) | `claude/peaceful-darwin-twgnu4` | P1, P2, P3 | Committed ink is recorded once per edit into a `RenderNode` and replayed through a view-sized GPU layer; per-stroke geometry cache; incremental live-stroke smoothing (`InkStrokeBuilder`). `InkIncrementalTest` pins export geometry to v0.1.0. |
 | [#11](https://github.com/L-K-M/Asterinked/pull/11) | `claude/gesture-fixes` | B4, B5, B10, B14 (partly), F3 (partly) | Pan and pinch follow the finger centroid in both modes; no jump on finger lift; pan clamped immediately; animated double-tap zoom; swipe to turn pages at fit zoom; zoom kept across page turns; 12dp page margin; a palm stays inert after the pen lifts. |
-| [#12](https://github.com/L-K-M/Asterinked/pull/12) | `claude/pdf-compat-errors` | B1, B2 (message), B3, B12 (partly) | Owner-restricted encrypted PDFs open; exports are re-encrypted with the same permissions (AES for 128-bit). `DocumentProblem` maps failures to plain messages from `strings.xml`. PDFium proof gains an encrypted fixture. |
+| [#12](https://github.com/L-K-M/Asterinked/pull/12) | `claude/pdf-compat-errors` | B1, B2 (message), B3, B12 (partly) | Owner-restricted encrypted PDFs open; exports are re-encrypted with the same permissions (AES for 128-bit). `DocumentProblem` maps failures to plain messages from `strings.xml`. PDFium proof gains an encrypted fixture. Deeply nested PDFs (a `StackOverflowError` in PDFBox's parser) are reported instead of crashing (B18). |
 | [#13](https://github.com/L-K-M/Asterinked/pull/13) | `claude/instant-page-turns` | P4, P7, P5 (partly), G8 (partly) | One `PdfRenderer` per document, LRU preview cache with neighbour prefetch, instant page turns without the busy state, coalesced draft writes, mipmapped previews. `EditorViewModel` takes a `DocumentOperations` + executor (test seam). |
 | [#14](https://github.com/L-K-M/Asterinked/pull/14) | `claude/eraser` | F1, B13 | Stroke eraser tool, stylus eraser end and side button; undo/redo via per-page `(before, after)` snapshots (`InkHistory`). |
 | [#15](https://github.com/L-K-M/Asterinked/pull/15) | `claude/open-with-share` | F4, F5, G4, B11 | VIEW/SEND intent filters (`singleTask`), incoming PDFs wait until the editor is idle, Share via `FileProvider`, sanitized `Draft.exportName` (also fixes path traversal from hostile display names). |
 | [#16](https://github.com/L-K-M/Asterinked/pull/16) | `claude/ui-refresh` | V1–V5, V6 (partly), V7, B6, B7, B9, F3 (jump to page), F10 | Compact icon top bar, tool strip with swatches and width dots, floating page pill (tap to jump, Fit), page shadow, red/slate palette, designed adaptive launcher icon, remembered pen settings. |
 | [#17](https://github.com/L-K-M/Asterinked/pull/17) | `claude/highlighter` | F2 | Highlighter kind: constant-width path multiplied with the page on screen and in the PDF (`/BM /Multiply`); kind persisted backward-compatibly; PDFium fixture proves text stays dark and that the marker really covers text. |
-| [#18](https://github.com/L-K-M/Asterinked/pull/18) | `claude/integration` | all of the above, B16 | Optional one-step merge: #10–#17 merged into `main` with every conflict below resolved, the features ported into #16's new chrome (highlighter and eraser toggles in the tool strip, Share icon in the top bar), and highlights drawn under pen ink in the export too. Merging it marks the eight as merged. |
+| [#18](https://github.com/L-K-M/Asterinked/pull/18) | `claude/integration` | all of the above, B16, B17 | Optional one-step merge: #10–#17 merged into `main` with every conflict below resolved, the features ported into #16's new chrome (highlighter and eraser toggles in the tool strip, Share icon in the top bar), and highlights (committed and live) drawn under pen ink on screen and in the export. Merging it marks the eight as merged. |
+| [#19](https://github.com/L-K-M/Asterinked/pull/19) | `claude/ci-cached-fixtures` | CI | `main` CI turned red on the docs-only ANALYSIS.md commit: `testDebugUnitTest` came from the build cache without writing the PDFium fixtures. The fixtures are now declared task outputs, so a cache hit restores them. Merges cleanly with every other PR. |
 
 ### 1.1 Recommended merge order and integration notes
 
@@ -64,7 +65,7 @@ conflicts):
   layer (multiply against the layer's transparent pixels yields opaque
   colour and hides the text). #18 draws highlights directly on the view
   canvas (paths cached per stroke) before the cached pen layer, so
-  highlights always sit under pen ink. The export and the software path
+  highlights, including the one being drawn, always sit under pen ink. The export and the software path
   must then use the same order (`strokes.sortedBy { it.kind !=
   HIGHLIGHTER }` in `PdfEngine.export`), otherwise a highlight added after a
   blue note turns it dark teal in the PDF only (B16, fixed in #18 with tests).
@@ -139,17 +140,23 @@ conflicts):
 - `stream.setLineJoinStyle(ROUND_CAP)` in `PdfEngine.export` works because
   both constants are `1`. Add `ROUND_JOIN`.
 
-### B17. Live highlight draws above pen ink until the pen lifts
-- **Why:** after #18 committed highlights sit under pen ink, but the stroke
-  being drawn is painted last, over the pen layer, and drops under it on
-  lift. A small visible jump when highlighting across handwriting.
-- **Where:** `ui/InkPageView.kt` (`onDraw`: the `liveStroke` block).
-- **Approach:** when `activeKind == HIGHLIGHTER`, draw the live path inside
-  the pre-layer block (hardware path) or before the pen pass (software
-  path), instead of after `drawCommittedInk`.
-- **Acceptance:** extend `highlightsSitUnderPenInkWhateverTheirOrder` with a
-  live stroke (DOWN/MOVE without UP) crossing a committed blue stroke; the
-  crossing pixel stays blue.
+### B19. Highlighter width is not sanitized
+- Pen widths go through `InkGeometry.strokeWidth` (finite and positive,
+  else the default) on screen and in the export; highlighter strokes use
+  `stroke.width` raw in `InkPageView.drawHighlight` and `PdfEngine.highlight`.
+  Today widths only come from `HIGHLIGHT_WIDTHS` and JSON cannot carry NaN,
+  so this is hardening against a corrupted or hand-edited `draft.json`.
+  Apply `strokeWidth` in both places; add a `DocumentStore` round-trip test
+  with a zero-width highlight (from #18's review).
+
+### B20. Small cleanups found in review
+- Cancel `zoomAnimator` in `InkPageView.onDetachedFromWindow` (#11's
+  double-tap animation keeps invalidating a detached view for ~220 ms).
+- `followFingers`' comment says two fingers pan in touch-ink mode, but the
+  first finger on the page starts a stroke there; fix the comment or add a
+  second-finger cancel (see U1).
+- `PdfEngineSecurityTest.deeplyNestedPdf` formats xref offsets with the
+  default locale; use `Locale.ROOT`.
 
 ---
 
@@ -176,6 +183,13 @@ conflicts):
   be acknowledged manually. Replace with a single-consumer event channel
   (for example a `Channel`/`SharedFlow` or an event queue in the model) so
   state and effects stop mixing as the state grows.
+- **G9. Re-encryption choices (#12).** Two decisions for `keepProtection`:
+  (a) derive the key length from the security handler version (`V >= 5` →
+  256-bit AES, `V == 4` → 128) instead of the optional top-level `/Length`,
+  which some AES-256 producers omit (PDFBox then reports 40); (b) for an
+  encrypted source that grants every permission, strip encryption instead
+  of re-locking the copy behind a random owner password nobody knows. Both
+  need a fixture per case in `PdfEngineSecurityTest` (from #18's review).
 
 ---
 
@@ -202,6 +216,10 @@ conflicts):
   predicted, never-committed tail; later `androidx.graphics:graphics-core`
   front-buffered rendering for the live stroke. Verify on a device with a
   high-speed camera or `adb shell dumpsys gfxinfo`.
+- **P10. Live highlighter path.** While highlighting, `InkPageView` rebuilds
+  an `InkStroke`, its centerline and a `Path` from all points every frame.
+  Append to one reusable `Path` per sample instead (mirroring
+  `InkStrokeBuilder` for pens); only matters for very long highlights.
 
 ---
 
@@ -266,6 +284,10 @@ conflicts):
 - **V14. Phone top bar crowding.** Open, undo, redo, share and the Save copy
   pill leave about 100dp for the title on a phone. Candidates: fold Share
   into a split Save button or an overflow menu below 480dp.
+- **V15. Touch targets.** #16 sizes icon buttons at 44dp and swatches at
+  40dp wide; Android's accessibility guidance (and Accessibility Scanner)
+  asks for 48dp. Check the phone layout (V12, V14) before raising them, since
+  the strip and top bar are already tight.
 - **V11. Status dot.** A small filled dot beside the title for unexported
   notes, instead of (or in addition to) #16's red status line.
 - **U1. Auto pen-only.** After the first stylus event, stop fingers from
@@ -387,4 +409,7 @@ stylus, for example a Samsung S Pen tablet):
 | F4, F5 | Open with / share to Asterinked; share annotated copy | #15 |
 | F10 | Remember pen settings | #16 |
 | B16 | Export drew highlights over earlier pen ink while the screen drew them under | #18 |
+| B17 | The highlight being drawn sat above pen ink until the pen lifted | #18 |
+| B18 | Deeply nested PDFs crashed the app with `StackOverflowError` and left the imported copy | #12 |
+| CI | `main` CI failed on docs-only commits (cached tests skipped the PDFium fixtures) | #19 |
 | V1–V5, V7 | Compact chrome, inline swatches, modern controls, brand icon and palette, clear mode toggle | #16 |
