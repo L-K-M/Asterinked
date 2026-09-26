@@ -46,6 +46,41 @@ class InkPageViewGestureTest {
         assertTrue("A pinch never inks in touch mode", strokes.isEmpty())
     }
 
+    @Test fun oneFingerInksWithoutPanningInTouchMode() {
+        val view = pageView(InputMode.PEN)
+        pinch(view, 200f to 400f, 100f to 500f)
+        view.configure(InputMode.TOUCH, Color.BLACK, 2f) { strokes.add(it) }
+        val before = pageAt(view, 300f, 400f)
+
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 280f)))
+        for (step in 1..4) send(view, MotionEvent.ACTION_MOVE, listOf(finger(0, 280f + 20f * step)))
+        send(view, MotionEvent.ACTION_UP, listOf(finger(0, 360f)))
+        assertEquals("One finger inks in touch mode", 1, strokes.size)
+        strokes.clear()
+
+        val after = pageAt(view, 300f, 400f)
+        assertEquals("Inking must not pan the page", before.x, after.x, 0.01f)
+        assertEquals(before.y, after.y, 0.01f)
+    }
+
+    @Test fun movingPalmDoesNotPanUnderTheStylus() {
+        val view = pageView(InputMode.PEN)
+        pinch(view, 200f to 400f, 100f to 500f)
+        val before = pageAt(view, 300f, 400f)
+
+        val pen = { x: Float -> Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, x, 300f) }
+        send(view, MotionEvent.ACTION_DOWN, listOf(pen(250f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(pen(255f), finger(1, 400f)), actionIndex = 1)
+        for (step in 1..4) send(view, MotionEvent.ACTION_MOVE, listOf(pen(255f + 10f * step), finger(1, 400f + 30f * step)))
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(pen(295f), finger(1, 520f)), actionIndex = 0)
+        send(view, MotionEvent.ACTION_UP, listOf(finger(1, 520f)))
+        assertEquals("The stylus stroke survives the palm", 1, strokes.size)
+        strokes.clear()
+
+        val after = pageAt(view, 300f, 400f)
+        assertEquals("A resting palm must not pan the page", before.x, after.x, 0.01f)
+    }
+
     @Test fun pinchFollowsTheFingers() {
         val view = pageView(InputMode.PEN)
         pinch(view, 200f to 400f, 100f to 500f)

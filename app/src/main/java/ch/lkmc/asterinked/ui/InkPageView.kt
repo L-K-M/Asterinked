@@ -69,7 +69,9 @@ internal class InkPageView(context: Context) : View(context) {
         }
     })
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
-        // The second tap's UP, so a double-tap-and-drag stays a quick-scale zoom.
+        // ScaleGestureDetector (quick scale is on by default) turns a double-tap-and-
+        // drag into a one-finger zoom. Toggling only on the second tap's UP, and
+        // only if no scale happened, keeps that gesture working.
         override fun onDoubleTapEvent(e: MotionEvent): Boolean {
             if (inputMode != InputMode.PEN || e.actionMasked != MotionEvent.ACTION_UP || gestureScaled) return false
             animateZoom(if (zoom > FIT_ZOOM_TOLERANCE) 1f else DOUBLE_TAP_ZOOM, e.x, e.y)
