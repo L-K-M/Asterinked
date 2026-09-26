@@ -27,6 +27,10 @@ python3 scripts/verify_pdf.py                         # PDFium re-render of test
 - JDK 17. Android SDK via `ANDROID_HOME` or `sdk.dir` in `local.properties`.
 - Versions are pinned ONLY in `gradle/libs.versions.toml`. Never add an ad-hoc
   version to a build file; never restate catalog versions in docs.
+- `EditorViewModel` takes a `DocumentOperations` and an `ExecutorService`.
+  Model tests inject a fake and a queue-backed executor
+  (`EditorViewModelPagingTest`) to decide exactly when worker tasks and
+  main-thread posts run; `PdfRenderer` itself only runs on devices.
 
 ## Toolchain quirks — don't "fix" these
 

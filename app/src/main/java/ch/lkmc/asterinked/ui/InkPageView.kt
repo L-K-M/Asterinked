@@ -21,6 +21,7 @@ internal enum class InputMode { PEN, TOUCH }
 internal class InkPageView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
     private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val blankPagePaint = Paint().apply { color = Color.WHITE }
     private val pageRect = RectF()
     private var preview: Bitmap? = null
     private var spec: PageSpec? = null
@@ -98,7 +99,6 @@ internal class InkPageView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val page = spec ?: return
-        val bitmap = preview ?: return
         val fit = min((width - PAGE_MARGIN * 2) / page.displayWidth, (height - PAGE_MARGIN * 2) / page.displayHeight)
         if (fit <= 0f) return
         val scale = fit * zoom
@@ -107,7 +107,9 @@ internal class InkPageView(context: Context) : View(context) {
         panX = panX.coerceIn(-maxPan(pageWidth, width), maxPan(pageWidth, width))
         panY = panY.coerceIn(-maxPan(pageHeight, height), maxPan(pageHeight, height))
         pageRect.set((width - pageWidth) / 2f + panX, (height - pageHeight) / 2f + panY, (width + pageWidth) / 2f + panX, (height + pageHeight) / 2f + panY)
-        canvas.drawBitmap(bitmap, null, pageRect, bitmapPaint)
+        // A page still rendering is drawn blank so its ink and the pen work at once.
+        val bitmap = preview
+        if (bitmap != null) canvas.drawBitmap(bitmap, null, pageRect, bitmapPaint) else canvas.drawRect(pageRect, blankPagePaint)
         canvas.save()
         canvas.clipRect(pageRect)
         canvas.translate(pageRect.left, pageRect.top)

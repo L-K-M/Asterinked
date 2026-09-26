@@ -27,7 +27,10 @@ internal data class PageSpec(val left: Float, val bottom: Float, val width: Floa
     }
 }
 
+/** Not thread-safe: PdfRenderer and PDFBox handles are used from one worker only. */
 internal class PdfEngine(private val scratchDirectory: File) {
+    private var renderer: OpenRenderer? = null
+
     fun inspect(source: File): List<PageSpec> = load(source).use { document ->
         require(!document.isEncrypted) { "Password-protected PDFs are not supported yet." }
         require(document.currentAccessPermission.canModify()) { "This PDF does not allow changes." }
@@ -41,32 +44,50 @@ internal class PdfEngine(private val scratchDirectory: File) {
         }
     }
 
-    fun render(source: File, pageIndex: Int): Bitmap {
+    fun render(source: File, pageIndex: Int): Bitmap = rendererFor(source).openPage(pageIndex).use { page ->
+        val scale = PREVIEW_LONG_EDGE.toFloat() / max(page.width, page.height)
+        val bitmap = Bitmap.createBitmap(
+            (page.width * scale).roundToInt().coerceAtLeast(1),
+            (page.height * scale).roundToInt().coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888,
+        )
+        try {
+            bitmap.eraseColor(Color.WHITE)
+            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            // Fit zoom on a phone shrinks the preview; mipmaps keep thin text from shimmering.
+            bitmap.setHasMipMap(true)
+            bitmap
+        } catch (error: Exception) {
+            bitmap.recycle()
+            throw error
+        }
+    }
+
+    /** Releases the open renderer; the next render reopens it. */
+    fun close() {
+        renderer?.close()
+        renderer = null
+    }
+
+    // Opening a PdfRenderer parses the whole cross-reference table, so keep one
+    // per document instead of reopening it for every page.
+    private fun rendererFor(source: File): PdfRenderer {
+        renderer?.let { if (it.source == source) return it.pdf }
+        close()
         val descriptor = ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY)
-        val renderer = try {
+        val pdf = try {
             PdfRenderer(descriptor)
         } catch (error: Exception) {
             descriptor.close()
             throw error
         }
-        return renderer.use {
-            it.openPage(pageIndex).use { page ->
-                val scale = PREVIEW_LONG_EDGE.toFloat() / max(page.width, page.height)
-                val bitmap = Bitmap.createBitmap(
-                    (page.width * scale).roundToInt().coerceAtLeast(1),
-                    (page.height * scale).roundToInt().coerceAtLeast(1),
-                    Bitmap.Config.ARGB_8888,
-                )
-                try {
-                    bitmap.eraseColor(Color.WHITE)
-                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    bitmap
-                } catch (error: Exception) {
-                    bitmap.recycle()
-                    throw error
-                }
-            }
-        }
+        renderer = OpenRenderer(source, pdf)
+        return pdf
+    }
+
+    private class OpenRenderer(val source: File, val pdf: PdfRenderer) {
+        // PdfRenderer.close() also closes the descriptor it was given.
+        fun close() = pdf.close()
     }
 
     fun export(source: File, destination: File, ink: Map<Int, List<InkStroke>>) {

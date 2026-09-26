@@ -8,26 +8,40 @@ import android.os.Looper
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import ch.lkmc.asterinked.document.DocumentOperations
 import ch.lkmc.asterinked.document.DocumentService
 import ch.lkmc.asterinked.document.Draft
 import ch.lkmc.asterinked.document.OpenDocument
 import ch.lkmc.asterinked.document.PageSpec
 import ch.lkmc.asterinked.ink.InkStroke
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.abs
 
 internal data class EditorState(
     val draft: Draft? = null,
     val pages: List<PageSpec> = emptyList(),
+    /** The visible page's render; null while it is still being rendered. */
     val preview: Bitmap? = null,
     val busy: Boolean = true,
     val canRedo: Boolean = false,
     val message: String? = null,
 )
 
-internal class EditorViewModel(application: Application) : AndroidViewModel(application) {
-    private val service = DocumentService(application)
-    private val worker = Executors.newSingleThreadExecutor()
+internal class EditorViewModel internal constructor(
+    application: Application,
+    private val service: DocumentOperations,
+    private val worker: ExecutorService,
+) : AndroidViewModel(application) {
+    constructor(application: Application) : this(application, DocumentService(application), Executors.newSingleThreadExecutor())
+
     private val main = Handler(Looper.getMainLooper())
+    // Page the user is on, readable from the worker so queued renders of pages
+    // already flipped past are skipped.
+    private val visiblePage = AtomicInteger(NO_PAGE)
+    private val unsavedDraft = AtomicReference<Draft?>()
     private val mutableState = MutableLiveData(EditorState())
     private val redo = mutableMapOf<Int, List<InkStroke>>()
     private var cleared = false
@@ -58,13 +72,19 @@ internal class EditorViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
+    // Turns instantly: a prefetched preview shows at once; otherwise the page is
+    // drawn blank with its ink until the render lands, and writing can start
+    // right away. Nothing is disabled while a page renders.
     fun goToPage(page: Int) {
         val draft = current.draft ?: return
         if (current.busy || page !in current.pages.indices || page == draft.page) return
         val next = draft.copy(page = page)
-        perform({ service.render(next).also { service.saveDraft(next) } }) {
-            publish(current.copy(draft = next, preview = it, busy = false, canRedo = !redo[page].isNullOrEmpty()))
-        }
+        visiblePage.set(page)
+        val preview = service.cachedPreview(next)
+        publish(current.copy(draft = next, preview = preview, canRedo = !redo[page].isNullOrEmpty()))
+        saveDraft(next)
+        if (preview == null) renderVisible(next)
+        prefetchAround(next)
     }
 
     fun addStroke(stroke: InkStroke) {
@@ -112,17 +132,51 @@ internal class EditorViewModel(application: Application) : AndroidViewModel(appl
     private val current: EditorState get() = mutableState.value!!
 
     private fun show(document: OpenDocument) {
+        visiblePage.set(document.draft.page)
         publish(EditorState(document.draft, document.pages, document.preview, busy = false))
+        prefetchAround(document.draft)
     }
 
     private fun changeInk(draft: Draft) {
         publish(current.copy(draft = draft, canRedo = !redo[draft.page].isNullOrEmpty()))
-        // Snapshot immutable stroke lists before queuing durable, ordered draft writes.
+        saveDraft(draft)
+    }
+
+    // Each write replaces the whole draft file, so only the newest state matters.
+    // Every change queues a write; whichever runs first persists the newest draft
+    // (immutable snapshots) and the rest find nothing left to do. A burst of
+    // strokes or page turns therefore costs one write, not one per change.
+    private fun saveDraft(draft: Draft) {
+        unsavedDraft.set(draft)
         worker.execute {
+            val latest = unsavedDraft.getAndSet(null) ?: return@execute
             try {
-                service.saveDraft(draft)
+                service.saveDraft(latest)
             } catch (error: Exception) {
                 main.post { if (!cleared) publish(current.copy(message = "Draft could not be saved. Save a PDF copy now.")) }
+            }
+        }
+    }
+
+    private fun renderVisible(draft: Draft) {
+        worker.execute {
+            if (visiblePage.get() != draft.page) return@execute
+            val result = runCatching { service.render(draft) }
+            main.post {
+                val shown = current.draft
+                if (cleared || shown?.source != draft.source || shown.page != draft.page) return@post
+                result.fold({ publish(current.copy(preview = it)) }) { publish(current.copy(message = failureMessage(it))) }
+            }
+        }
+    }
+
+    // Renders the neighbours into the service's cache so the next turn is instant.
+    // Failures stay silent here; they surface if the user actually visits the page.
+    private fun prefetchAround(draft: Draft) {
+        for (page in listOf(draft.page + 1, draft.page - 1)) {
+            if (page !in current.pages.indices) continue
+            worker.execute {
+                if (abs(page - visiblePage.get()) <= 1) runCatching { service.render(draft.copy(page = page)) }
             }
         }
     }
@@ -133,13 +187,13 @@ internal class EditorViewModel(application: Application) : AndroidViewModel(appl
             val result = runCatching(work)
             main.post {
                 if (cleared) return@post
-                result.fold(success) { error ->
-                    publish(current.copy(busy = false, message = error.message ?: "Could not complete this PDF operation."))
-                }
+                result.fold(success) { error -> publish(current.copy(busy = false, message = failureMessage(error))) }
                 completed()
             }
         }
     }
+
+    private fun failureMessage(error: Throwable): String = error.message ?: "Could not complete this PDF operation."
 
     private fun publish(value: EditorState) {
         mutableState.value = value
@@ -147,6 +201,12 @@ internal class EditorViewModel(application: Application) : AndroidViewModel(appl
 
     override fun onCleared() {
         cleared = true
+        // Queued draft writes still run before the renderer is released.
+        worker.execute { service.close() }
         worker.shutdown()
+    }
+
+    private companion object {
+        const val NO_PAGE = -1
     }
 }
