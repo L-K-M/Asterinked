@@ -14,15 +14,21 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import ch.lkmc.asterinked.document.PageSpec
+import ch.lkmc.asterinked.ink.InkEraser
 import ch.lkmc.asterinked.ink.InkGeometryCache
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkSegment
 import ch.lkmc.asterinked.ink.InkStroke
 import ch.lkmc.asterinked.ink.InkStrokeBuilder
+import java.util.Collections
+import java.util.IdentityHashMap
 import kotlin.math.abs
 import kotlin.math.min
 
 internal enum class InputMode { PEN, TOUCH }
+
+/** What a writing gesture does. The stylus eraser end and side button always erase. */
+internal enum class InkTool { PEN, ERASER }
 
 internal class InkPageView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
@@ -44,6 +50,11 @@ internal class InkPageView(context: Context) : View(context) {
     private val inkLayer = RenderNode("committedInkLayer").apply { setUseCompositingLayer(true, null) }
     private val recordedLayerRect = RectF()
     private var inkNodeStale = true
+    private val eraser = InkEraser()
+    private val erasing: MutableSet<InkStroke> = Collections.newSetFromMap(IdentityHashMap())
+    private val eraserRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = Color.argb(160, 60, 70, 80) }
+    private var eraserAt: InkPoint? = null
+    private var activeErasing = false
     private var activePointer = NO_POINTER
     private var activeColor = Color.BLACK
     private var activeWidth = DEFAULT_WIDTH
@@ -69,6 +80,16 @@ internal class InkPageView(context: Context) : View(context) {
 
     /** Called with +1 or -1 when a finger swipes the page at fit zoom in pen mode. */
     var onTurnPage: (Int) -> Unit = {}
+
+    /** Receives the strokes one erase gesture removed, once the gesture ends. */
+    var onErase: (Collection<InkStroke>) -> Unit = {}
+
+    var tool = InkTool.PEN
+        set(value) {
+            if (field == value) return
+            cancelStroke()
+            field = value
+        }
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
@@ -180,6 +201,10 @@ internal class InkPageView(context: Context) : View(context) {
             drawInk(canvas, activeColor, live.settled)
             drawInk(canvas, activeColor, live.tail)
         }
+        eraserAt?.let {
+            eraserRing.strokeWidth = resources.displayMetrics.density / scale
+            canvas.drawCircle(it.x, it.y, eraserRadius(), eraserRing)
+        }
         canvas.restore()
     }
 
@@ -217,8 +242,9 @@ internal class InkPageView(context: Context) : View(context) {
         canvas.drawRenderNode(inkLayer)
     }
 
+    // Strokes under the eraser disappear at once and return if the gesture is cancelled.
     private fun drawStrokes(canvas: Canvas) {
-        for (index in strokes.indices) drawInk(canvas, strokes[index].color, geometry[index])
+        for (index in strokes.indices) if (strokes[index] !in erasing) drawInk(canvas, strokes[index].color, geometry[index])
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -241,9 +267,13 @@ internal class InkPageView(context: Context) : View(context) {
             } else {
                 val pointerUp = action == MotionEvent.ACTION_UP ||
                     (action == MotionEvent.ACTION_POINTER_UP && event.getPointerId(event.actionIndex) == activePointer)
-                if (action == MotionEvent.ACTION_MOVE || pointerUp) addSamples(event, index)
+                if (action == MotionEvent.ACTION_MOVE || pointerUp) track(event, index)
                 if (pointerUp) {
-                    if (event.flags and MotionEvent.FLAG_CANCELED == 0) finishStroke() else cancelStroke()
+                    when {
+                        event.flags and MotionEvent.FLAG_CANCELED != 0 -> cancelStroke()
+                        activeErasing -> finishErase()
+                        else -> finishStroke()
+                    }
                     performClick()
                 }
                 return true
@@ -252,20 +282,22 @@ internal class InkPageView(context: Context) : View(context) {
 
         val index = event.actionIndex
         val stylus = event.getToolType(index) == MotionEvent.TOOL_TYPE_STYLUS
-        if (stylus || event.getToolType(index) == MotionEvent.TOOL_TYPE_ERASER) penGesture = true
+        val eraserEnd = event.getToolType(index) == MotionEvent.TOOL_TYPE_ERASER
+        if (stylus || eraserEnd) penGesture = true
         if ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) &&
-            (stylus || (inputMode == InputMode.TOUCH && event.pointerCount == 1))) {
+            (stylus || eraserEnd || (inputMode == InputMode.TOUCH && event.pointerCount == 1))) {
             if (pageRect.contains(event.getX(index), event.getY(index))) {
                 activePointer = event.getPointerId(index)
                 activeColor = inkColor
                 activeWidth = inkWidth
-                if (stylus) requestUnbufferedDispatch(event)
-                addSamples(event, index)
+                activeErasing = eraserEnd || tool == InkTool.ERASER || (stylus && event.buttonState and STYLUS_BUTTONS != 0)
+                if (stylus || eraserEnd) requestUnbufferedDispatch(event)
+                track(event, index)
                 parent?.requestDisallowInterceptTouchEvent(true)
                 return true
             }
         }
-        if (stylus || event.getToolType(index) == MotionEvent.TOOL_TYPE_ERASER) return true
+        if (stylus || eraserEnd) return true
         // A palm that touched while the pen was down stays inert until every pointer
         // lifts, so it cannot pan, zoom or turn the page on its way off the screen.
         if (penGesture) return true
@@ -351,6 +383,38 @@ internal class InkPageView(context: Context) : View(context) {
 
     override fun performClick(): Boolean { super.performClick(); return true }
 
+    private fun track(event: MotionEvent, index: Int) {
+        if (activeErasing) eraseAlong(event, index) else addSamples(event, index)
+    }
+
+    private fun eraseAlong(event: MotionEvent, index: Int) {
+        val page = spec ?: return
+        fun erase(x: Float, y: Float) {
+            val point = InkPoint((x - pageRect.left) / pageRect.width() * page.displayWidth,
+                (y - pageRect.top) / pageRect.height() * page.displayHeight, 1f)
+            if (!point.x.isFinite() || !point.y.isFinite()) return
+            val candidates = strokes.filter { it !in erasing }
+            // The cached ink must be re-recorded without the newly hidden strokes.
+            if (erasing.addAll(eraser.hits(candidates, eraserAt, point, eraserRadius()))) inkNodeStale = true
+            eraserAt = point
+        }
+        for (history in 0 until event.historySize) erase(event.getHistoricalX(index, history), event.getHistoricalY(index, history))
+        erase(event.getX(index), event.getY(index))
+        invalidate()
+    }
+
+    private fun finishErase() {
+        val erased = strokes.filter { it in erasing }
+        cancelStroke()
+        if (erased.isNotEmpty()) onErase(erased)
+    }
+
+    // A constant size on screen: zooming in makes the eraser more precise on the page.
+    private fun eraserRadius(): Float {
+        val page = spec ?: return 0f
+        return ERASER_RADIUS_DP * resources.displayMetrics.density * page.displayWidth / pageRect.width()
+    }
+
     private fun addSamples(event: MotionEvent, index: Int) {
         val page = spec ?: return
         fun add(x: Float, y: Float, pressure: Float) {
@@ -383,6 +447,12 @@ internal class InkPageView(context: Context) : View(context) {
     private fun cancelStroke() {
         points = mutableListOf()
         liveStroke = null
+        // Strokes hidden by a cancelled erase must be drawn again.
+        if (erasing.isNotEmpty()) inkNodeStale = true
+        erasing.clear()
+        eraser.reset()
+        eraserAt = null
+        activeErasing = false
         activePointer = NO_POINTER
         parent?.requestDisallowInterceptTouchEvent(false)
         invalidate()
@@ -413,5 +483,8 @@ internal class InkPageView(context: Context) : View(context) {
         const val SWIPE_DISTANCE_DP = 64f
         const val SWIPE_VELOCITY_DP = 600f
         const val SWIPE_DIRECTION_RATIO = 1.5f
+        const val ERASER_RADIUS_DP = 10f
+        // Most pens report the side button as primary; older S Pens report secondary.
+        const val STYLUS_BUTTONS = MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_SECONDARY
     }
 }

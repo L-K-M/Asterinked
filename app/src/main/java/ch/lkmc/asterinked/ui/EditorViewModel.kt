@@ -17,7 +17,10 @@ import ch.lkmc.asterinked.document.Draft
 import ch.lkmc.asterinked.document.OpenDocument
 import ch.lkmc.asterinked.document.PageSpec
 import ch.lkmc.asterinked.document.toProblem
+import ch.lkmc.asterinked.ink.InkHistory
 import ch.lkmc.asterinked.ink.InkStroke
+import java.util.Collections
+import java.util.IdentityHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
@@ -30,6 +33,7 @@ internal data class EditorState(
     /** The visible page's render; null while it is still being rendered. */
     val preview: Bitmap? = null,
     val busy: Boolean = true,
+    val canUndo: Boolean = false,
     val canRedo: Boolean = false,
     val message: String? = null,
 )
@@ -47,7 +51,7 @@ internal class EditorViewModel internal constructor(
     private val visiblePage = AtomicInteger(NO_PAGE)
     private val unsavedDraft = AtomicReference<Draft?>()
     private val mutableState = MutableLiveData(EditorState())
-    private val redo = mutableMapOf<Int, List<InkStroke>>()
+    private val history = InkHistory()
     private var cleared = false
     private var restoring = true
     private var pendingPickerResult: (() -> Unit)? = null
@@ -71,7 +75,7 @@ internal class EditorViewModel internal constructor(
         }
         if (current.busy) return
         perform({ service.open(uri) }) {
-            redo.clear()
+            history.clear()
             show(it)
         }
     }
@@ -85,7 +89,7 @@ internal class EditorViewModel internal constructor(
         val next = draft.copy(page = page)
         visiblePage.set(page)
         val preview = service.cachedPreview(next)
-        publish(current.copy(draft = next, preview = preview, canRedo = !redo[page].isNullOrEmpty()))
+        publish(withHistory(current.copy(draft = next, preview = preview)))
         saveDraft(next)
         if (preview == null) renderVisible(next)
         prefetchAround(next)
@@ -94,26 +98,33 @@ internal class EditorViewModel internal constructor(
     fun addStroke(stroke: InkStroke) {
         val draft = current.draft ?: return
         if (current.busy || stroke.points.isEmpty()) return
-        redo.remove(draft.page)
-        changeInk(draft.copy(ink = draft.ink + (draft.page to (draft.ink[draft.page].orEmpty() + stroke))))
+        val strokes = draft.ink[draft.page].orEmpty()
+        edit(draft, strokes, strokes + stroke)
+    }
+
+    /** Removes whole strokes from the visible page as one undoable edit. */
+    fun eraseStrokes(erased: Collection<InkStroke>) {
+        val draft = current.draft ?: return
+        if (current.busy || erased.isEmpty()) return
+        // The view hands back the instances it drew; identity keeps an equal copy of a stroke.
+        val gone = Collections.newSetFromMap(IdentityHashMap<InkStroke, Boolean>()).apply { addAll(erased) }
+        val strokes = draft.ink[draft.page].orEmpty()
+        val remaining = strokes.filterNot { it in gone }
+        if (remaining.size != strokes.size) edit(draft, strokes, remaining)
     }
 
     fun undo() {
         val draft = current.draft ?: return
         if (current.busy) return
-        val strokes = draft.ink[draft.page].orEmpty()
-        if (strokes.isEmpty()) return
-        redo[draft.page] = redo[draft.page].orEmpty() + strokes.last()
-        changeInk(draft.copy(ink = draft.ink + (draft.page to strokes.dropLast(1))))
+        val strokes = history.undo(draft.page, draft.ink[draft.page].orEmpty()) ?: return
+        changeInk(draft.copy(ink = draft.ink + (draft.page to strokes)))
     }
 
     fun redo() {
         val draft = current.draft ?: return
         if (current.busy) return
-        val strokes = redo[draft.page].orEmpty()
-        if (strokes.isEmpty()) return
-        redo[draft.page] = strokes.dropLast(1)
-        changeInk(draft.copy(ink = draft.ink + (draft.page to (draft.ink[draft.page].orEmpty() + strokes.last()))))
+        val strokes = history.redo(draft.page, draft.ink[draft.page].orEmpty()) ?: return
+        changeInk(draft.copy(ink = draft.ink + (draft.page to strokes)))
     }
 
     fun export(uri: Uri) {
@@ -137,12 +148,22 @@ internal class EditorViewModel internal constructor(
 
     private fun show(document: OpenDocument) {
         visiblePage.set(document.draft.page)
-        publish(EditorState(document.draft, document.pages, document.preview, busy = false))
+        publish(withHistory(EditorState(document.draft, document.pages, document.preview, busy = false)))
         prefetchAround(document.draft)
     }
 
+    private fun edit(draft: Draft, before: List<InkStroke>, after: List<InkStroke>) {
+        history.record(draft.page, before, after)
+        changeInk(draft.copy(ink = draft.ink + (draft.page to after)))
+    }
+
+    private fun withHistory(state: EditorState): EditorState {
+        val draft = state.draft ?: return state.copy(canUndo = false, canRedo = false)
+        return state.copy(canUndo = history.canUndo(draft.page, draft.ink[draft.page].orEmpty()), canRedo = history.canRedo(draft.page))
+    }
+
     private fun changeInk(draft: Draft) {
-        publish(current.copy(draft = draft, canRedo = !redo[draft.page].isNullOrEmpty()))
+        publish(withHistory(current.copy(draft = draft)))
         saveDraft(draft)
     }
 

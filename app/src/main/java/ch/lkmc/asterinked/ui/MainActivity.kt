@@ -2,6 +2,7 @@ package ch.lkmc.asterinked.ui
 
 import android.app.AlertDialog
 import android.content.ActivityNotFoundException
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
@@ -35,8 +36,10 @@ internal class MainActivity : ComponentActivity() {
     private lateinit var input: Button
     private lateinit var color: Button
     private lateinit var thickness: Button
+    private lateinit var eraser: Button
     private lateinit var fit: Button
     private var mode = InputMode.PEN
+    private var tool = InkTool.PEN
     private var colorIndex = 0
     private var widthIndex = 1
 
@@ -52,6 +55,7 @@ internal class MainActivity : ComponentActivity() {
         colorIndex = savedInstanceState?.getInt(COLOR_KEY)?.coerceIn(COLORS.indices) ?: 0
         widthIndex = savedInstanceState?.getInt(WIDTH_KEY)?.coerceIn(WIDTHS.indices) ?: 1
         mode = savedInstanceState?.getString(MODE_KEY)?.let { InputMode.valueOf(it) } ?: InputMode.PEN
+        tool = savedInstanceState?.getString(TOOL_KEY)?.let { InkTool.valueOf(it) } ?: InkTool.PEN
         buildLayout()
         configurePen()
         model.state.observe(this, ::show)
@@ -61,6 +65,7 @@ internal class MainActivity : ComponentActivity() {
         outState.putInt(COLOR_KEY, colorIndex)
         outState.putInt(WIDTH_KEY, widthIndex)
         outState.putString(MODE_KEY, mode.name)
+        outState.putString(TOOL_KEY, tool.name)
         super.onSaveInstanceState(outState)
     }
 
@@ -108,11 +113,16 @@ internal class MainActivity : ComponentActivity() {
                     dialog.dismiss()
                 }.show()
         }
+        eraser = button(R.string.eraser, tools) {
+            tool = if (tool == InkTool.ERASER) InkTool.PEN else InkTool.ERASER
+            configurePen()
+        }
         fit = button(R.string.fit, tools) { page.resetZoom() }
         root.addView(scroll(tools))
 
         val workspace = android.widget.FrameLayout(this)
         page = InkPageView(this).apply { onTurnPage = ::turnPage }
+        page.onErase = model::eraseStrokes
         workspace.addView(page, android.widget.FrameLayout.LayoutParams(MATCH, MATCH))
         welcome = column().apply {
             gravity = Gravity.CENTER
@@ -143,8 +153,17 @@ internal class MainActivity : ComponentActivity() {
         color.setText(COLOR_NAMES[colorIndex])
         color.setTextColor(COLORS[colorIndex])
         thickness.setText(WIDTH_NAMES[widthIndex])
-        hint.setText(if (mode == InputMode.PEN) R.string.input_hint else R.string.touch_hint)
+        hint.setText(when {
+            tool == InkTool.ERASER -> R.string.eraser_hint
+            mode == InputMode.PEN -> R.string.input_hint
+            else -> R.string.touch_hint
+        })
+        // A tint shows the active eraser without replacing the text colors, so the
+        // disabled state still greys the label.
+        eraser.isActivated = tool == InkTool.ERASER
+        eraser.backgroundTintList = if (tool == InkTool.ERASER) ColorStateList.valueOf(ACTIVE_TOOL_COLOR) else null
         page.configure(mode, COLORS[colorIndex], WIDTHS[widthIndex], model::addStroke)
+        page.tool = tool
     }
 
     private fun show(state: EditorState) {
@@ -153,11 +172,11 @@ internal class MainActivity : ComponentActivity() {
         title.text = draft?.name ?: getString(R.string.app_name)
         open.isEnabled = !state.busy
         save.isEnabled = ready
-        undo.isEnabled = ready && !draft?.ink?.get(draft.page).isNullOrEmpty()
+        undo.isEnabled = ready && state.canUndo
         redo.isEnabled = ready && state.canRedo
         previous.isEnabled = ready && draft!!.page > 0
         next.isEnabled = ready && draft!!.page < state.pages.lastIndex
-        listOf(input, color, thickness, fit).forEach { it.isEnabled = ready }
+        listOf(input, color, thickness, eraser, fit).forEach { it.isEnabled = ready }
         welcome.visibility = if (draft == null) View.VISIBLE else View.GONE
         counter.text = if (draft == null) "" else getString(R.string.page_count, draft.page + 1, state.pages.size)
         status.text = when {
@@ -219,10 +238,12 @@ internal class MainActivity : ComponentActivity() {
         const val COLOR_KEY = "penColor"
         const val WIDTH_KEY = "penWidth"
         const val MODE_KEY = "inputMode"
+        const val TOOL_KEY = "inkTool"
         const val MATCH = LinearLayout.LayoutParams.MATCH_PARENT
         const val WRAP = LinearLayout.LayoutParams.WRAP_CONTENT
         val PAPER_COLOR = Color.rgb(248, 247, 242)
         val INK_COLOR = Color.rgb(34, 89, 79)
+        val ACTIVE_TOOL_COLOR = Color.rgb(196, 222, 214)
         val COLORS = intArrayOf(Color.rgb(25, 38, 46), Color.rgb(32, 85, 184), Color.rgb(179, 47, 61), Color.rgb(32, 113, 73))
         val COLOR_NAMES = intArrayOf(R.string.black, R.string.blue, R.string.red, R.string.green)
         val WIDTHS = floatArrayOf(1.2f, 2.2f, 4f)
