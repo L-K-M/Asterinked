@@ -49,6 +49,21 @@ class InkPageViewTest {
         assertTrue(strokes.isEmpty())
     }
 
+    @Test fun pageStillRenderingTakesInkRightAway() {
+        val strokes = mutableListOf<InkStroke>()
+        val view = InkPageView(RuntimeEnvironment.getApplication()).apply {
+            configure(InputMode.PEN, Color.BLACK, 2f) { strokes.add(it) }
+            show(EditorState(Draft(File("test.pdf"), "test.pdf"), listOf(PageSpec(0f, 0f, 400f, 600f, 0)), preview = null, busy = false))
+            layout(0, 0, 600, 800)
+            draw(Canvas(Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888)))
+        }
+
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f)))
+
+        assertEquals(1, strokes.size)
+    }
+
     private fun pageView(mode: InputMode, strokes: MutableList<InkStroke>): InkPageView {
         val bitmap = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888)
         return InkPageView(RuntimeEnvironment.getApplication()).apply {

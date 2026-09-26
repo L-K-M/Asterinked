@@ -3,26 +3,51 @@ package ch.lkmc.asterinked.document
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.util.LruCache
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import java.io.File
 
 internal data class OpenDocument(val draft: Draft, val pages: List<PageSpec>, val preview: Bitmap)
 
-/** Called on one worker: PDF handles and disk writes never race one another. */
-internal class DocumentService(context: Context) {
+/**
+ * What the editor needs from storage and rendering. Every call except
+ * [cachedPreview] runs on one worker thread, so PDF handles and disk writes
+ * never race one another.
+ */
+internal interface DocumentOperations {
+    fun open(uri: Uri): OpenDocument
+    fun restore(): OpenDocument?
+    fun render(draft: Draft): Bitmap
+
+    /** A preview [render] already produced, if still cached. Safe on any thread. */
+    fun cachedPreview(draft: Draft): Bitmap?
+    fun saveDraft(draft: Draft)
+    fun export(draft: Draft, destination: Uri)
+    fun close()
+}
+
+internal class DocumentService(context: Context) : DocumentOperations {
     private val store = DocumentStore(context)
     private val engine = PdfEngine(context.cacheDir)
     private val cache = context.cacheDir
+    // A preview is ~13 MB. A sixth of the heap holds the visible page and both
+    // neighbours with a 256 MB heap, and only the most recent preview with 128 MB.
+    // Below about 80 MB nothing fits: pages still render, but prefetch is wasted.
+    private val previews = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / PREVIEW_HEAP_SHARE).toInt()) {
+        override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
+    }
 
     init {
         PDFBoxResourceLoader.init(context.applicationContext)
     }
 
-    fun open(uri: Uri): OpenDocument {
+    override fun open(uri: Uri): OpenDocument {
         val draft = during(DocumentProblem.SOURCE_UNREADABLE) { store.import(uri) }
         try {
             val document = during(DocumentProblem.NOT_A_PDF) {
-                OpenDocument(draft, engine.inspect(draft.source), engine.render(draft.source, draft.page))
+                val pages = engine.inspect(draft.source)
+                previews.evictAll()
+                OpenDocument(draft, pages, renderPage(draft))
             }
             during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(draft) }
             return document
@@ -32,18 +57,25 @@ internal class DocumentService(context: Context) {
         }
     }
 
-    fun restore(): OpenDocument? = during(DocumentProblem.DRAFT_UNREADABLE) {
+    override fun restore(): OpenDocument? = during(DocumentProblem.DRAFT_UNREADABLE) {
         val draft = store.restore() ?: return@during null
         val pages = engine.inspect(draft.source)
         require(draft.page in pages.indices) { "The saved page is invalid." }
-        OpenDocument(draft, pages, engine.render(draft.source, draft.page))
+        OpenDocument(draft, pages, renderPage(draft))
     }
 
-    fun render(draft: Draft): Bitmap = during(DocumentProblem.NOT_A_PDF) { engine.render(draft.source, draft.page) }
+    override fun render(draft: Draft): Bitmap = during(DocumentProblem.NOT_A_PDF) { renderPage(draft) }
 
-    fun saveDraft(draft: Draft) = during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(draft) }
+    override fun cachedPreview(draft: Draft): Bitmap? = previews.get(key(draft))
 
-    fun export(draft: Draft, destination: Uri) {
+    override fun saveDraft(draft: Draft) = during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(draft) }
+
+    override fun close() {
+        previews.evictAll()
+        engine.close()
+    }
+
+    override fun export(draft: Draft, destination: Uri) {
         val output = File.createTempFile("annotated-", ".pdf", cache)
         try {
             // Always derive from the imported PDF, so repeated saves never duplicate ink.
@@ -54,6 +86,11 @@ internal class DocumentService(context: Context) {
         }
     }
 
+    private fun renderPage(draft: Draft): Bitmap =
+        cachedPreview(draft) ?: engine.render(draft.source, draft.page).also { previews.put(key(draft), it) }
+
+    private fun key(draft: Draft) = "${draft.source.name}:${draft.page}"
+
     // Tags failures with the step that was running; OutOfMemoryError is caught
     // too because a single oversized page or bitmap is recoverable here.
     private inline fun <T> during(stage: DocumentProblem, work: () -> T): T = try {
@@ -62,5 +99,9 @@ internal class DocumentService(context: Context) {
         throw DocumentException(error.toProblem(stage), error)
     } catch (error: OutOfMemoryError) {
         throw DocumentException(DocumentProblem.OUT_OF_MEMORY, error)
+    }
+
+    private companion object {
+        const val PREVIEW_HEAP_SHARE = 6
     }
 }
