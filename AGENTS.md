@@ -75,6 +75,11 @@ signed, published APK), `zai-code-review.yml` (GLM reviews every PR; respond
 per CLAUDE.md). Family contract on every workflow: least-privilege
 permissions, explicit concurrency, timeouts, wrapper validation.
 
+CI uses Gradle's build cache, so `testDebugUnitTest` can come back
+`FROM-CACHE` without running. The PDFium fixtures are declared outputs of
+that task in `app/build.gradle.kts`, which makes a cache hit restore them;
+keep that declaration in step with the fixture path.
+
 ## Releasing
 
 `scripts/release.sh X.Y.Z --push` (shared lkm-release engine) bumps
