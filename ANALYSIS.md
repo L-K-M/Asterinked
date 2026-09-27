@@ -7,7 +7,8 @@ Read `AGENTS.md` first for build, CI and repo conventions.
 
 Baseline: `main` at v0.2.0 (`333fa4b`), reviewed file by file on 2026-09-26.
 The CI gate (`./gradlew testDebugUnitTest lintDebug assembleDebug` plus
-`scripts/verify_pdf.py`) is green there.
+`scripts/verify_pdf.py`) is green there. The PRs in section 1 were merged
+on 2026-09-27; the backlog below applies to `main` after that merge.
 
 IDs (B = bug, G = general, P = performance, F = feature, V = visual,
 U = UX, D = delight, T = tests and tooling) are stable; keep them when
@@ -16,11 +17,12 @@ deleting them silently.
 
 ---
 
-## 1. Status: implemented in open pull requests
+## 1. Status: merged pull requests
 
 Eight focused PRs, each cut from `main`, each green in CI and reviewed by
 the GLM bot until no valid important findings remained, plus #18, which
-combines all eight, and #19, a CI fix. They wait for a human merge.
+combined all eight, and #19, a CI fix. All merged on 2026-09-27: #19 as
+`39d9bd4`, then #10–#17 together through #18's merge commit `2896ba6`.
 
 | PR | Branch | Covers | Summary |
 |---|---|---|---|
@@ -32,17 +34,15 @@ combines all eight, and #19, a CI fix. They wait for a human merge.
 | [#15](https://github.com/L-K-M/Asterinked/pull/15) | `claude/open-with-share` | F4, F5, G4, B11 | VIEW/SEND intent filters (`singleTask`), incoming PDFs wait until the editor is idle, Share via `FileProvider`, sanitized `Draft.exportName` (also fixes path traversal from hostile display names). |
 | [#16](https://github.com/L-K-M/Asterinked/pull/16) | `claude/ui-refresh` | V1–V5, V6 (partly), V7, B6, B7, B9, F3 (jump to page), F10 | Compact icon top bar, tool strip with swatches and width dots, floating page pill (tap to jump, Fit), page shadow, red/slate palette, designed adaptive launcher icon, remembered pen settings. |
 | [#17](https://github.com/L-K-M/Asterinked/pull/17) | `claude/highlighter` | F2 | Highlighter kind: constant-width path multiplied with the page on screen and in the PDF (`/BM /Multiply`); kind persisted backward-compatibly; PDFium fixture proves text stays dark and that the marker really covers text. |
-| [#18](https://github.com/L-K-M/Asterinked/pull/18) | `claude/integration` | all of the above, B16, B17 | Optional one-step merge: #10–#17 merged into `main` with every conflict below resolved, the features ported into #16's new chrome (highlighter and eraser toggles in the tool strip, Share icon in the top bar), and highlights (committed and live) drawn under pen ink on screen and in the export. Merging it marks the eight as merged. |
-| [#19](https://github.com/L-K-M/Asterinked/pull/19) | `claude/ci-cached-fixtures` | CI | `main` CI turned red on the docs-only ANALYSIS.md commit: `testDebugUnitTest` came from the build cache without writing the PDFium fixtures. The fixtures are now declared task outputs, so a cache hit restores them. Merges cleanly with every other PR. |
+| [#18](https://github.com/L-K-M/Asterinked/pull/18) | `claude/integration` | all of the above, B16, B17 | One-step merge of #10–#17 with every conflict below resolved, the features ported into #16's new chrome (highlighter and eraser toggles in the tool strip, Share icon in the top bar), and highlights (committed and live) drawn under pen ink on screen and in the export. |
+| [#19](https://github.com/L-K-M/Asterinked/pull/19) | `claude/ci-cached-fixtures` | CI | `main` CI turned red on the docs-only ANALYSIS.md commit: `testDebugUnitTest` came from the build cache without writing the PDFium fixtures. The fixtures are now declared task outputs, so a cache hit restores them. |
 
-### 1.1 Recommended merge order and integration notes
+### 1.1 How the PRs fit together
 
-All eight merge cleanly into `main` on their own, but they overlap heavily
-with each other (22 conflicting pairs, mostly `InkPageView`, `MainActivity`,
-`EditorViewModel`, `DocumentService`). #18 is the worked answer: it merges
-them in the order below, and its merge commits show each resolution. Either
-merge #18 alone, or merge the eight in this order (lowest churn first) and
-use #18's merge commits as the reference:
+The eight overlapped heavily (22 conflicting pairs, mostly `InkPageView`,
+`MainActivity`, `EditorViewModel`, `DocumentService`). #18 merged them in
+this order (lowest churn first), and its merge commits show each
+resolution:
 
 1. **#12** errors and encryption (document layer).
 2. **#13** page turns (reshapes `EditorViewModel`, adds the test seam).
@@ -53,9 +53,8 @@ use #18's merge commits as the reference:
 7. **#15** open with and share.
 8. **#16** UI refresh last, because it rewrites `MainActivity`.
 
-Rebase each PR on `main` after its predecessor merges and rerun the full
-gate. Semantic interactions to handle while resolving (not just text
-conflicts):
+The semantic interactions below explain design choices in the merged code
+that no single PR shows on its own:
 
 - **#10 + #14:** the eraser hides strokes live by skipping them in the draw
   loop. With #10 the committed ink is a cached `RenderNode`, so every change
@@ -100,11 +99,14 @@ conflicts):
 - **Where:** `document/PdfEngine.kt` (`load`), `document/DocumentService.kt`
   (`open`), `ui/MainActivity.kt`.
 - **Approach:** On `DocumentProblem.PASSWORD_PROTECTED`, prompt for a
-  password; `PDDocument.load(file, password, …)`, then
-  `setAllSecurityToBeRemoved(true)` and save a decrypted private copy for
-  `PdfRenderer` (which only accepts passwords from API 35). Re-encrypt the
-  export with the user password and the original permissions (mirror
-  `keepProtection` from #12). Never persist the password.
+  password and open with `PDDocument.load(file, password, …)`. On API 35+
+  hand the password to `PdfRenderer` (`PdfRenderer.Params` accepts one) and
+  keep it in memory only. Below API 35, `setAllSecurityToBeRemoved(true)`
+  and save a decrypted private copy for `PdfRenderer`, deleted when the
+  document is replaced, so plaintext at rest exists only on old devices.
+  Re-encrypt the export with the user password and the original
+  permissions (mirror `keepProtection` from #12). Never persist the
+  password.
 - **Acceptance:** JVM test with a user-password fixture: wrong password →
   retry prompt state; right password → pages inspected and export
   re-encrypted (loads only with the password). Add a PDFium fixture if
@@ -144,10 +146,13 @@ conflicts):
 - Pen widths go through `InkGeometry.strokeWidth` (finite and positive,
   else the default) on screen and in the export; highlighter strokes use
   `stroke.width` raw in `InkPageView.drawHighlight` and `PdfEngine.highlight`.
-  Today widths only come from `HIGHLIGHT_WIDTHS` and JSON cannot carry NaN,
-  so this is hardening against a corrupted or hand-edited `draft.json`.
-  Apply `strokeWidth` in both places; add a `DocumentStore` round-trip test
-  with a zero-width highlight (from #18's review).
+  Today widths only come from `HIGHLIGHT_WIDTHS`, and `org.json` refuses to
+  write NaN, but its parser accepts unquoted `NaN` and `Infinity` literals
+  (it falls back to `Double.valueOf`), so a corrupted or hand-edited
+  `draft.json` can carry them through a restore. Sanitize on the read path
+  as well: apply `strokeWidth` when drawing and exporting highlights, and
+  add a `DocumentStore` round-trip test with zero, `NaN` and `Infinity`
+  widths (from #18's reviews).
 
 ### B20. Small cleanups found in review
 - Cancel `zoomAnimator` in `InkPageView.onDetachedFromWindow` (#11's
