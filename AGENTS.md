@@ -22,11 +22,19 @@ scripts/build.sh --debug                              # debug APK -> dist/
 scripts/install.sh                                    # build + install + launch on a device
 python3 -m pip install -r scripts/pdf-test-requirements.txt
 python3 scripts/verify_pdf.py                         # PDFium re-render of test exports
+python3 scripts/generate_launcher_icon.py             # launcher icon from media-sources/icon.png
 ```
+
+The adaptive icon's foreground webp files are generated; regenerate them from
+`media-sources/icon.png` instead of editing them by hand.
 
 - JDK 17. Android SDK via `ANDROID_HOME` or `sdk.dir` in `local.properties`.
 - Versions are pinned ONLY in `gradle/libs.versions.toml`. Never add an ad-hoc
   version to a build file; never restate catalog versions in docs.
+- `EditorViewModel` takes a `DocumentOperations` and an `ExecutorService`.
+  Model tests inject a fake and a queue-backed executor
+  (`EditorViewModelPagingTest`) to decide exactly when worker tasks and
+  main-thread posts run; `PdfRenderer` itself only runs on devices.
 
 ## Toolchain quirks — don't "fix" these
 
@@ -43,10 +51,21 @@ python3 scripts/verify_pdf.py                         # PDFium re-render of test
   Robolectric cannot run Android's PdfRenderer, so the JVM tests write export
   fixtures to `app/build/test-output/raster-proof/` and the Python script
   re-renders them with PDFium — independent of PDFBox — checking ink
-  placement and preserved text/artwork at all four rotations. It only works
-  after `testDebugUnitTest` ran in the same checkout.
+  placement and preserved text/artwork at all four rotations, that an
+  owner-restricted encrypted export stays encrypted without regaining print
+  permission, and that text stays dark under a multiply-blended highlighter
+  marker. It only works after `testDebugUnitTest` ran in the same checkout.
 - The debug build carries `applicationIdSuffix ".debug"` (and `-debug` on
   versionName) so it can sit next to a release install on the same device.
+- `InkPageView` replays committed ink from cached `RenderNode`s only on
+  hardware canvases. Robolectric draws in software, so JVM tests exercise the
+  direct-draw fallback, and pixel assertions need `@GraphicsMode(NATIVE)`
+  (the default LEGACY mode rasterizes nothing). The RenderNode path needs a
+  device check.
+- `InkGeometry.segments` is the export contract: `InkIncrementalTest` pins it
+  to the v0.1.0 algorithm, and the live `InkStrokeBuilder` must produce the
+  same segments for every prefix. Changing stroke geometry changes every
+  exported PDF, so do it deliberately and update that reference.
 
 ## CI/CD
 
@@ -149,6 +168,10 @@ and verification procedure. State any inability to reproduce the failure.
 - Validate the requested command, options, platform, and configuration.
   Unrelated green CI is not proof that the reported problem is fixed.
 - Recheck after the final edit. Distinguish local checks from CI results.
+- Gesture tests (`InkPageViewGestureTest`) assert where a stylus tap lands in
+  page units rather than reading private zoom state. `ScaleGestureDetector`
+  ignores spans under ~27mm (about 170px at the default mdpi test density),
+  so synthetic pinches need wider spans; double taps need real event times.
 
 ## Commit messages
 
