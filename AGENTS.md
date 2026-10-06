@@ -68,6 +68,13 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   to the v0.1.0 algorithm, and the live `InkStrokeBuilder` must produce the
   same segments for every prefix. Changing stroke geometry changes every
   exported PDF, so do it deliberately and update that reference.
+- `InkHistory` retains O(pages + edits + changed stroke occurrences), never
+  full page-list prefixes. Keep positioned, identity-based deltas, deque
+  stacks and shared weak list boundaries for exact-list stale rejection.
+  Restoring ink creates no edit entries; unmatched undo keeps the newest-stroke
+  fallback. `InkHistoryStorageTest` counts strong stroke slots at 1k/2k/4k/5k
+  edits and replays after simulated snapshot collection. Page-list copying,
+  diffing and reconstruction still take O(page strokes).
 
 ## UI conventions
 
