@@ -10,10 +10,22 @@ The CI gate (`./gradlew testDebugUnitTest lintDebug assembleDebug` plus
 `scripts/verify_pdf.py`) is green there. The PRs in section 1 were merged
 on 2026-09-27; the backlog below applies to `main` after that merge.
 
+Second pass (SWE-2 Max), 2026-10-06, at `main` = `d48a41d` (the #23
+redesign). Every backlog item was re-verified against the code — all are
+still open — and the pass added the N-prefixed findings folded into each
+section below. Items tagged *(in flight: #N)* have an open PR from that
+pass; leave them alone until the PR merges or closes.
+
 IDs (B = bug, G = general, P = performance, F = feature, V = visual,
-U = UX, D = delight, T = tests and tooling) are stable; keep them when
-updating this file, and move finished items to the "Done" table instead of
-deleting them silently.
+U = UX, D = delight, T = tests and tooling, N = second-pass findings) are
+stable; keep them when updating this file, and move finished items to the
+"Done" table instead of deleting them silently.
+
+**Parallel work warning.** Several agents ran this same review in
+2026-10-06; dozens of PRs beyond the ones listed below cover overlapping
+items (quick re-save, hover cursor, loader animation, pill auto-hide,
+draft recovery, eraser fixes, gesture undo…). Before starting any item,
+check the open PR list for an existing attempt.
 
 ---
 
@@ -91,6 +103,20 @@ that no single PR shows on its own:
 
 ---
 
+## 1.5 In flight from the 2026-10-06 pass
+
+Five PRs, each cut from `main` at `d48a41d`, left open for human review:
+
+| PR | Branch | Covers | Summary |
+|---|---|---|---|
+| [#34](https://github.com/L-K-M/Asterinked/pull/34) | `swe/notice-actions` | U8, U4 (Open), N1 | `NoticeBar` gained one action slot (a new `notice_action` colour, held 10 s). After export the notice offers *Open* (ACTION_VIEW with a read grant, Asterinked excluded from the chooser). Export success is now reported separately from the draft write, so a save failure can no longer mask a landed PDF. |
+| [#38](https://github.com/L-K-M/Asterinked/pull/38) | `swe/quick-save` | F6 | `Draft.destination` remembers the export URI while a persistable write grant survives; the top-bar button becomes one-tap "Save" with long-press for "save a copy elsewhere"; Ctrl+S inherits it. |
+| [#39](https://github.com/L-K-M/Asterinked/pull/39) | `swe/hover-cursor` | U2, N35 | `InkPageView.onHoverEvent` draws a ring at the nib's landing point (ink colour and width; eraser radius and colour for eraser), hidden while writing, for fingers, and on hover exit. |
+| [#46](https://github.com/L-K-M/Asterinked/pull/46) | `swe/small-ux` | N2, U7, V6 (part) | Disabled or hidden shortcut targets now return `super` instead of swallowing the event; page turns and undo/redo tick `CLOCK_TICK`; the input-mode hint shows once on first editor open (`hintedGestures` pref). |
+| [#53](https://github.com/L-K-M/Asterinked/pull/53) | `swe/asterisk-loader` | N41 (part) | `AsteriskLoader` replaces the loading `ProgressBar`: the brand asterisk strokes itself in over a faint ghost, looping only while on screen. The welcome-screen one-shot variant is still open. |
+
+---
+
 ## 2. Backlog: bugs
 
 ### B2. Password prompt for protected PDFs (with F11)
@@ -126,6 +152,9 @@ that no single PR shows on its own:
 - **Acceptance:** Robolectric: corrupt JSON restores to an empty editor with
   one message and no message on the next launch; a draft whose render
   throws still restores its ink.
+- Fold in **N25**: `restore` calls `getJSONObject("savedInk")`; a draft
+  written before `savedInk` existed throws and takes the broken path too.
+  `optJSONObject` + empty default keeps old drafts loadable.
 
 ### B12. Remaining hard-coded strings
 - `InkPageView` content description, `"Document.pdf"` fallback in
@@ -163,6 +192,48 @@ that no single PR shows on its own:
 - `PdfEngineSecurityTest.deeplyNestedPdf` formats xref offsets with the
   default locale; use `Locale.ROOT`.
 
+### N1. Export-then-draft-save failure shows the wrong error *(in flight: #34)*
+`EditorViewModel.export` ran `service.export` and `service.saveDraft` in one
+worker block; a failed draft write reported "Couldn't store this document"
+and kept "Unexported notes" even though the PDF landed. #34 splits them:
+export success publishes `EditorState.exported` (an `Open` action on the
+notice), and the draft write reports through its own message.
+
+### N2. `onKeyShortcut` swallows shortcuts it does not act on *(in flight: #46)*
+Hidden or disabled targets (e.g. Ctrl+S on the welcome screen) returned
+`true`, eating the event. #46 returns `super.onKeyShortcut` instead; the
+same fix applies to page-up/down in `onKeyDown`.
+
+### N21. A stylus touch outside the page freezes finger gestures
+A stylus `ACTION_DOWN`/`ACTION_POINTER_DOWN` sets `penGesture = true` even
+when it lands in the margin outside `pageRect` and never starts a stroke;
+`if (penGesture) return true` then makes every finger inert until all
+pointers lift. Gate `penGesture` on the stroke actually starting (or on the
+touch landing inside `pageRect`). Real on tablets; cosmetic edge case.
+
+### N22. A second incoming PDF during the replace-prompt is silently superseded
+`MainActivity.show()` captures `uri = incoming` when showing
+`confirmReplacing`; if another PDF arrives while the dialog is up, "Open
+another" still opens the older URI. Open `incoming` at confirm time, not
+the captured one.
+
+### N23. A stroke in progress is silently dropped when export/share starts
+`InkPageView.show` cancels the live stroke when `state.busy` goes true —
+the half-drawn stroke vanishes with no undo. Commit the stroke before
+publishing busy, or leave it visible-but-uncommitted. Low priority; the
+window is one tap.
+
+### N24. Zoom and pan reset on rotation
+`zoom`/`panX`/`panY` are view fields and the view is recreated on config
+change, so a zoomed writing position is lost. Persist the transform in
+`onSaveInstanceState` (per document/page key). Minor.
+
+### N26. Fling page turn drags the page a few dp first
+At fit zoom the pan clamp still allows the 12 dp page margin, so a
+horizontal swipe visibly wiggles the page before the fling fires. Clamp
+horizontal pan to 0 at zoom == 1, or suppress pan during a fit-zoom
+horizontal swipe. Cosmetic.
+
 ---
 
 ## 3. Backlog: general
@@ -187,7 +258,8 @@ that no single PR shows on its own:
 - **G7. One-shot events.** `EditorState.message` (and `shared` in #15) must
   be acknowledged manually. Replace with a single-consumer event channel
   (for example a `Channel`/`SharedFlow` or an event queue in the model) so
-  state and effects stop mixing as the state grows.
+  state and effects stop mixing as the state grows. The pattern keeps
+  accruing fields — #34 added `exported` with its own `acknowledgeExport`.
 - **G9. Re-encryption choices (#12).** Two decisions for `keepProtection`:
   (a) derive the key length from the security handler version (`V >= 5` →
   256-bit AES, `V == 4` → 128) instead of the optional top-level `/Length`,
@@ -225,6 +297,18 @@ that no single PR shows on its own:
   an `InkStroke`, its centerline and a `Path` from all points every frame.
   Append to one reusable `Path` per sample instead (mirroring
   `InkStrokeBuilder` for pens); only matters for very long highlights.
+  (N29: `InkStrokeBuilder.add` also allocates the tail list per sample —
+  fine at stylus rates, fix if P10's path gets shared.)
+- **N27. Eraser probes are O(strokes × samples).** `InkPageView.eraseAlong`
+  refilters `strokes` per *historical* sample and `InkEraser.hits` re-probes
+  every remaining stroke per step (with a bounds cache). Thousands of
+  strokes plus a fast erase gesture can stutter. Cheap fix: compute the
+  candidate list once per MotionEvent instead of per sample.
+- **N28. `inkLayer` re-rasterizes every frame during pan/zoom.** Deliberate —
+  re-recording keeps ink vector-crisp — but on a 200+ stroke page the GPU
+  redraws all segments into the layer texture per frame while panning.
+  Acceptable today; if jank shows on device, rasterize the ink node once
+  per zoom *level* instead of per transform (P8 supersedes anyway).
 
 ---
 
@@ -233,9 +317,10 @@ that no single PR shows on its own:
 - **F3 (rest). Navigation.** A thumbnail strip (bottom sheet) that marks
   pages carrying ink, and a fit-width mode for landscape tablets. Thumbnails
   can reuse #13's renderer at a small size on the worker.
-- **F6. Quick re-save.** Remember the last export URI (take a persistable
-  permission from `CreateDocument`) and offer "Save" next to "Save as…";
-  optionally overwrite the original when the provider granted write access.
+- **F6. Quick re-save *(in flight: #38).*** Remember the last export URI
+  (take a persistable permission from `CreateDocument`) and offer "Save"
+  next to "Save as…"; optionally overwrite the original when the provider
+  granted write access.
 - **F7. Editable export.** Option to write standard `/Ink` annotations
   instead of page content, so recipients can hide or delete them and
   Asterinked can re-import them for editing. Keep "burn in" as the other
@@ -261,6 +346,17 @@ that no single PR shows on its own:
   `InkIncrementalTest` on purpose.
 - **F15. Text notes.** Typed sticky notes as `/Text` annotations for
   comments that must be legible.
+- **N36. PDF outline / bookmarks.** PDFBox exposes
+  `documentCatalog.documentOutline`; when present, offer it in the page
+  dialog or a sheet. Turns the app into a decent reader for long PDFs.
+- **N37. In-document text search.** `PDFTextStripper` per page on the
+  worker, jump to hits. Medium effort, large reader value.
+- **N38. Pen set per tool kind.** Pen and highlighter share the four swatch
+  positions and the width choice; a user who writes red/medium and
+  highlights yellow/large flips both rows on every tool switch. Remember
+  colour+width per `InkKind` — one more preference, big daily win.
+- **N39. Zoom indicator / quick 100%.** A transient "250%" label during
+  pinch (photo-editor convention) costs a `TextView` and a fade-out.
 
 ---
 
@@ -268,7 +364,10 @@ that no single PR shows on its own:
 
 - **V6 (rest). Coach marks.** #16 replaces the permanent hint row with a
   toast on mode change (a notice since #23); a one-time first-run coach mark for swipe, pinch and
-  double-tap would help new users.
+  double-tap would help new users. Cheap half landed *(in flight: #46)*: the
+  mode-appropriate hint now shows once on first editor open
+  (`hintedGestures` pref). Remaining: real coach marks pointing at the
+  gestures, not just a one-line notice.
 - **V9. Landscape fit-width** (with F3).
 - **V10. Page pill auto-hide.** From #16: the floating pill covers the bottom
   centre of the page; strokes that pass under it work, but one cannot start
@@ -278,50 +377,81 @@ that no single PR shows on its own:
 - **U1. Auto pen-only.** After the first stylus event, stop fingers from
   inking (palm safety) and say so once. Today touch-ink mode lets a resting
   palm draw.
-- **U2. Hover cursor.** On styluses that report hover, draw a ring of the
-  current colour and width where the nib will land (`onHoverEvent`).
+- **U2. Hover cursor *(in flight: #39).*** On styluses that report hover,
+  draw a ring of the current colour and width where the nib will land
+  (`onHoverEvent`).
 - **U3. Gesture shortcuts.** Two-finger tap = undo, three-finger tap = redo.
   Must coexist with the pinch detector (#11).
-- **U4. Export feedback.** After saving, "Open" and "Share" actions on the
-  "PDF saved" notice (needs U8).
+- **U4. Export feedback *(Open in flight: #34).*** After saving, "Open" and
+  "Share" actions on the "PDF saved" notice. #34 ships the Open action;
+  Share stays open (the share code path exists but its grant applies to the
+  draft-copy URI, not the export URI — worth checking).
 - **U5. Busy states.** Export disables everything including pan and zoom.
   Keep navigation available and show determinate progress for large
   documents.
 - **U6. Undo scope.** Undo is per page; after turning the page the last edit
   elsewhere is out of reach. Consider global chronological undo that jumps
   back to the page, or at least show where the next undo applies.
-- **U7 (rest). Haptics.** Tool, colour, width and finger-mode changes tick
-  (#23); page turns and undo/redo do not yet.
+- **U7 (rest). Haptics *(in flight: #46).*** Tool, colour, width and
+  finger-mode changes tick (#23); #46 adds `CLOCK_TICK` on valid page turns
+  and undo/redo (invalid turns stay silent).
 - **V16. Phone landscape.** At about 411dp tall the bars leave a page roughly
   250dp high (#23 lowers the top bar and moves the page pill to the corner).
   A side rail for the tools, keyed on height below ~480dp, or fit-width (V9)
-  would give writing room back.
-- **U8. Notice actions.** `NoticeBar` has no action slot. "Your latest notes
-  couldn't be stored" could offer Save copy, a failed save Try again (with U4).
+  would give writing room back. See also N34 for the cheaper half.
+- **U8. Notice actions *(in flight: #34).*** `NoticeBar` gains one action
+  slot held ~10 s. Still open: apply it to "Your latest notes couldn't be
+  stored" (offer Save copy) and failed saves (Try again).
+- **N32. Page-aware TalkBack description.** `InkPageView`'s content
+  description never says which page is showing. Set
+  `contentDescription = "Page N of M"` in `show()`; the string must move to
+  `strings.xml` to be formatted, which also chips at B12.
+- **N33. Jump to annotated pages.** In a long document with scattered notes
+  there is no way to find them. Cheap: long-press ◀/▶ to jump to the
+  previous/next page carrying ink. Bigger: the F3 thumbnail strip marks
+  inked pages.
+- **N34. Auto-hide chrome while writing.** Phone landscape leaves ~250 dp of
+  page height (V16 wants a side rail; V10 hides the pill). A smaller step
+  covering both: hide *all* chrome while a stroke is active and restore it
+  on lift. Needs the same "writing started/ended" callback as V10.
+- **N35. Eraser size affordance** — the ring appears only on touch-down.
+  Resolved for free by U2's hover cursor (#39) on pens that report hover;
+  finger eraser still has no affordance.
 
 ---
 
 ## 7. Delightful and quirky ideas
 
-- **Ink-drawn asterisk loader:** the loading and welcome screens draw the red
-  asterisk stroke by stroke with the app's own pressure taper.
+- **Ink-drawn asterisk loader *(half in flight: #53):*** the loading screen's
+  `AsteriskLoader` strokes the mark in over a ghost underlay. Remaining:
+  the welcome screen playing the same animation once, ideally through
+  `InkGeometry`'s pressure taper for a real pen feel (the loader uses
+  straight eased strokes — swapping in the taper would be the polish).
 - **Review stamps:** a palette (✓ ✗ ? ! ✱) placed with one tap at pen size.
+  PDFBox's ZapfDingbats has the glyphs — export is one `setFont` +
+  `showText`, the screen side is a `drawText` (N45).
 - **QuickShape:** hold the pen still at the end of a stroke to snap it into a
   straight line; auto-straighten highlighter strokes horizontally.
 - **Text-snapping highlighter:** use PDFBox text positions to snap a
   highlight to the glyph boxes of the line under it.
-- **Scribble to erase:** a fast zig-zag over strokes deletes them.
+- **Scribble to erase:** a fast zig-zag over strokes deletes them. The hook
+  is `InkStrokeBuilder` tail analysis on the finished stroke (N46).
 - **Lasso:** select strokes, then move, recolour or delete.
 - **Session replay:** store timestamps per point and play back how a review
-  was written.
+  was written. Needs a `draft.json` schema version first — pair with G6 so
+  the format changes land together (N40).
 - **"Next note" button** and an optional summary page listing annotated
-  pages, appended on export.
+  pages, appended on export. N33 is the cheap version (long-press ◀/▶
+  jumps between inked pages).
 - **Focus mode:** hide all chrome, tap the left or right edge to turn pages.
-- **Page-flip micro-animation** on page turn.
+- **Page-flip micro-animation** on page turn. ~8 dp translate+fade behind an
+  `AnimatorDurationScale` reduce-motion check — trivial code (N42).
 - **Night reading (D-night):** render pages through an inverting colour
   matrix, adapt ink colours on screen only; exports stay normal.
 - **Volume keys turn pages** (e-reader convention), opt-in.
-- **Eyedropper:** pick ink colour from the document.
+- **Eyedropper:** pick ink colour from the document. The preview `Bitmap`
+  already lives in `InkPageView`; a long-press-on-swatch eyedropper is
+  ~100 lines (N44).
 - **Margin magnifier:** a zoomed writing strip for small notes without
   zooming the whole page.
 
@@ -375,6 +505,10 @@ stylus, for example a Samsung S Pen tablet):
   (#17), including a highlight drawn across earlier pen notes (under the
   ink in both, #18).
 - An owner-restricted PDF exports and still refuses printing in Acrobat (#12).
+- Hover the stylus: the ring tracks the nib, grows with the chosen width,
+  switches to the eraser circle, and vanishes while writing (#39).
+- The loading asterisk draws itself, holds, fades to the ghost and loops;
+  it stops ticking once the editor is up (#53).
 
 ---
 
