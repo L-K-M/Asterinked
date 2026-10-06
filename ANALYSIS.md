@@ -6,7 +6,7 @@ why it matters, where the code is, a concrete approach and how to prove it.
 Read `AGENTS.md` first for build, CI and repo conventions.
 
 Full-review baseline: `d48a41d`, 2026-10-06, consolidated from `tmp.md`.
-Main has since advanced to `920e4e5`; its ANALYSIS delta and verified source
+Main has since advanced to `d9a9bef`; its ANALYSIS delta and verified source
 facts are folded in below. Other PRs and their reviews were not inspected.
 This is not a full code/device re-review of that main revision. Earlier baseline:
 v0.2.0 (`333fa4b`), reviewed file by file on 2026-09-26 with green
@@ -46,13 +46,13 @@ instead of deleting them silently.
 
 ---
 
-## Current main delta: `920e4e5`
+## Current main delta: `d9a9bef`
 
-- **Build broken:** `NoticeBar.WRAP` does not compile. Urgent repair
-  [#55](https://github.com/L-K-M/Asterinked/pull/55), `aa36354`, passes the full
-  local gates on its branch; it is not merged. The shared repair dependency
-  is carried in the other own branches. Baseline green results above do not
-   establish a green main build; the later main change only updated this backlog.
+- **Build repaired on main:** `829fca1`/`920e4e5` did not compile because
+  `NoticeBar.WRAP` was undefined. #55 (`aa36354`) supplied a verified one-line
+  repair, carried as a shared dependency in the eight feature branches.
+  Main `d9a9bef` now contains the equivalent repair. #55 itself remains open;
+  no further implementation is needed for this compile defect.
 - **U8 partly on main:** NoticeBar's optional action slot and MainActivity's
   storage-error Save copy callback now exist. Do not implement them again.
   Control timeouts, callback re-entry, export destination identity, theming
@@ -63,38 +63,41 @@ instead of deleting them silently.
 - All nine implementation PRs remain open. Application changes use those
   branches; only this consolidated backlog is published directly to main.
 
-## Current status: eight implementations plus urgent repair awaiting merge
+## Current status: eight implementations awaiting human merge
 
 All eight implementations exist on separate branches. PRs remain open for
 human review and merging; none is merged or main-done. Do not duplicate this
-work. Every listed head passes local full tests, lint, debug/release builds
-and PDFium checks against main's code plus #55's shared repair. CI and GLM
-results remain distinct; acceptance below is the merge contract.
+work. Every listed head passes local full tests, lint, debug/release builds,
+PDFium and CI. Completed reviews have no unresolved applicable important
+findings. Verification snapshot: 2026-10-06 23:11 UTC. Each latest change has
+a clean Sol peer review and completed GLM review; #30–#44 also completed two
+GLM rounds on distinct revisions. #50/#55 completed one full GLM round.
+Acceptance below remains the merge contract, not hardware validation.
 
 | Implementation | Covered IDs | PR | Branch/head | CI/review |
 |---|---|---|---|---|
-| Process-owned document worker | B-session-worker | [#40](https://github.com/L-K-M/Asterinked/pull/40) | `sol61/document-worker-lifetime` / `f8a1a9b` | Local pass; Sol clean; latest CI/GLM pending |
-| Checked draft commits | B-atomic-commit | [#42](https://github.com/L-K-M/Asterinked/pull/42) | `sol61/checked-draft-commits` / `8a25a3a` | Local/CI pass; Sol clean; erroneous GLM backup claims refuted; latest GLM pending |
-| AES-strength preservation | G9(a) | [#33](https://github.com/L-K-M/Asterinked/pull/33) | `sol61/pdf-aes-strength` / `afff2ee` | Local pass; Sol clean; erroneous RC4/constant claims refuted; latest CI/GLM pending |
-| Continuous rendered-geometry eraser | B-eraser-geometry, B-eraser-sweep, P-eraser, N27 | [#43](https://github.com/L-K-M/Asterinked/pull/43) | `sol61/precise-swept-eraser` / `6fd473f` | Local pass; cold duplication fixed; Sol clean; latest CI/GLM pending |
-| Synchronous page transforms | B14 | [#50](https://github.com/L-K-M/Asterinked/pull/50) | `sol61/synchronous-page-layout` / `612ced7` | Local/CI pass; Sol cleanup finding fixed and re-reviewed clean; GLM pending |
-| Delta-based undo history | P-history, T3 | [#44](https://github.com/L-K-M/Asterinked/pull/44) | `sol61/linear-undo-history` / `c154343` | Local/CI pass; Sol clean; first GLM minor-only; latest GLM pending |
-| Contrast-qualified swatches | V-swatch-contrast | [#30](https://github.com/L-K-M/Asterinked/pull/30) | `sol61/swatch-contrast` / `74c75f5` | Local/CI pass; test feedback applied; golden claim refuted; latest GLM pending |
-| Ink-aware page navigation | D-next, F3 (note navigation), N33, R-page-counter-label | [#41](https://github.com/L-K-M/Asterinked/pull/41) | `sol61/annotated-page-navigation` / `c17027d` | Local/CI pass; Sol ownership finding fixed and re-reviewed clean; first GLM minor-only; latest GLM pending |
-| Current-main build repair | B-notice-wrap | [#55](https://github.com/L-K-M/Asterinked/pull/55) | `sol61/notice-layout-build` / `aa36354` | Local/CI pass; Sol clean; GLM pending |
+| Process-owned document worker | B-session-worker | [#40](https://github.com/L-K-M/Asterinked/pull/40) | `sol61/document-worker-lifetime` / `f8a1a9b` | CI pass; Sol + 2 GLM rounds; steady, open |
+| Checked draft commits | B-atomic-commit | [#42](https://github.com/L-K-M/Asterinked/pull/42) | `sol61/checked-draft-commits` / `8a25a3a` | CI pass; Sol + 2 GLM rounds; backup claims refuted; steady, open |
+| AES-strength preservation | G9(a) | [#33](https://github.com/L-K-M/Asterinked/pull/33) | `sol61/pdf-aes-strength` / `afff2ee` | CI pass; Sol + 2 GLM rounds; RC4/constant claims refuted; steady, open |
+| Continuous rendered-geometry eraser | B-eraser-geometry, B-eraser-sweep, P-eraser, N27 | [#43](https://github.com/L-K-M/Asterinked/pull/43) | `sol61/precise-swept-eraser` / `6fd473f` | CI pass; cold duplication fixed; Sol + 2 GLM rounds; steady, open |
+| Synchronous page transforms | B14 | [#50](https://github.com/L-K-M/Asterinked/pull/50) | `sol61/synchronous-page-layout` / `612ced7` | CI pass; cleanup finding fixed; clean Sol + full GLM; steady, open |
+| Delta-based undo history | P-history, T3 | [#44](https://github.com/L-K-M/Asterinked/pull/44) | `sol61/linear-undo-history` / `c154343` | CI pass; Sol + 2 minor-only GLM rounds; steady, open |
+| Contrast-qualified swatches | V-swatch-contrast | [#30](https://github.com/L-K-M/Asterinked/pull/30) | `sol61/swatch-contrast` / `74c75f5` | CI pass; test feedback applied; Sol + 2 GLM rounds; steady, open |
+| Ink-aware page navigation | D-next, F3 (note navigation), N33, R-page-counter-label | [#41](https://github.com/L-K-M/Asterinked/pull/41) | `sol61/annotated-page-navigation` / `c17027d` | CI pass; ownership finding fixed; Sol + 2 minor-only GLM rounds; steady, open |
+| Equivalent build repair already on main | B-notice-wrap | [#55](https://github.com/L-K-M/Asterinked/pull/55) | `sol61/notice-layout-build` / `aa36354` | CI pass; clean Sol + full GLM; open; equivalent fix in `d9a9bef` |
 
 Source paths below are relative to `app/src/main/java/ch/lkmc/asterinked/`;
 line references are `d48a41d` evidence unless explicitly marked current-main.
 
-### B-notice-wrap. Repair the current-main compile break
-- **Evidence:** Parent-supplied `829fca1` source fact: unresolved
+### B-notice-wrap. Compile defect resolved on main
+- **Evidence:** Reproduced `829fca1` compiler failure: unresolved
   `NoticeBar.WRAP`. This is an app build defect, unlike transient root-disk
   or review-toolchain failures.
-- **Scope/status:** Urgent #55 at `aa36354`, shared repair carried by the
-  other own branches; leave all PRs open. No duplicate implementation.
+- **Scope/status:** #55 at `aa36354`, shared repair carried by the other
+  own branches. Equivalent fix landed on main as `d9a9bef`; no duplicate work.
 - **Acceptance:** Tests, lint, debug/release builds and six-fixture PDFium proof
    pass on the repair branch. The dependency is verified on all eight feature
-   branches; branch success does not repair main until merged. Merge #55 first.
+   branches. #55 remains open as requested; the main defect is already resolved.
 
 ### B-session-worker. Serialize document work across editor sessions
 - **Evidence:** `ui/EditorViewModel.kt:52,194-204,258-262` owns a worker per
@@ -265,6 +268,27 @@ eraser work and gesture undo; do not create another overlapping branch.
 | [#51](https://github.com/L-K-M/Asterinked/pull/51) | `feature/focus-mode` | D-focus/D-4 | Long-press Fit hides topBar/toolBar/pagePill and expands workspace. Escape, input mapping and optional immersive edge navigation remain acceptance checks. | Upstream record, not independently verified |
 | [#52](https://github.com/L-K-M/Asterinked/pull/52) | `feature/page-flip` | D-flip/D-5 | 180ms alpha fade on page change in `InkPageView.show()`; reduced-motion, immediate pen contact and coordinate proof still required. | Upstream record, not independently verified |
 | [#54](https://github.com/L-K-M/Asterinked/pull/54) | `feature/action-notice-bar` | U8 (partial) | Optional actionLabel/callback and notes_not_saved Save copy. Slot/storage callback now exist on main; confirm remaining scope before integration. | Upstream record, not independently verified |
+
+### Completed review scorecard
+
+- Fixed and regression-tested the real dialog-ownership and collapsed-view
+  cleanup findings. Fixed first-contact eraser geometry duplication with
+  shared renderer geometry; retained the slower exact near-miss tradeoff above.
+- Refuted invented golden-test failures, base-first AtomicFile recovery,
+  export of RC4 input rejected before loading, and an absent V5 library
+  constant using source, independent fixtures and green checks.
+- Minor follow-ups remain optional: idempotent session close if its ownership
+  contract broadens; stricter retention-walker/fake-executor test contracts;
+  explicit dialog layout parameters/comments; randomized eraser geometry
+  coverage and helper/screenshot-path cleanup. Existing lifecycle tests
+  already drain sessions. Do not expose the process worker solely for tests
+  or shorten schedule probes without preserving failure sensitivity.
+- `InkHistory.record` scans its shared prefix, so pure appends still take
+  O(page strokes); the proposed O(new strokes) documentation is incorrect.
+  Note destinations are already generated from ascending page indices;
+  defensive sorting is not an unresolved navigation defect.
+- Inherited notice-action styling, accessibility timeout, callback ordering
+  and string-based effect selection remain the separate backlog below.
 
 ## Open queue: priority order
 
@@ -1282,6 +1306,7 @@ was established by the October review or by branch JVM/structural benchmarks:
 
 | ID | What | Where |
 |---|---|---|
+| B-notice-wrap | Notice action layout uses framework WRAP_CONTENT constants and compiles | Main `d9a9bef`; equivalent open #55 / `aa36354` |
 | B1 | Owner-restricted encrypted PDFs open and keep restrictions on export | #12 |
 | B2 (message) | Clear message for password-protected PDFs | #12 |
 | B3 | Plain-language errors instead of exception text | #12 |
