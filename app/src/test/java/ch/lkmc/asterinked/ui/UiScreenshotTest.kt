@@ -61,6 +61,12 @@ class UiScreenshotTest {
     @Test @Config(qualifiers = "w360dp-h640dp-port-notnight-xhdpi")
     fun editorSmallPhone() = shoot("editor-small-phone") { publish(it, editing()) }
 
+    @Test @Config(qualifiers = "w320dp-h640dp-port-notnight-xhdpi")
+    fun editorNarrowPhone() = shoot("editor-narrow-phone") { publish(it, editing()) }
+
+    @Test @Config(qualifiers = "w680dp-h360dp-land-notnight-xhdpi")
+    fun editorCompactLandscape() = shoot("editor-compact-landscape") { publish(it, editing()) }
+
     @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
     fun editorPhoneDark() = shoot("editor-phone-dark") { publish(it, editing()) }
 

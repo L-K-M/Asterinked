@@ -119,6 +119,9 @@ internal class ChoiceDot(context: Context) : View(context) {
 
     override fun onDetachedFromWindow() {
         ringAnimator?.cancel()
+        // Toolbar reflow can detach the dot before its selection animation ends.
+        ringProgress = if (isSelected) 1f else 0f
+        invalidate()
         super.onDetachedFromWindow()
     }
 

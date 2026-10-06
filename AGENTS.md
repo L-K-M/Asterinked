@@ -43,6 +43,8 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   The two move together or not at all.
 - There is NO `kotlin-android` plugin: AGP 9 provides built-in Kotlin
   support. Only `android-application` is applied.
+- Keep `.bat` files normalized (LF) in Git. `.gitattributes` restores CRLF
+  on checkout; CRLF blobs produce line-ending-only dirty diffs.
 - `app/debug.keystore` is checked in ON PURPOSE and signs BOTH build types.
   Zero-secret CI, reproducible builds, upgrade-compatible sideload APKs —
   see `docs/decisions/0001`. Do not "rotate" it; adding signing secrets is a
@@ -79,6 +81,8 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   document content and stay constants in `MainActivity`.
 - Every tappable control is at least 48dp square; `MainActivityLayoutTest`
   enforces it, with no overlaps, on phone, landscape, tablet and 200% text.
+- The tool bar wraps from its measured, inset-adjusted width. Narrow phones
+  need three rows to keep 48dp targets; `screenWidthDp` is not the usable width.
 - `UiScreenshotTest` renders every screen state (light, dark, phone, tablet,
   large text, dialogs, notices) to `app/build/reports/screens/`. Look at the
   PNGs after any UI change; Robolectric cannot show a device, these can.

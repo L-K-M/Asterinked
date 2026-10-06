@@ -263,7 +263,7 @@ internal class MainActivity : ComponentActivity() {
         bar.addView(share, square())
         // With very large text on a phone the label would leave no room for the
         // file name; the action keeps its graphite weight as an icon.
-        val crowded = resources.configuration.fontScale >= LARGE_FONT_SCALE && resources.configuration.screenWidthDp < ONE_ROW_MIN_WIDTH_DP
+        val crowded = resources.configuration.fontScale >= LARGE_FONT_SCALE && resources.configuration.screenWidthDp < SAVE_LABEL_MIN_WIDTH_DP
         val saveCopy = { launchPicker { savePdf.launch(exportName()) } }
         save = if (crowded) ui.primaryIconButton(R.drawable.ic_save, R.string.save_copy, saveCopy)
             else ui.primaryButton(R.string.save_copy, ButtonSize.REGULAR, action = saveCopy)
@@ -300,8 +300,8 @@ internal class MainActivity : ComponentActivity() {
     }
 
     // History, writing tools and the finger toggle, ink colours, pen widths.
-    // One centred row where it fits; on phones the ink choices get a row of
-    // their own, aligned to the edges of the row above.
+    // Measured controls and available width choose the rows, so narrow windows
+    // and system insets never squeeze or clip the touch targets.
     private fun buildToolBar(): View {
         undo = ui.iconButton(R.drawable.ic_undo, R.string.undo) { model.undo() }
         redo = ui.iconButton(R.drawable.ic_redo, R.string.redo) { model.redo() }
@@ -319,32 +319,85 @@ internal class MainActivity : ComponentActivity() {
         val history = group(undo, redo)
         val colors = group(*swatches.toTypedArray()).also { ui.choiceGroup(it, swatches.size) }
         val sizes = group(*widths.toTypedArray()).also { ui.choiceGroup(it, widths.size) }
-        val bar = column().apply { setPadding(0, ui.dp(Space.XS), 0, ui.dp(Space.XS)) }
-        if (resources.configuration.screenWidthDp >= ONE_ROW_MIN_WIDTH_DP) {
-            val line = row().apply { gravity = Gravity.CENTER }
-            line.addView(history)
-            line.addView(tools, gap(Space.XL))
-            line.addView(fingerDrawing, square().apply { marginStart = ui.dp(Space.S) })
-            line.addView(colors, gap(Space.XL))
-            line.addView(sizes, gap(Space.L))
-            bar.addView(line, LinearLayout.LayoutParams(MATCH, ui.dp(Size.TOOL_ROW)))
-            return bar
+
+        fun wideRow() = row().apply {
+            gravity = Gravity.CENTER
+            addView(history, LinearLayout.LayoutParams(WRAP, WRAP))
+            addView(tools, gap(Space.XL))
+            addView(fingerDrawing, square().apply { marginStart = ui.dp(Space.S) })
+            addView(colors, gap(Space.XL))
+            addView(sizes, gap(Space.L))
         }
 
-        // Equal side cells keep the tool control centred under the title bar.
-        val writing = row()
-        writing.addView(history, LinearLayout.LayoutParams(0, WRAP, 1f))
-        writing.addView(tools)
-        writing.addView(row().apply {
-            gravity = Gravity.END or Gravity.CENTER_VERTICAL
-            addView(fingerDrawing, square())
-        }, LinearLayout.LayoutParams(0, WRAP, 1f))
-        bar.addView(writing, LinearLayout.LayoutParams(MATCH, ui.dp(Size.TOOL_ROW)))
-        val ink = row()
-        ink.addView(colors, LinearLayout.LayoutParams(0, WRAP, 1f))
-        ink.addView(sizes)
-        bar.addView(ink, LinearLayout.LayoutParams(MATCH, ui.dp(Size.TOOL_ROW)))
-        return bar
+        val initialRow = wideRow()
+        initialRow.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            View.MeasureSpec.makeMeasureSpec(ui.dp(Size.TOOL_ROW), View.MeasureSpec.EXACTLY))
+        val singleRowWidth = initialRow.measuredWidth
+        val doubleRowWidth = maxOf(
+            maxOf(history.measuredWidth, fingerDrawing.measuredWidth) * 2 + tools.measuredWidth,
+            colors.measuredWidth + sizes.measuredWidth,
+        )
+
+        fun stackedRows(arrangement: ToolBarRows) = column().apply {
+            // Equal side cells centre the tools where possible. On narrower
+            // windows each side keeps its own content width instead.
+            val sideWidth = if (arrangement == ToolBarRows.DOUBLE) 0 else WRAP
+            val writing = row()
+            writing.addView(history, LinearLayout.LayoutParams(sideWidth, WRAP, 1f))
+            writing.addView(tools, LinearLayout.LayoutParams(WRAP, WRAP))
+            writing.addView(row().apply {
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                addView(fingerDrawing, square())
+            }, LinearLayout.LayoutParams(sideWidth, WRAP, 1f))
+            addView(writing, LinearLayout.LayoutParams(MATCH, ui.dp(Size.TOOL_ROW)))
+
+            if (arrangement == ToolBarRows.TRIPLE) {
+                for (choices in listOf(colors, sizes)) {
+                    addView(row().apply {
+                        gravity = Gravity.CENTER
+                        addView(choices, LinearLayout.LayoutParams(WRAP, WRAP))
+                    }, LinearLayout.LayoutParams(MATCH, ui.dp(Size.TOOL_ROW)))
+                }
+                return@apply
+            }
+
+            val ink = row()
+            ink.addView(colors, LinearLayout.LayoutParams(0, WRAP, 1f))
+            ink.addView(sizes, LinearLayout.LayoutParams(WRAP, WRAP))
+            addView(ink, LinearLayout.LayoutParams(MATCH, ui.dp(Size.TOOL_ROW)))
+        }
+
+        return object : LinearLayout(this) {
+            private var arrangement = ToolBarRows.SINGLE
+
+            init {
+                orientation = VERTICAL
+                setPadding(0, ui.dp(Space.XS), 0, ui.dp(Space.XS))
+                addView(initialRow, LayoutParams(MATCH, ui.dp(Size.TOOL_ROW)))
+            }
+
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                val available = if (MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.UNSPECIFIED) Int.MAX_VALUE
+                    else MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight
+                val next = when {
+                    available >= singleRowWidth -> ToolBarRows.SINGLE
+                    available >= doubleRowWidth -> ToolBarRows.DOUBLE
+                    else -> ToolBarRows.TRIPLE
+                }
+                if (next != arrangement) {
+                    arrangement = next
+                    // Reuse the controls so reflow preserves selection and listeners.
+                    for (control in listOf(history, tools, fingerDrawing, colors, sizes)) {
+                        (control.parent as? ViewGroup)?.removeView(control)
+                    }
+                    removeAllViews()
+                    val content = if (next == ToolBarRows.SINGLE) wideRow() else stackedRows(next)
+                    val height = if (next == ToolBarRows.SINGLE) ui.dp(Size.TOOL_ROW) else WRAP
+                    addView(content, LayoutParams(MATCH, height))
+                }
+                super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+            }
+        }
     }
 
     private fun buildWelcome(): View {
@@ -652,6 +705,8 @@ internal class MainActivity : ComponentActivity() {
 
     private enum class Screen { WELCOME, LOADING, EDITOR }
 
+    private enum class ToolBarRows { SINGLE, DOUBLE, TRIPLE }
+
     /** The writing tools, in tool bar order. */
     private enum class ToolChoice(val icon: Int, val chosenIcon: Int, val label: Int, val hint: Int?) {
         PEN(R.drawable.ic_pen, R.drawable.ic_pen_filled, R.string.pen, null),
@@ -677,8 +732,8 @@ internal class MainActivity : ComponentActivity() {
         const val WRAP = LinearLayout.LayoutParams.WRAP_CONTENT
         const val COUNTER_MIN_WIDTH_DP = 64
         const val BODY_LINE_SPACING = 1.2f
-        // The single-row tool bar needs about 650dp; narrower screens use two rows.
-        const val ONE_ROW_MIN_WIDTH_DP = 680
+        // Large-text phones use the icon-only Save button.
+        const val SAVE_LABEL_MIN_WIDTH_DP = 680
         // Phones in landscape: a lower top bar leaves more height for the page.
         const val COMPACT_HEIGHT_DP = 480
         // Android's "largest" text sizes start around 1.5x.

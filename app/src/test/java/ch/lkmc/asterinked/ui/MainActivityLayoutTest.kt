@@ -1,9 +1,15 @@
 package ch.lkmc.asterinked.ui
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Rect
 import android.view.View
+import android.view.ViewGroup
 import android.widget.TextView
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.ui.EditorScreens.descendants
 import ch.lkmc.asterinked.ui.EditorScreens.editing
@@ -36,6 +42,40 @@ class MainActivityLayoutTest {
 
     @Test @Config(qualifiers = "w360dp-h640dp-port-mdpi")
     fun everyControlFitsASmallPhone() = assertControlsFit()
+
+    @Test @Config(qualifiers = "w320dp-h640dp-port-mdpi")
+    fun everyControlFitsANarrowPhone() = assertControlsFit()
+
+    @Test @Config(qualifiers = "ar-ldrtl-w320dp-h640dp-port-mdpi")
+    fun everyControlFitsANarrowPhoneRightToLeft() = assertControlsFit()
+
+    @Test @Config(qualifiers = "w680dp-h360dp-land-mdpi")
+    fun everyControlFitsAtTheFormerOneRowBreakpoint() = assertControlsFit()
+
+    @Test @Config(qualifiers = "w720dp-h360dp-land-mdpi")
+    fun theToolBarFitsAfterSideInsetsChange() = editor { root ->
+        val blue = descendants(root).single { it.contentDescription == app.getString(R.string.blue) }
+        blue.performClick()
+        val content = root.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        ViewCompat.dispatchApplyWindowInsets(content, WindowInsetsCompat.Builder()
+            .setInsets(WindowInsetsCompat.Type.navigationBars(), Insets.of(0, 0, SIDE_INSET_DP, 0))
+            .build())
+        measure(root)
+        assertControlsFit(root)
+        assertTrue("Ink selection survives reflow", blue.isSelected)
+
+        val bold = descendants(root).single { it.contentDescription == app.getString(R.string.bold) }
+        val position = IntArray(2).also(bold::getLocationInWindow)
+        assertTrue("Bold stays clear of the side navigation bar", position[0] + bold.width <= root.width - SIDE_INSET_DP)
+
+        ViewCompat.dispatchApplyWindowInsets(content, WindowInsetsCompat.Builder()
+            .setInsets(WindowInsetsCompat.Type.navigationBars(), Insets.NONE)
+            .build())
+        measure(root)
+        assertControlsFit(root)
+        assertTrue("Ink selection survives returning to the wide layout", blue.isSelected)
+        for (dot in descendants(root).filterIsInstance<ChoiceDot>()) assertChoiceAppearance(dot)
+    }
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-mdpi")
     fun everyControlFitsAPhone() = assertControlsFit()
@@ -92,13 +132,38 @@ class MainActivityLayoutTest {
             val activity = controller.get()
             settle()
             publish(activity, editing())
-            val metrics = activity.resources.displayMetrics
             val root = activity.window.decorView
-            root.measure(View.MeasureSpec.makeMeasureSpec(metrics.widthPixels, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(metrics.heightPixels, View.MeasureSpec.EXACTLY))
-            root.layout(0, 0, metrics.widthPixels, metrics.heightPixels)
+            measure(root)
             check(root)
         }
+    }
+
+    private fun measure(root: View) {
+        val metrics = root.resources.displayMetrics
+        root.measure(View.MeasureSpec.makeMeasureSpec(metrics.widthPixels, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(metrics.heightPixels, View.MeasureSpec.EXACTLY))
+        root.layout(0, 0, metrics.widthPixels, metrics.heightPixels)
+    }
+
+    // A reflow may detach a dot mid-animation. Its indicator must match a
+    // freshly laid-out control with the same selection, not a cancelled frame.
+    private fun assertChoiceAppearance(dot: ChoiceDot) {
+        val reference = Components(dot.context).choice(R.string.blue, 0) {}.apply {
+            fill = dot.fill
+            radius = dot.radius
+            ringColor = dot.ringColor
+            outlineColor = dot.outlineColor
+            backdrop = dot.backdrop
+            isSelected = dot.isSelected
+        }
+        reference.measure(View.MeasureSpec.makeMeasureSpec(dot.width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(dot.height, View.MeasureSpec.EXACTLY))
+        reference.layout(0, 0, dot.width, dot.height)
+        val expected = Bitmap.createBitmap(dot.width, dot.height, Bitmap.Config.ARGB_8888)
+        val actual = Bitmap.createBitmap(dot.width, dot.height, Bitmap.Config.ARGB_8888)
+        reference.draw(Canvas(expected))
+        dot.draw(Canvas(actual))
+        assertTrue("${dot.contentDescription} selection indicator survives reflow", actual.sameAs(expected))
     }
 
     private companion object {
@@ -106,5 +171,6 @@ class MainActivityLayoutTest {
         const val TOUCH_DP = 48
         const val MIN_TITLE_DP = 96
         const val MIN_CONTROLS = 15
+        const val SIDE_INSET_DP = 48
     }
 }
