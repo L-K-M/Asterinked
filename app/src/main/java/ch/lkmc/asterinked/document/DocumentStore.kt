@@ -10,6 +10,7 @@ import ch.lkmc.asterinked.ink.InkStroke
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.util.UUID
 
@@ -48,7 +49,7 @@ internal data class Draft(
     }
 }
 
-internal class DocumentStore(context: Context) {
+internal class DocumentStore(context: Context, private val draftIo: DraftFileIo = DraftFileIo()) {
     private val resolver = context.contentResolver
     private val directory = File(context.filesDir, "documents").apply { mkdirs() }
     private val draftFile = AtomicFile(File(directory, "draft.json"))
@@ -81,20 +82,40 @@ internal class DocumentStore(context: Context) {
             .put("page", draft.page)
             .put("ink", encodeInk(draft.ink))
             .put("savedInk", encodeInk(draft.savedInk))
-        val output = draftFile.startWrite()
-        try {
-            output.write(json.toString().toByteArray(Charsets.UTF_8))
-            draftFile.finishWrite(output)
-        } catch (error: Exception) {
-            draftFile.failWrite(output)
-            throw error
-        }
+        commitDraft(json.toString().toByteArray(Charsets.UTF_8))
+
         // A committed draft owns one source; failed replacements retain the previous file.
         directory.listFiles()?.filter { it.extension == "pdf" && it != draft.source }?.forEach { it.delete() }
     }
 
+    private fun commitDraft(bytes: ByteArray) {
+        val base = draftFile.baseFile
+        val backup = File("$base$BACKUP_SUFFIX")
+        val pending = File("$base$PENDING_SUFFIX")
+
+        // A legacy AtomicFile backup is authoritative, even if the base is partial.
+        if (backup.exists()) renameDraft(backup, base)
+
+        // AtomicFile.finishWrite suppresses commit errors. Stage separately on all
+        // APIs so API 29's unchecked backup rename cannot truncate the old draft.
+        try {
+            draftIo.open(pending).use { output ->
+                output.write(bytes)
+                draftIo.sync(output)
+            }
+            renameDraft(pending, base)
+        } catch (error: Exception) {
+            pending.delete()
+            throw error
+        }
+    }
+
+    private fun renameDraft(source: File, target: File) {
+        if (!draftIo.rename(source, target)) throw IOException("Cannot rename $source to $target.")
+    }
+
     fun restore(): Draft? {
-        if (!draftFile.baseFile.exists() && !File("${draftFile.baseFile}.bak").exists()) return null
+        if (!draftFile.baseFile.exists() && !File("${draftFile.baseFile}$BACKUP_SUFFIX").exists()) return null
         val json = JSONObject(draftFile.openRead().bufferedReader().use { it.readText() })
         val source = File(directory, json.getString("source"))
         require(source.canonicalFile.parentFile == directory.canonicalFile && source.isFile) { "The saved PDF is missing." }
@@ -133,5 +154,14 @@ internal class DocumentStore(context: Context) {
 
     private companion object {
         const val KIND_KEY = "kind"
+        const val BACKUP_SUFFIX = ".bak"
+        const val PENDING_SUFFIX = ".new"
     }
+}
+
+/** File primitives kept injectable to prove commit failure cannot prune a source. */
+internal open class DraftFileIo {
+    open fun open(file: File): FileOutputStream = FileOutputStream(file)
+    open fun sync(output: FileOutputStream) = output.fd.sync()
+    open fun rename(source: File, target: File): Boolean = source.renameTo(target)
 }

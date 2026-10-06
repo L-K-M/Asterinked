@@ -15,7 +15,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [29, 35])
 class DocumentStorePersistenceTest {
 
     private val app get() = RuntimeEnvironment.getApplication()
