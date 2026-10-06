@@ -6,6 +6,7 @@ import android.net.Uri
 import android.util.LruCache
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 
 internal data class OpenDocument(val draft: Draft, val pages: List<PageSpec>, val preview: Bitmap?)
@@ -70,7 +71,14 @@ internal class DocumentService(context: Context) : DocumentOperations {
     override fun restore(): OpenDocument? {
         val draft = try {
             store.restore()
+        } catch (error: IOException) {
+            // A failed read is usually environmental (storage briefly not
+            // ready); keep the draft and retry next launch.
+            throw DocumentException(DocumentProblem.DRAFT_UNREADABLE, error)
+        } catch (error: OutOfMemoryError) {
+            throw DocumentException(DocumentProblem.OUT_OF_MEMORY, error)
         } catch (error: Exception) {
+            // Corrupt JSON or a missing source never heals: set it aside once.
             throw brokenDraft(error)
         } ?: return null
         val pages = try {
@@ -79,7 +87,9 @@ internal class DocumentService(context: Context) : DocumentOperations {
             if (error.problem == DocumentProblem.OUT_OF_MEMORY || error.problem == DocumentProblem.OUT_OF_SPACE) throw error
             throw brokenDraft(error)
         }
-        if (draft.page !in pages.indices) throw brokenDraft(DocumentException(DocumentProblem.DRAFT_UNREADABLE))
+        if (draft.page !in pages.indices) {
+            throw brokenDraft(IllegalStateException("Saved page ${draft.page} is outside 0..${pages.lastIndex}"))
+        }
         // Any render failure (OOM on a huge page, a renderer that will not
         // open) keeps the draft: the editor retries the render live and
         // reports it there if it fails again.

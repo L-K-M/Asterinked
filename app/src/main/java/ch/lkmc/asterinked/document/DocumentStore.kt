@@ -110,8 +110,12 @@ internal class DocumentStore(context: Context) {
     fun quarantineBrokenDraft() {
         directory.listFiles().orEmpty().filter { it.name.startsWith(BROKEN_PREFIX) }.forEach { it.delete() }
         val stamp = System.currentTimeMillis()
-        draftFile.baseFile.renameTo(File(directory, "$BROKEN_PREFIX$stamp.json"))
-        File("${draftFile.baseFile}.bak").renameTo(File(directory, "$BROKEN_PREFIX$stamp.json.bak"))
+        val main = draftFile.baseFile
+        // renameTo fails silently on some filesystems; deleting guarantees the
+        // next launch starts clean, which matters more than the forensic copy.
+        if (!main.renameTo(File(directory, "$BROKEN_PREFIX$stamp.json"))) main.delete()
+        val backup = File("$main.bak")
+        if (backup.exists() && !backup.renameTo(File(directory, "$BROKEN_PREFIX$stamp.json.bak"))) backup.delete()
     }
 
     private fun encodeInk(ink: Map<Int, List<InkStroke>>): JSONObject = JSONObject().apply {
