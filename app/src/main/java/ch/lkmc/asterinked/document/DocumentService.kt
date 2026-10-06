@@ -12,8 +12,8 @@ internal data class OpenDocument(val draft: Draft, val pages: List<PageSpec>, va
 
 /**
  * What the editor needs from storage and rendering. Every call except
- * [cachedPreview] runs on one worker thread, so PDF handles and disk writes
- * never race one another.
+ * [cachedPreview] runs on the process worker in production, including close.
+ * A later editor restores only after the cleared editor's writes and close.
  */
 internal interface DocumentOperations {
     fun open(uri: Uri): OpenDocument
