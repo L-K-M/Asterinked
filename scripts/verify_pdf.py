@@ -104,6 +104,8 @@ for name, rotation in CASES:
         if name in AES_CASES:
             version, expected_revision, method, bits = AES_CASES[name]
             assert source_revision == expected_revision, f"Wrong source revision in {name}: {source_revision}"
+            # The fixture's StdCF /Length is in ISO bytes; PDFBox writes bits there.
+            # Export strength below checks the top-level /Length, which is in bits.
             assert aes_policy(source_path) == (version, method, None, bits // BITS_PER_BYTE), f"Missing-Length AES premise broken in {name}"
             assert revision == expected_revision, f"AES-{bits} downgraded in {name}: R={revision}"
             export_version, export_method, export_bits, _ = aes_policy(export_path)

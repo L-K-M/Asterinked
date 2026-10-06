@@ -65,6 +65,8 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   crypt filter `/Length` uses bytes per ISO 32000, but PDFBox writes bits;
   do not use it as the export key length. Missing-Length AES test fixtures
   use equal-size whitespace edits so ciphertext and xref offsets stay intact.
+  V=4/R=4 RC4 (`CFM=V2`, `StdCF/Length=16`) without top-level `/Length`
+  opens in PDFium but fails PDFBox password validation before export.
 - The debug build carries `applicationIdSuffix ".debug"` (and `-debug` on
   versionName) so it can sit next to a release install on the same device.
 - `InkPageView` replays committed ink from cached `RenderNode`s only on
