@@ -8,7 +8,7 @@ import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import java.io.File
 import java.util.UUID
 
-internal data class OpenDocument(val draft: Draft, val pages: List<PageSpec>, val preview: Bitmap)
+internal data class OpenDocument(val draft: Draft, val pages: List<PageSpec>, val preview: Bitmap?)
 
 /**
  * What the editor needs from storage and rendering. Every call except
@@ -62,10 +62,11 @@ internal class DocumentService(context: Context) : DocumentOperations {
     }
 
     override fun restore(): OpenDocument? = during(DocumentProblem.DRAFT_UNREADABLE) {
-        val draft = store.restore() ?: return@during null
-        val pages = engine.inspect(draft.source)
-        require(draft.page in pages.indices) { "The saved page is invalid." }
-        OpenDocument(draft, pages, renderPage(draft))
+        val saved = store.restore() ?: return@during null
+        val pages = engine.inspect(saved.source)
+        // A page beyond the document (a damaged draft) opens its last page instead.
+        val draft = saved.copy(page = saved.page.coerceIn(pages.indices))
+        OpenDocument(draft, pages, previewOrNull(draft))
     }
 
     override fun render(draft: Draft): Bitmap = during(DocumentProblem.NOT_A_PDF) { renderPage(draft) }
@@ -107,6 +108,16 @@ internal class DocumentService(context: Context) : DocumentOperations {
         } finally {
             output.delete()
         }
+    }
+
+    // The ink is restored even when its page fails to render (a huge page on a
+    // small heap): the editor shows the page blank, retries and reports there.
+    private fun previewOrNull(draft: Draft): Bitmap? = try {
+        renderPage(draft)
+    } catch (error: Exception) {
+        null
+    } catch (error: OutOfMemoryError) {
+        null
     }
 
     private fun renderPage(draft: Draft): Bitmap =
