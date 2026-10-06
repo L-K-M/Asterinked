@@ -66,6 +66,28 @@ class NoticeBarTest {
         assertEquals("Drag across strokes to erase them", notice.shown)
     }
 
+    @Test fun aSuccessDoesNotHideAnUnreadError() {
+        notice.show("Couldn’t save", Tone.ERROR)
+        notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") {})
+        assertEquals("Couldn’t save", notice.shown)
+        assertNull(notice.actionLabel)
+        advance(Tone.ERROR.millis + ANIMATION_MS)
+        notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") {})
+        assertEquals("PDF saved.", notice.shown)
+    }
+
+    // The callback fires after dismiss starts, so a notice it raises survives.
+    @Test fun anActionCanRaiseItsOwnNotice() {
+        notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") {
+            notice.show("Opening…", Tone.INFO)
+        })
+
+        actionButton()!!.performClick()
+
+        advance(ANIMATION_MS)
+        assertEquals("Opening…", notice.shown)
+    }
+
     @Test fun anActionRunsItsCallbackAndHidesTheNotice() {
         var ran = false
         notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") { ran = true })

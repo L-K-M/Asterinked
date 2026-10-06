@@ -692,12 +692,21 @@ internal class MainActivity : ComponentActivity() {
             .show()
     }
 
-    // The export destination is ours to read back; the grant reaches the
-    // chosen viewer through ClipData, and Asterinked itself is excluded so the
-    // copy cannot be mistaken for a document to annotate.
+    // The flag (with the ClipData copy as belt-and-braces) grants the chosen
+    // viewer read access; EXTRA_EXCLUDE_COMPONENTS keeps Asterinked out of the
+    // sheet so the copy cannot be mistaken for a document to annotate.
     private fun openExported(uri: Uri) {
         val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, PDF_MIME)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        // A chooser always resolves, so it never throws for a missing viewer:
+        // ask the package manager first, excluding ourselves.
+        @Suppress("DEPRECATION") // ResolveInfoFlags only exists on API 33+.
+        val viewers = packageManager.queryIntentActivities(view, 0)
+            .filterNot { it.activityInfo.packageName == packageName }
+        if (viewers.isEmpty()) {
+            notice.show(getString(R.string.no_viewer), Tone.ERROR)
+            return
+        }
         view.clipData = ClipData.newRawUri(uri.lastPathSegment ?: exportName(), uri)
         val chooser = Intent.createChooser(view, getString(R.string.open_title))
             .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(ComponentName(this, MainActivity::class.java)))

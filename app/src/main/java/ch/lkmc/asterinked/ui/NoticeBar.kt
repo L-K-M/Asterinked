@@ -43,8 +43,11 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
         setPadding(ui.dp(Space.M), 0, ui.dp(Space.M), 0)
         visibility = GONE
         setOnClickListener {
-            (tag as? NoticeAction)?.run()
+            // Dismiss first: an action that shows a follow-up notice (a failed
+            // "Save copy" reporting its own error) must not kill what it raised.
+            val pending = tag as? NoticeAction
             dismiss()
+            pending?.run()
         }
     }
     private val accessibility = context.getSystemService(AccessibilityManager::class.java)
@@ -75,8 +78,9 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
     }
 
     fun show(text: CharSequence, tone: Tone, action: NoticeAction? = null) {
-        // A tool hint must not wipe out an error the user has not read yet.
-        if (tone == Tone.INFO && this.tone == Tone.ERROR && isVisible) return
+        // Nothing that can wait wipes out an error the user has not read yet:
+        // a success flash must not hide a failed write's Save copy action.
+        if (tone != Tone.ERROR && this.tone == Tone.ERROR && isVisible) return
 
         this.tone = tone
         message.text = text

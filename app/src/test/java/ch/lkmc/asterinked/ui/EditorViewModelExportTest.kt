@@ -13,6 +13,7 @@ import ch.lkmc.asterinked.ink.InkStroke
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -77,7 +78,9 @@ class EditorViewModelExportTest {
         assertEquals(destination, state.exported)
         assertEquals(app.getString(R.string.notes_not_saved), state.message!!.text)
         assertEquals(MessageAction.SAVE_COPY, state.message!!.action)
-        assertEquals("The copy still counts as saved", state.draft!!.ink, state.draft!!.savedInk)
+        // The file never got the strokes, so the marker rolls back: the draft
+        // stays dirty and a later write or export still has them to send.
+        assertTrue("The draft keeps flagging the unbacked notes", state.draft!!.dirty)
     }
 
     private fun stroke() = InkStroke(listOf(InkPoint(10f, 10f, 0.5f), InkPoint(20f, 20f, 0.5f)), 0, 2f)

@@ -148,9 +148,10 @@ internal class EditorViewModel internal constructor(
         val saved = draft.copy(savedInk = draft.ink)
         perform({ service.export(draft, uri) }) {
             // The copy exists even if recording the draft fails below: mark it
-            // exported anyway and let saveDraft report its own failure.
+            // exported anyway and let saveDraft report its own failure, rolling
+            // the marker back so the notes stay flagged unbacked.
             publish(current.copy(draft = saved, busy = false, exported = uri))
-            saveDraft(saved)
+            saveDraft(saved, draft.savedInk)
         }
     }
 
@@ -203,7 +204,7 @@ internal class EditorViewModel internal constructor(
     // Every change queues a write; whichever runs first persists the newest draft
     // (immutable snapshots) and the rest find nothing left to do. A burst of
     // strokes or page turns therefore costs one write, not one per change.
-    private fun saveDraft(draft: Draft) {
+    private fun saveDraft(draft: Draft, restoreSavedInk: Map<Int, List<InkStroke>>? = null) {
         unsavedDraft.set(draft)
         worker.execute {
             val latest = unsavedDraft.getAndSet(null) ?: return@execute
@@ -211,7 +212,15 @@ internal class EditorViewModel internal constructor(
                 service.saveDraft(latest)
             } catch (error: Exception) {
                 Log.w(TAG, "Draft could not be saved", error)
-                main.post { if (!cleared) publish(current.copy(message = EditorMessage(text(R.string.notes_not_saved), Tone.ERROR, MessageAction.SAVE_COPY))) }
+                main.post {
+                    if (cleared) return@post
+                    // The file still holds the previous notes: put the marker back
+                    // so the draft does not claim strokes that never reached it.
+                    val restored = current.draft?.takeIf { it.source == latest.source }
+                        ?.let { if (restoreSavedInk != null) it.copy(savedInk = restoreSavedInk) else it }
+                    publish(current.copy(draft = restored,
+                        message = EditorMessage(text(R.string.notes_not_saved), Tone.ERROR, MessageAction.SAVE_COPY)))
+                }
             }
         }
     }
