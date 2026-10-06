@@ -33,9 +33,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: gradle/actions/wrapper-validation@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      - uses: gradle/actions/wrapper-validation@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
 
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "17"
@@ -43,7 +43,7 @@ jobs:
       # No SDK install step: the ubuntu runner image ships the Android SDK,
       # and AGP resolves compileSdk android-37.0 against it (paired with
       # android.suppressUnsupportedCompileSdk in gradle.properties).
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
 
       # The committed versionName at the tagged commit is the source of truth;
       # the tag only names the Release. Same sed pattern scripts/release.sh's
@@ -94,7 +94,7 @@ jobs:
           path: dist
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           name: Asterinked ${{ github.ref_name }}
           generate_release_notes: true
