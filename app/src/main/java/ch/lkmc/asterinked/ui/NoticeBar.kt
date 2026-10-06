@@ -55,7 +55,7 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
         accessibilityLiveRegion = ACCESSIBILITY_LIVE_REGION_POLITE
         addView(icon, LayoutParams(ui.dp(Size.ICON_SMALL), ui.dp(Size.ICON_SMALL)).apply { marginEnd = ui.dp(Space.M) })
         addView(message, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = ui.dp(Space.S) })
-        addView(actionButton, LayoutParams(WRAP, WRAP))
+        addView(actionButton, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         icon.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
         visibility = GONE
         setOnClickListener { dismiss() }
