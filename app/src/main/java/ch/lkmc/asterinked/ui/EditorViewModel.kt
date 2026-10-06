@@ -36,10 +36,13 @@ internal data class EditorState(
     val busy: Boolean = true,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
-    val message: String? = null,
+    val message: EditorMessage? = null,
     /** An annotated copy ready for the share sheet; acknowledge once handed over. */
     val shared: File? = null,
 )
+
+/** Something to tell the user once; [tone] says whether it went well. */
+internal data class EditorMessage(val text: String, val tone: Tone)
 
 internal class EditorViewModel internal constructor(
     application: Application,
@@ -139,7 +142,7 @@ internal class EditorViewModel internal constructor(
         if (current.busy) return
         val saved = draft.copy(savedInk = draft.ink)
         perform({ service.export(draft, uri); service.saveDraft(saved) }) {
-            publish(current.copy(draft = saved, busy = false, message = text(R.string.pdf_saved)))
+            publish(current.copy(draft = saved, busy = false, message = EditorMessage(text(R.string.pdf_saved), Tone.SUCCESS)))
         }
     }
 
@@ -196,7 +199,7 @@ internal class EditorViewModel internal constructor(
                 service.saveDraft(latest)
             } catch (error: Exception) {
                 Log.w(TAG, "Draft could not be saved", error)
-                main.post { if (!cleared) publish(current.copy(message = text(R.string.notes_not_saved))) }
+                main.post { if (!cleared) publish(current.copy(message = EditorMessage(text(R.string.notes_not_saved), Tone.ERROR))) }
             }
         }
     }
@@ -241,9 +244,9 @@ internal class EditorViewModel internal constructor(
     }
 
     // Users see what went wrong and what to do; the raw exception goes to the log.
-    private fun messageFor(error: Throwable): String {
+    private fun messageFor(error: Throwable): EditorMessage {
         Log.w(TAG, "Document operation failed", error)
-        return text(error.toProblem(DocumentProblem.UNEXPECTED).userMessage)
+        return EditorMessage(text(error.toProblem(DocumentProblem.UNEXPECTED).userMessage), Tone.ERROR)
     }
 
     private fun text(id: Int): String = getApplication<Application>().getString(id)

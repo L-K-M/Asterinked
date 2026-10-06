@@ -28,7 +28,7 @@ class EditorViewModelTest {
             Thread.sleep(10)
         }
         assertNotNull("Picker result was dropped during restoration", model.state.value!!.message)
-        assertEquals("Users see guidance, not the raw exception", app.getString(R.string.error_source_unreadable), model.state.value!!.message)
+        assertEquals("Users see guidance, not the raw exception", EditorMessage(app.getString(R.string.error_source_unreadable), Tone.ERROR), model.state.value!!.message)
         assertFalse(model.state.value!!.busy)
     }
 }
