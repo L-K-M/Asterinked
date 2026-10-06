@@ -265,7 +265,14 @@ internal class MainActivity : ComponentActivity() {
         // With very large text on a phone the label would leave no room for the
         // file name; the action keeps its graphite weight as an icon.
         val crowded = resources.configuration.fontScale >= LARGE_FONT_SCALE && resources.configuration.screenWidthDp < SAVE_LABEL_MIN_WIDTH_DP
-        val saveCopy = { launchPicker { savePdf.launch(exportName()) } }
+        val saveCopy = {
+            val previous = model.lastExport()
+            if (previous != null) {
+                model.export(previous)
+            } else {
+                launchPicker { savePdf.launch(exportName()) }
+            }
+        }
         save = if (crowded) ui.primaryIconButton(R.drawable.ic_save, R.string.save_copy, saveCopy)
             else ui.primaryButton(R.string.save_copy, ButtonSize.REGULAR, action = saveCopy)
         bar.addView(save, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = ui.dp(Space.XS) })

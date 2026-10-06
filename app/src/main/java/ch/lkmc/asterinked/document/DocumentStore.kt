@@ -52,6 +52,7 @@ internal class DocumentStore(context: Context) {
     private val resolver = context.contentResolver
     private val directory = File(context.filesDir, "documents").apply { mkdirs() }
     private val draftFile = AtomicFile(File(directory, "draft.json"))
+    private val prefs = context.getSharedPreferences("export", Context.MODE_PRIVATE)
 
     fun import(uri: Uri): Draft {
         val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
@@ -99,6 +100,15 @@ internal class DocumentStore(context: Context) {
         val source = File(directory, json.getString("source"))
         require(source.canonicalFile.parentFile == directory.canonicalFile && source.isFile) { "The saved PDF is missing." }
         return Draft(source, json.getString("name"), json.getInt("page"), decodeInk(json.getJSONObject("ink")), decodeInk(json.getJSONObject("savedInk")))
+    }
+
+    fun saveLastExport(uri: Uri) {
+        prefs.edit().putString("last_export", uri.toString()).apply()
+    }
+
+    fun lastExport(): Uri? {
+        val value = prefs.getString("last_export", null) ?: return null
+        return android.net.Uri.parse(value)
     }
 
     private fun encodeInk(ink: Map<Int, List<InkStroke>>): JSONObject = JSONObject().apply {

@@ -27,6 +27,7 @@ internal interface DocumentOperations {
 
     /** Writes an annotated copy for the share sheet and returns it. */
     fun share(draft: Draft): File
+    fun lastExport(): Uri?
     fun close()
 }
 
@@ -74,6 +75,8 @@ internal class DocumentService(context: Context) : DocumentOperations {
 
     override fun saveDraft(draft: Draft) = during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(draft) }
 
+    override fun lastExport(): Uri? = store.lastExport()
+
     override fun close() {
         previews.evictAll()
         engine.close()
@@ -103,7 +106,10 @@ internal class DocumentService(context: Context) : DocumentOperations {
         try {
             // Always derive from the imported PDF, so repeated saves never duplicate ink.
             during(DocumentProblem.EXPORT_FAILED) { engine.export(draft.source, output, draft.ink) }
-            during(DocumentProblem.DESTINATION_UNWRITABLE) { store.writePdf(output, destination) }
+            during(DocumentProblem.DESTINATION_UNWRITABLE) {
+                store.writePdf(output, destination)
+                store.saveLastExport(destination)
+            }
         } finally {
             output.delete()
         }

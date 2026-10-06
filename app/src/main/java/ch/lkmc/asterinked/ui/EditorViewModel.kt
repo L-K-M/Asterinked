@@ -160,6 +160,8 @@ internal class EditorViewModel internal constructor(
         publish(current.copy(shared = null))
     }
 
+    fun lastExport(): android.net.Uri? = service.lastExport()
+
     fun acknowledgeMessage() {
         publish(current.copy(message = null))
     }
