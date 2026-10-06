@@ -97,8 +97,8 @@ The adaptive icon's foreground webp files are generated; regenerate them from
 - Messages to the user go through `NoticeBar`, not toasts: Android 12+ cuts
   toasts to two lines.
 - The loading spinner is `AsteriskLoader`: the brand mark strokes itself in
-  on a loop, gated by attach + aggregated visibility so it only ticks while
-  on screen. Its faint ghost keeps captured frames non-blank; Robolectric
+  on a loop, gated by attach + aggregated visibility (visibility flags and
+  window visibility; scroll position and occlusion are not considered). Its faint ghost keeps captured frames non-blank; Robolectric
   never dispatches `onVisibilityAggregated`, so `onVisibilityChanged` and
   `onAttachedToWindow` feed the same gate.
 

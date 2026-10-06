@@ -591,9 +591,12 @@ internal class MainActivity : ComponentActivity() {
         loading.visibility = if (next == Screen.LOADING) View.VISIBLE else View.GONE
         workspace.setBackgroundColor(ui.color(if (editing) R.color.canvas else R.color.surface))
         if (next == Screen.LOADING) {
-            // Restoring a draft is usually instant; only a slow load shows the spinner.
+            // Restoring a draft is usually instant; only a slow load shows the
+            // loader. The caption replaces the progress bar for accessibility,
+            // so announce it once the screen is up.
             loading.alpha = 0f
             loading.animate().alpha(1f).setStartDelay(Motion.LOADING_DELAY).setDuration(Motion.SHORT).start()
+            loading.post { loading.announceForAccessibility(getString(R.string.opening)) }
         }
         applyInsets()
     }
