@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.AtomicFile
+import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import org.json.JSONArray
@@ -20,6 +21,31 @@ internal data class Draft(
     val savedInk: Map<Int, List<InkStroke>> = emptyMap(),
 ) {
     val dirty: Boolean get() = ink.filterValues { it.isNotEmpty() } != savedInk.filterValues { it.isNotEmpty() }
+
+    /**
+     * File name for an exported copy: "Report.pdf" becomes "Report-annotated.pdf", once.
+     * The display name comes from another app and also names a file in the share
+     * cache, so it is reduced to one short segment without separators or control
+     * characters.
+     */
+    val exportName: String get() {
+        val base = name.substringAfterLast('/').substringAfterLast('\\')
+            .replace(PDF_EXTENSION, "")
+            .filterNot { it.isISOControl() }
+            .take(MAX_BASE_CHARS)
+            .trimEnd { it.isHighSurrogate() }
+            .ifBlank { DEFAULT_BASE }
+        return if (base.endsWith(ANNOTATED_SUFFIX)) "$base.pdf" else "$base$ANNOTATED_SUFFIX.pdf"
+    }
+
+    private companion object {
+        val PDF_EXTENSION = Regex("(?i)\\.pdf$")
+        const val ANNOTATED_SUFFIX = "-annotated"
+        const val DEFAULT_BASE = "Document"
+        // At most 64 UTF-16 units is at most 192 UTF-8 bytes, well inside the
+        // 255-byte file name limit together with the suffix.
+        const val MAX_BASE_CHARS = 64
+    }
 }
 
 internal class DocumentStore(context: Context) {
@@ -81,7 +107,10 @@ internal class DocumentStore(context: Context) {
                 for (stroke in strokes) {
                     put(JSONObject().put("color", stroke.color).put("width", stroke.width).put("points", JSONArray().apply {
                         for (point in stroke.points) put(JSONArray(listOf(point.x, point.y, point.pressure)))
-                    }))
+                    }).apply {
+                        // Pen strokes omit the key, so drafts stay readable by older versions.
+                        if (stroke.kind != InkKind.PEN) put(KIND_KEY, stroke.kind.name.lowercase())
+                    })
                 }
             })
         }
@@ -95,7 +124,14 @@ internal class DocumentStore(context: Context) {
             InkStroke(List(points.length()) { pointIndex ->
                 val point = points.getJSONArray(pointIndex)
                 InkPoint(point.getDouble(0).toFloat(), point.getDouble(1).toFloat(), point.getDouble(2).toFloat())
-            }, stroke.getInt("color"), stroke.getDouble("width").toFloat())
+            }, stroke.getInt("color"), stroke.getDouble("width").toFloat(), kindOf(stroke.optString(KIND_KEY)))
         }
+    }
+
+    // Unknown kinds (from a newer version) fall back to pen rather than losing the stroke.
+    private fun kindOf(name: String): InkKind = InkKind.entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: InkKind.PEN
+
+    private companion object {
+        const val KIND_KEY = "kind"
     }
 }

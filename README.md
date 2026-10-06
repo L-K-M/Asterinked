@@ -3,14 +3,23 @@
 > [!IMPORTANT]
 > LLM disclosure: This codebase was written with substantial help from large language models: AI coding agents working from the [`AGENTS.md`](AGENTS.md) brief in this repo.
 
-**Latest release:** v<!-- version -->0.1.0<!-- /version --> · [Download](https://github.com/L-K-M/Asterinked/releases/latest)
+**Latest release:** v<!-- version -->0.2.0<!-- /version --> · [Download](https://github.com/L-K-M/Asterinked/releases/latest)
 
 Pen-based PDF annotation for Android 10 and newer.
 
-1. **Open PDF** through Android's document picker.
+1. **Open PDF** through Android's document picker, or open or share a PDF to
+   Asterinked from another app (Files, email, a browser download).
 2. Write with a stylus. Pressure changes line width; fingers pan and pinch to zoom.
-3. Choose **Touch ink** to write with a finger. Use **Undo** or **Redo** to revise notes.
-4. Use **Previous / Next** to change pages, then **Save copy** to export the whole document.
+   Pick ink colour and pen width from the strip at the bottom; they stay as you
+   left them.
+3. Tap the finger icon to write with a finger, or the marker icon to highlight
+   text: highlights multiply with the page, so the text stays readable on screen
+   and in the export. The eraser icon removes whole strokes; a stylus side button
+   erases too. Use **Undo** or **Redo** to revise notes.
+4. Change pages with the arrows on the page pill (tap the page number to jump),
+   then **Save copy** to export the whole document, or tap the share icon to send
+   an annotated copy straight to another app. Sharing does not mark notes as
+   exported.
 
 Ink becomes vector page content in the exported PDF. Original text remains
 selectable; existing artwork and pages are preserved. Repeated exports do not
@@ -66,8 +75,11 @@ mapping accounts for crop offsets and all four page rotations.
 
 ## Current limits
 
-- Password-protected PDFs are rejected. Digital signatures are not preserved as
-  valid signatures after modification.
+- PDFs that need a password to open are rejected. PDFs that open without one
+  but carry owner restrictions work if they allow changes; the exported copy
+  stays encrypted with the same restrictions (a new random owner password,
+  AES for 128-bit keys). Digital signatures are not preserved as valid
+  signatures after modification.
 - Exported ink is permanent page content; reopen it to add more notes, not to
   erase previous strokes. Undo/redo applies to strokes in the current draft.
 - Preview resolution is capped; high zoom can soften the underlying page. Ink
