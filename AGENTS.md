@@ -96,6 +96,11 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   puts the activity into an editor state with a drawn stand-in page.
 - Messages to the user go through `NoticeBar`, not toasts: Android 12+ cuts
   toasts to two lines.
+- The loading spinner is `AsteriskLoader`: the brand mark strokes itself in
+  on a loop, gated by attach + aggregated visibility so it only ticks while
+  on screen. Its faint ghost keeps captured frames non-blank; Robolectric
+  never dispatches `onVisibilityAggregated`, so `onVisibilityChanged` and
+  `onAttachedToWindow` feed the same gate.
 
 ## CI/CD
 

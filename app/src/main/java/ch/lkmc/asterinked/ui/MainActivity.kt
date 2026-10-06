@@ -444,10 +444,7 @@ internal class MainActivity : ComponentActivity() {
 
     private fun buildLoading(): View = column().apply {
         gravity = Gravity.CENTER_HORIZONTAL
-        addView(ProgressBar(context).apply {
-            isIndeterminate = true
-            indeterminateTintList = ColorStateList.valueOf(ui.color(R.color.accent))
-        }, LinearLayout.LayoutParams(ui.dp(Size.SPINNER), ui.dp(Size.SPINNER)))
+        addView(AsteriskLoader(context), LinearLayout.LayoutParams(ui.dp(Size.MARK), ui.dp(Size.MARK)))
         addView(ui.text(TextStyle.CAPTION, getString(R.string.opening)), spaced(Space.M))
     }
 
