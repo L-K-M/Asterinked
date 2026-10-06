@@ -128,6 +128,29 @@ class UiScreenshotTest {
         descendants(it.window.decorView).first { view -> view.tooltipText == app.getString(R.string.go_to_page) }.performClick()
     }
 
+    @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
+    fun dialogNotes() = shoot("dialog-notes", arrange = ::openNoteNavigation)
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
+    fun dialogNotesDark() = shoot("dialog-notes-dark", arrange = ::openNoteNavigation)
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
+    fun dialogNotesLargeFont() {
+        RuntimeEnvironment.setFontScale(2f)
+        shoot("dialog-notes-large-font", arrange = ::openNoteNavigation)
+    }
+
+    @Test @Config(qualifiers = "w680dp-h360dp-land-notnight-xhdpi")
+    fun dialogNotesCompactLandscape() = shoot("dialog-notes-landscape", arrange = ::openNoteNavigation)
+
+    private fun openNoteNavigation(activity: MainActivity) {
+        val state = editing()
+        val draft = state.draft!!
+        val strokes = draft.ink.getValue(draft.page)
+        publish(activity, state.copy(draft = draft.copy(ink = draft.ink + (0 to strokes) + (7 to strokes))))
+        descendants(activity.window.decorView).first { it.tooltipText == app.getString(R.string.go_to_page) }.performClick()
+    }
+
     private fun shoot(name: String, settleMillis: Long = 0, arrange: (MainActivity) -> Unit) {
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
             val activity = controller.get()

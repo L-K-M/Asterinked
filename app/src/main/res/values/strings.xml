@@ -25,6 +25,15 @@
     <string name="page_count">Page %1$d of %2$d</string>
     <string name="page_position">%1$d / %2$d</string>
     <string name="go_to_page">Go to page</string>
+    <string name="page_navigation_description">Page %1$d of %2$d. Go to page or notes</string>
+    <string name="previous_note">Previous note</string>
+    <string name="next_note">Next note</string>
+    <string name="previous_note_page">Previous note: page %1$d</string>
+    <string name="next_note_page">Next note: page %1$d</string>
+    <plurals name="annotated_pages">
+        <item quantity="one">%d page with notes</item>
+        <item quantity="other">%d pages with notes</item>
+    </plurals>
     <string name="go">Go</string>
     <string name="page_number">Page</string>
     <string name="of_pages">of %1$d</string>

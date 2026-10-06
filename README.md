@@ -17,7 +17,8 @@ Pen-based PDF annotation for Android 10 and newer.
    export. The eraser removes whole strokes; a stylus side button erases too.
    Turn on the hand icon to write with a finger. Undo and redo sit at the left
    of the tool bar.
-4. Change pages with the arrows on the page pill (tap the page number to jump),
+4. Change pages with the arrows on the page pill (tap the page number to jump
+   to a page or the previous/next page with notes),
    then **Save copy** to export the whole document, or tap the share icon to send
    an annotated copy straight to another app. Sharing does not mark notes as
    exported. With a keyboard: Ctrl+Z, Ctrl+Shift+Z, Ctrl+S, Ctrl+O, Page Up

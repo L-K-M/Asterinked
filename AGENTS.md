@@ -96,6 +96,9 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   puts the activity into an editor state with a drawn stand-in page.
 - Messages to the user go through `NoticeBar`, not toasts: Android 12+ cuts
   toasts to two lines.
+- The page-number button opens page and note navigation. Note destinations
+  come from current draft ink, skip empty pages and do not wrap at the ends.
+  Reopen the dialog to refresh destinations; document replacement dismisses it.
 
 ## CI/CD
 
