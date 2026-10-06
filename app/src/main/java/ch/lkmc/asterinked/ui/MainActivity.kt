@@ -108,6 +108,9 @@ internal class MainActivity : ComponentActivity() {
     private var incoming: Uri? = null
     private var confirming: AlertDialog? = null
     private var pageDialog: AlertDialog? = null
+    private var pillHidden = false
+    private var shownPageKey: String? = null
+    private val showPill = Runnable { setPillHidden(false) }
 
     private val openPdf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(model::open)
@@ -201,6 +204,7 @@ internal class MainActivity : ComponentActivity() {
         page = InkPageView(this).apply {
             onTurnPage = ::turnPage
             onErase = model::eraseStrokes
+            onWritingChanged = ::writingChanged
         }
         workspace.addView(page, FrameLayout.LayoutParams(MATCH, MATCH))
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -558,6 +562,12 @@ internal class MainActivity : ComponentActivity() {
             counter.text = getString(R.string.page_position, draft.page + 1, state.pages.size)
             counter.contentDescription = getString(R.string.page_count, draft.page + 1, state.pages.size)
             counter.isEnabled = ready && state.pages.size > 1
+            val pageKey = "${draft.source.name}:${draft.page}"
+            if (shownPageKey != pageKey) {
+                shownPageKey = pageKey
+                pagePill.removeCallbacks(showPill)
+                setPillHidden(false)
+            }
         }
 
         page.show(state)
@@ -588,6 +598,7 @@ internal class MainActivity : ComponentActivity() {
         screen = next
         val editing = next == Screen.EDITOR
         listOf(topBar, toolBar, pagePill).forEach { it.visibility = if (editing) View.VISIBLE else View.GONE }
+        if (editing && pillHidden) setPillHidden(false)
         // Invisible rather than gone, so the page keeps its size for the editor.
         page.visibility = if (editing) View.VISIBLE else View.INVISIBLE
         welcome.visibility = if (next == Screen.WELCOME) View.VISIBLE else View.GONE
@@ -652,6 +663,28 @@ internal class MainActivity : ComponentActivity() {
             Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
             else -> null
         } ?: incoming
+    }
+
+    // The pill covers the bottom of the page, where notes often go: it steps
+    // aside while the pen or eraser is down and returns shortly after the
+    // stroke ends, or at once when the page changes.
+    private fun writingChanged(writing: Boolean) {
+        pagePill.removeCallbacks(showPill)
+        if (writing) setPillHidden(true) else pagePill.postDelayed(showPill, PILL_RETURN_MS)
+    }
+
+    private fun setPillHidden(hidden: Boolean) {
+        if (pillHidden == hidden) return
+        pillHidden = hidden
+        pagePill.animate().cancel()
+        if (hidden) {
+            pagePill.animate().alpha(0f).setDuration(Motion.SHORT).setInterpolator(Motion.EASING)
+                // Invisible, not just transparent: a see-through pill would still eat touches.
+                .withEndAction { if (pillHidden) pagePill.visibility = View.INVISIBLE }.start()
+        } else {
+            pagePill.visibility = View.VISIBLE
+            pagePill.animate().alpha(1f).setDuration(Motion.SHORT).setInterpolator(Motion.EASING).start()
+        }
     }
 
     private fun turnPage(delta: Int) {
@@ -744,6 +777,8 @@ internal class MainActivity : ComponentActivity() {
         const val SAVE_LABEL_MIN_WIDTH_DP = 680
         // Phones in landscape: a lower top bar leaves more height for the page.
         const val COMPACT_HEIGHT_DP = 480
+        // The page pill returns this long after a stroke ends.
+        const val PILL_RETURN_MS = 1_500L
         // Android's "largest" text sizes start around 1.5x.
         const val LARGE_FONT_SCALE = 1.5f
 

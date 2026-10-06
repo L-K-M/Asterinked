@@ -105,6 +105,9 @@ internal class InkPageView(context: Context) : View(context) {
     /** Receives the strokes one erase gesture removed, once the gesture ends. */
     var onErase: (Collection<InkStroke>) -> Unit = {}
 
+    /** True while a pen or eraser gesture is on the page, false when it ends. */
+    var onWritingChanged: (Boolean) -> Unit = {}
+
     var tool = InkTool.PEN
         set(value) {
             if (field == value) return
@@ -347,6 +350,7 @@ internal class InkPageView(context: Context) : View(context) {
                 activeKind = inkKind
                 activeErasing = eraserEnd || tool == InkTool.ERASER || (stylus && event.buttonState and STYLUS_BUTTONS != 0)
                 if (stylus || eraserEnd) requestUnbufferedDispatch(event)
+                onWritingChanged(true)
                 track(event, index)
                 parent?.requestDisallowInterceptTouchEvent(true)
                 return true
@@ -500,6 +504,7 @@ internal class InkPageView(context: Context) : View(context) {
     }
 
     private fun cancelStroke() {
+        val wasWriting = activePointer != NO_POINTER
         points = mutableListOf()
         liveStroke = null
         // Strokes hidden by a cancelled erase must be drawn again.
@@ -509,6 +514,7 @@ internal class InkPageView(context: Context) : View(context) {
         eraserAt = null
         activeErasing = false
         activePointer = NO_POINTER
+        if (wasWriting) onWritingChanged(false)
         parent?.requestDisallowInterceptTouchEvent(false)
         invalidate()
     }
