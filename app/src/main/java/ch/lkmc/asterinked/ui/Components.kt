@@ -210,7 +210,7 @@ internal class Components(private val context: Context) {
 
     /**
      * Gives a selectable control its TalkBack role and checked state. A
-     * [position] in a row made a [group] adds "2 of 3" to the announcement.
+     * [position] in a row marked with [choiceGroup] adds "2 of 3" to the announcement.
      */
     fun setRole(view: View, role: Role, position: Int = NO_POSITION) {
         ViewCompat.setAccessibilityDelegate(view, object : AccessibilityDelegateCompat() {
@@ -228,7 +228,7 @@ internal class Components(private val context: Context) {
     }
 
     /** Marks [view] as a single-choice row of [count] controls placed with [setRole]. */
-    fun group(view: View, count: Int) {
+    fun choiceGroup(view: View, count: Int) {
         ViewCompat.setAccessibilityDelegate(view, object : AccessibilityDelegateCompat() {
             override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
                 super.onInitializeAccessibilityNodeInfo(host, info)

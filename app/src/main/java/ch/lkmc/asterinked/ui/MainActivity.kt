@@ -307,7 +307,7 @@ internal class MainActivity : ComponentActivity() {
         for (choice in ToolChoice.entries) {
             tools.addView(ui.segment(choice.icon, choice.chosenIcon, choice.label, choice.ordinal) { selectTool(choice) }, square())
         }
-        ui.group(tools, ToolChoice.entries.size)
+        ui.choiceGroup(tools, ToolChoice.entries.size)
         fingerDrawing = ui.toggleButton(R.drawable.ic_touch, R.drawable.ic_touch_filled, R.string.draw_with_finger) { toggleFingerDrawing() }
         swatches = COLORS.indices.map { index -> ui.choice(COLOR_NAMES[index], index) { pickColor(index) } }
         widths = WIDTHS.indices.map { index ->
@@ -315,8 +315,8 @@ internal class MainActivity : ComponentActivity() {
         }
 
         val history = group(undo, redo)
-        val colors = group(*swatches.toTypedArray()).also { ui.group(it, swatches.size) }
-        val sizes = group(*widths.toTypedArray()).also { ui.group(it, widths.size) }
+        val colors = group(*swatches.toTypedArray()).also { ui.choiceGroup(it, swatches.size) }
+        val sizes = group(*widths.toTypedArray()).also { ui.choiceGroup(it, widths.size) }
         val bar = column().apply { setPadding(0, ui.dp(Space.XS), 0, ui.dp(Space.XS)) }
         if (resources.configuration.screenWidthDp >= ONE_ROW_MIN_WIDTH_DP) {
             val line = row().apply { gravity = Gravity.CENTER }
