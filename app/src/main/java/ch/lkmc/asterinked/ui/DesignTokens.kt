@@ -9,6 +9,7 @@ import android.view.animation.PathInterpolator
  *   Space   4-point scale for padding and gaps
  *   Size    controls; every tappable thing is at least TOUCH tall and wide
  *   Radius  corner radii, small to large; pills use half their height
+ *   Alpha   paint alpha for drawn controls
  *   Motion  durations in ms and the one easing curve
  */
 
@@ -52,6 +53,12 @@ internal object Radius {
 internal object Elevation {
     const val RAISED = 3
     const val NOTICE = 6
+}
+
+internal object Alpha {
+    const val OPAQUE = 255
+    // 38%, Material's opacity for disabled content.
+    const val DISABLED = 97
 }
 
 internal object Motion {

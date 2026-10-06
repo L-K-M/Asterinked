@@ -37,6 +37,7 @@ internal enum class TextStyle(@param:StyleRes val appearance: Int) {
     TITLE(R.style.TextAppearance_Asterinked_Title),
     BODY(R.style.TextAppearance_Asterinked_Body),
     LABEL(R.style.TextAppearance_Asterinked_Label),
+    MESSAGE(R.style.TextAppearance_Asterinked_Message),
     CAPTION(R.style.TextAppearance_Asterinked_Caption),
     COUNTER(R.style.TextAppearance_Asterinked_Counter),
     FIELD(R.style.TextAppearance_Asterinked_Field),
@@ -286,7 +287,7 @@ internal class Components(private val context: Context) {
  * A column whose width never exceeds [maxWidth] pixels, so text stays
  * readable on tablets. Center it with its layout gravity.
  */
-internal class MaxWidthLayout(context: Context) : LinearLayout(context) {
+internal open class MaxWidthLayout(context: Context) : LinearLayout(context) {
     var maxWidth = Int.MAX_VALUE
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {

@@ -99,7 +99,7 @@ internal class ChoiceDot(context: Context) : View(context) {
         super.onDraw(canvas)
         val x = width / 2f
         val y = height / 2f
-        val alpha = if (isEnabled) OPAQUE else DISABLED_ALPHA
+        val alpha = if (isEnabled) Alpha.OPAQUE else Alpha.DISABLED
         val radiusPx = radius * density
         dot.color = fill
         dot.alpha = alpha
@@ -131,8 +131,6 @@ internal class ChoiceDot(context: Context) : View(context) {
         // Highlighter yellow on the light bar is about 1.3:1, graphite on the dark
         // bar about 1.2:1; below this the outline carries the shape.
         const val MIN_CONTRAST = 1.6
-        const val OPAQUE = 255
-        const val DISABLED_ALPHA = 97
         const val OPAQUE_MASK = 0xFF000000.toInt()
     }
 }

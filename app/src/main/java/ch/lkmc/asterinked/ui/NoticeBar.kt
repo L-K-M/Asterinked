@@ -5,12 +5,10 @@ import android.content.res.ColorStateList
 import android.view.Gravity
 import android.view.accessibility.AccessibilityManager
 import android.widget.ImageView
-import android.widget.LinearLayout
 import androidx.annotation.ColorRes
 import androidx.annotation.DrawableRes
 import androidx.core.view.isVisible
 import ch.lkmc.asterinked.R
-import kotlin.math.min
 
 /** What a notice reports; picks its icon and how long it stays. */
 internal enum class Tone(@param:DrawableRes val icon: Int, @param:ColorRes val tint: Int, val millis: Int) {
@@ -27,15 +25,10 @@ internal enum class Tone(@param:DrawableRes val icon: Int, @param:ColorRes val t
  * accessibility settings) and hides at once when tapped. TalkBack reads it as
  * a polite live region.
  */
-internal class NoticeBar(context: Context) : LinearLayout(context) {
+internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
     private val ui = Components(context)
     private val icon = ImageView(context)
-    private val message = ui.text(TextStyle.BODY).apply {
-        setTextColor(ui.color(R.color.inverse_on_surface))
-        textSize = MESSAGE_SP
-        maxLines = MAX_LINES
-    }
-    private val maxWidth = ui.dp(Size.NOTICE_MAX)
+    private val message = ui.text(TextStyle.MESSAGE).apply { maxLines = MAX_LINES }
     private val accessibility = context.getSystemService(AccessibilityManager::class.java)
     private val hide = Runnable { dismiss() }
     private var tone = Tone.INFO
@@ -44,6 +37,7 @@ internal class NoticeBar(context: Context) : LinearLayout(context) {
     val shown: CharSequence? get() = if (isVisible) message.text else null
 
     init {
+        maxWidth = ui.dp(Size.NOTICE_MAX)
         orientation = HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         background = ui.rounded(ui.color(R.color.inverse_surface), Radius.MEDIUM)
@@ -86,18 +80,12 @@ internal class NoticeBar(context: Context) : LinearLayout(context) {
             .withEndAction { visibility = GONE }.start()
     }
 
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val width = min(MeasureSpec.getSize(widthMeasureSpec), maxWidth)
-        super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), heightMeasureSpec)
-    }
-
     override fun onDetachedFromWindow() {
         removeCallbacks(hide)
         super.onDetachedFromWindow()
     }
 
     private companion object {
-        const val MESSAGE_SP = 15f
         const val MAX_LINES = 5
     }
 }

@@ -73,7 +73,7 @@ internal class SegmentedControl(context: Context) : LinearLayout(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val alpha = if (isEnabled) OPAQUE else DISABLED_ALPHA
+        val alpha = if (isEnabled) Alpha.OPAQUE else Alpha.DISABLED
         track.set(0f, 0f, width.toFloat(), height.toFloat())
         trackPaint.alpha = alpha
         canvas.drawRoundRect(track, height / 2f, height / 2f, trackPaint)
@@ -93,8 +93,6 @@ internal class SegmentedControl(context: Context) : LinearLayout(context) {
 
     private companion object {
         const val NONE = -1
-        const val OPAQUE = 255
-        const val DISABLED_ALPHA = 97
         const val SHADOW_RADIUS_DP = 2f
         const val SHADOW_OFFSET_DP = 0.5f
     }

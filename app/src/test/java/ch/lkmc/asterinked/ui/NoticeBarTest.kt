@@ -37,6 +37,18 @@ class NoticeBarTest {
         assertEquals("Second", notice.shown)
     }
 
+    // The fade-out is already running when the next message arrives.
+    @Test fun aNewNoticeTakesOverAFadeOutHalfway() {
+        notice.show("First", Tone.INFO)
+        advance(ANIMATION_MS)
+        notice.dismiss()
+        advance(HALF_FADE_MS)
+        notice.show("Second", Tone.SUCCESS)
+        advance(ANIMATION_MS)
+        assertEquals("Second", notice.shown)
+        assertEquals(1f, notice.alpha)
+    }
+
     @Test fun errorsStayLongerThanHints() {
         notice.show("Couldn’t save", Tone.ERROR)
         advance(Tone.INFO.millis + ANIMATION_MS)
@@ -56,5 +68,6 @@ class NoticeBarTest {
 
     private companion object {
         const val ANIMATION_MS = 500
+        const val HALF_FADE_MS = 80
     }
 }

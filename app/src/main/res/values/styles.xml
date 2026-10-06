@@ -85,6 +85,12 @@
         <item name="android:letterSpacing">0.005</item>
     </style>
 
+    <!-- Notices: a little smaller than body text, on the inverse surface. -->
+    <style name="TextAppearance.Asterinked.Message">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">@color/inverse_on_surface</item>
+    </style>
+
     <style name="TextAppearance.Asterinked.Caption">
         <item name="android:textSize">13sp</item>
         <item name="android:textColor">@color/on_surface_variant</item>

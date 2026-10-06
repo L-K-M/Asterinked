@@ -32,9 +32,18 @@ internal object EditorScreens {
     private const val LINES = 6
     private const val SETTLE_ROUNDS = 30
     private const val SETTLE_SLEEP_MS = 10L
+    private const val RESTORE_TIMEOUT_NS = 10_000_000_000L
 
     fun publish(activity: MainActivity, state: EditorState) {
         val model = ViewModelProvider(activity)[EditorViewModel::class.java]
+        // The draft restore runs on a worker; a state injected before it lands
+        // would be overwritten by its result.
+        val deadline = System.nanoTime() + RESTORE_TIMEOUT_NS
+        while (model.state.value?.busy != false) {
+            check(System.nanoTime() < deadline) { "The draft restore did not finish" }
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(SETTLE_SLEEP_MS)
+        }
         val field = EditorViewModel::class.java.getDeclaredField("mutableState").apply { isAccessible = true }
         @Suppress("UNCHECKED_CAST")
         (field.get(model) as MutableLiveData<EditorState>).value = state
