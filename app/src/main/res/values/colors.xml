@@ -1,3 +1,35 @@
 <resources>
     <color name="launcher_background">#FFFFFF</color>
+
+    <!-- Design tokens. Surfaces from back to front: the canvas behind the page,
+         the bars, then raised floating elements. values-night flips them; the PDF
+         page itself always stays white. -->
+    <color name="canvas">#ECEEF2</color>
+    <color name="surface">#FAFAFC</color>
+    <color name="surface_raised">#FFFFFF</color>
+    <color name="surface_track">#EBEDF1</color>
+    <color name="surface_thumb">#FFFFFF</color>
+
+    <color name="on_surface">#1B1F27</color>
+    <color name="on_surface_variant">#5B6474</color>
+    <color name="on_surface_disabled">#611B1F27</color>
+    <color name="outline">#C3C9D3</color>
+    <color name="outline_variant">#E0E3E9</color>
+    <color name="ripple">#1F1B1F27</color>
+    <color name="shadow">#331B1F27</color>
+
+    <!-- Graphite for the one primary action per screen; brand red only for
+         state that needs attention (unexported notes, finger drawing on). -->
+    <color name="primary">#1B1F27</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="primary_disabled">#1F1B1F27</color>
+    <color name="accent">#D3111C</color>
+    <color name="accent_container">#FDE7E8</color>
+    <color name="on_accent_container">#A00C15</color>
+
+    <!-- Notices use the inverse surface, like a snackbar. -->
+    <color name="inverse_surface">#262A33</color>
+    <color name="inverse_on_surface">#F2F3F6</color>
+    <color name="notice_success">#7DDA95</color>
+    <color name="notice_error">#FF9298</color>
 </resources>

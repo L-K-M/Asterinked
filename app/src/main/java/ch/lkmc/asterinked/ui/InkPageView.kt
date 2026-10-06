@@ -15,6 +15,7 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.animation.DecelerateInterpolator
+import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.document.PageSpec
 import ch.lkmc.asterinked.ink.InkEraser
 import ch.lkmc.asterinked.ink.InkGeometry
@@ -145,7 +146,7 @@ internal class InkPageView(context: Context) : View(context) {
     })
 
     init {
-        setBackgroundColor(Color.rgb(232, 236, 243))
+        setBackgroundColor(context.getColor(R.color.canvas))
         contentDescription = "PDF page. Write with a pen. Pinch to zoom; drag with a finger to pan."
         isFocusable = true
     }

@@ -43,6 +43,8 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   The two move together or not at all.
 - There is NO `kotlin-android` plugin: AGP 9 provides built-in Kotlin
   support. Only `android-application` is applied.
+- Keep `.bat` files normalized (LF) in Git. `.gitattributes` restores CRLF
+  on checkout; CRLF blobs produce line-ending-only dirty diffs.
 - `app/debug.keystore` is checked in ON PURPOSE and signs BOTH build types.
   Zero-secret CI, reproducible builds, upgrade-compatible sideload APKs —
   see `docs/decisions/0001`. Do not "rotate" it; adding signing secrets is a
@@ -66,6 +68,34 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   to the v0.1.0 algorithm, and the live `InkStrokeBuilder` must produce the
   same segments for every prefix. Changing stroke geometry changes every
   exported PDF, so do it deliberately and update that reference.
+
+## UI conventions
+
+- Screens are built in code, not XML layouts. Repeated controls come from
+  `ui/Components.kt` (icon button, toggle, segment, primary button, choice
+  dot) so they look and behave alike; add new ones there.
+- Design tokens: colours and type scale live in `res/values/colors.xml`,
+  `values-night/colors.xml` and `styles.xml` (they change with the theme);
+  spacing, sizes, radii and motion in `ui/DesignTokens.kt`. Theme attributes
+  that need a resource (the dialog corner radius) use `values/dimens.xml`.
+  Never hard-code a chrome colour: it breaks the dark theme. Ink and
+  highlighter colours are document content and stay constants in
+  `MainActivity`.
+- Every tappable control is at least 48dp square; `MainActivityLayoutTest`
+  enforces it, with no overlaps, on phone, landscape, tablet and 200% text.
+- The tool bar wraps from its measured, inset-adjusted width. Narrow phones
+  need three rows to keep 48dp targets; `screenWidthDp` is not the usable width.
+- `UiScreenshotTest` renders every screen state (light, dark, phone, tablet,
+  large text, dialogs, notices) to `app/build/reports/screens/`. Look at the
+  PNGs after any UI change; Robolectric cannot show a device, these can.
+- Robolectric measures text only under `@GraphicsMode(NATIVE)`; in LEGACY
+  mode every character is one pixel wide, so width assertions lie. A view
+  must be attached to a window before its `postDelayed` timers and
+  `animate()` calls run.
+- Tests cannot open a real PDF (no PdfRenderer); `EditorScreens.publish`
+  puts the activity into an editor state with a drawn stand-in page.
+- Messages to the user go through `NoticeBar`, not toasts: Android 12+ cuts
+  toasts to two lines.
 
 ## CI/CD
 

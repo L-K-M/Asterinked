@@ -7,63 +7,97 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
-import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.RippleDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.graphics.text.LineBreaker
 import android.text.TextUtils
+import android.transition.Fade
+import android.transition.TransitionManager
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
+import android.view.KeyEvent
+import android.view.KeyboardShortcutGroup
+import android.view.KeyboardShortcutInfo
+import android.view.Menu
 import android.view.View
-import android.widget.Button
+import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.NumberPicker
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.content.FileProvider
 import androidx.core.content.IntentCompat
 import androidx.core.content.edit
+import androidx.core.graphics.Insets
 import androidx.core.os.BundleCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
+import androidx.core.view.updatePaddingRelative
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.ink.InkKind
 import java.io.File
 
+/*
+ * The editor is one screen in three states (welcome, loading, editing):
+ *
+ *   +--------------------------------------------+
+ *   | [open]  Name.pdf              [share][Save] |  top bar
+ *   |         * Unexported notes                 |
+ *   +--------------------------------------------+
+ *   |                 +--------+                 |
+ *   |                 |  page  |                 |  workspace: page, progress line,
+ *   |                 +--------+                 |  page pill, notices, welcome
+ *   |             ( <  3 / 12  >  [] )           |
+ *   +--------------------------------------------+
+ *   | [undo][redo]   (pen|marker|eraser)  [hand] |  tool bar: one row when it fits,
+ *   | (o)(o)(o)(o)                     . o O     |  otherwise tools over ink
+ *   +--------------------------------------------+
+ *
+ * Bars draw behind the system bars and pad themselves; welcome and loading
+ * hide both bars and use the whole screen.
+ */
 internal class MainActivity : ComponentActivity() {
     private val model: EditorViewModel by viewModels()
     private val settings by lazy { getSharedPreferences(SETTINGS, MODE_PRIVATE) }
-    private lateinit var page: InkPageView
+    private val ui by lazy { Components(this) }
+    private lateinit var root: ViewGroup
+    private lateinit var topBar: View
     private lateinit var title: TextView
     private lateinit var status: TextView
     private lateinit var open: ImageButton
-    private lateinit var undo: ImageButton
-    private lateinit var redo: ImageButton
     private lateinit var share: ImageButton
-    private lateinit var fit: ImageButton
-    private lateinit var save: Button
-    private lateinit var tools: View
-    private lateinit var penMode: ImageButton
-    private lateinit var touchMode: ImageButton
-    private lateinit var highlight: ImageButton
-    private lateinit var eraser: ImageButton
-    private lateinit var swatches: List<ChoiceDot>
-    private lateinit var widths: List<ChoiceDot>
+    private lateinit var save: View
+    private lateinit var workspace: FrameLayout
+    private lateinit var page: InkPageView
+    private lateinit var progress: ProgressBar
     private lateinit var pagePill: View
     private lateinit var previous: ImageButton
     private lateinit var next: ImageButton
     private lateinit var counter: TextView
+    private lateinit var fit: ImageButton
     private lateinit var welcome: View
     private lateinit var loading: View
+    private lateinit var notice: NoticeBar
+    private lateinit var toolBar: View
+    private lateinit var undo: ImageButton
+    private lateinit var redo: ImageButton
+    private lateinit var tools: SegmentedControl
+    private lateinit var fingerDrawing: ImageButton
+    private lateinit var swatches: List<ChoiceDot>
+    private lateinit var widths: List<ChoiceDot>
+    private var screen: Screen? = null
+    private var systemBars = Insets.NONE
     private var mode = InputMode.PEN
     private var colorIndex = DEFAULT_COLOR
     private var widthIndex = DEFAULT_WIDTH
@@ -73,6 +107,7 @@ internal class MainActivity : ComponentActivity() {
     // unsaved-notes check sees the restored draft.
     private var incoming: Uri? = null
     private var confirming: AlertDialog? = null
+    private var pageDialog: AlertDialog? = null
 
     private val openPdf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(model::open)
@@ -82,6 +117,11 @@ internal class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Transparent bars in both themes; the bars underneath supply the colour,
+        // so the system must not add its own contrast scrim.
+        val transparent = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT)
+        enableEdgeToEdge(transparent, transparent)
+        window.isNavigationBarContrastEnforced = false
         super.onCreate(savedInstanceState)
         // Pen settings persist across launches, not only across recreation.
         colorIndex = settings.getInt(COLOR_KEY, DEFAULT_COLOR).coerceIn(COLORS.indices)
@@ -106,6 +146,7 @@ internal class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         confirming?.dismiss()
+        pageDialog?.dismiss()
         super.onDestroy()
     }
 
@@ -115,134 +156,299 @@ internal class MainActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
     }
 
+    // Hardware keyboards: the usual editing shortcuts, routed through the
+    // buttons so they obey exactly the same enabled states.
+    override fun onKeyShortcut(keyCode: Int, event: KeyEvent): Boolean {
+        val target = when (keyCode) {
+            KeyEvent.KEYCODE_Z -> if (event.isShiftPressed) redo else undo
+            KeyEvent.KEYCODE_Y -> redo
+            KeyEvent.KEYCODE_S -> save
+            KeyEvent.KEYCODE_O -> open
+            else -> return super.onKeyShortcut(keyCode, event)
+        }
+        if (target.isShown && target.isEnabled) target.performClick()
+        return true
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        val target = when (keyCode) {
+            KeyEvent.KEYCODE_PAGE_UP -> previous
+            KeyEvent.KEYCODE_PAGE_DOWN -> next
+            else -> return super.onKeyDown(keyCode, event)
+        }
+        if (target.isShown && target.isEnabled) target.performClick()
+        return true
+    }
+
+    override fun onProvideKeyboardShortcuts(data: MutableList<KeyboardShortcutGroup>, menu: Menu?, deviceId: Int) {
+        fun shortcut(label: Int, key: Int, modifiers: Int = KeyEvent.META_CTRL_ON) = KeyboardShortcutInfo(getString(label), key, modifiers)
+        data.add(KeyboardShortcutGroup(getString(R.string.app_name), listOf(
+            shortcut(R.string.undo, KeyEvent.KEYCODE_Z),
+            shortcut(R.string.redo, KeyEvent.KEYCODE_Z, KeyEvent.META_CTRL_ON or KeyEvent.META_SHIFT_ON),
+            shortcut(R.string.save_copy, KeyEvent.KEYCODE_S),
+            shortcut(R.string.open_pdf, KeyEvent.KEYCODE_O),
+            shortcut(R.string.previous, KeyEvent.KEYCODE_PAGE_UP, 0),
+            shortcut(R.string.next, KeyEvent.KEYCODE_PAGE_DOWN, 0),
+        )))
+    }
+
     private fun buildLayout() {
-        val root = column().apply { setBackgroundColor(CHROME) }
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            insets
-        }
+        val column = column().apply { setBackgroundColor(ui.color(R.color.surface)) }
+        topBar = buildTopBar()
+        column.addView(topBar, LinearLayout.LayoutParams(MATCH, WRAP))
 
-        val bar = row().apply { setPadding(dp(4), 0, dp(12), 0) }
-        open = iconButton(R.drawable.ic_open, R.string.open_pdf, bar) { requestOpen() }
-        val heading = column().apply { setPadding(dp(8), 0, dp(4), 0) }
-        title = label(getString(R.string.app_name), TITLE_SIZE, TEXT).apply {
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-            typeface = Typeface.create(MEDIUM_FONT, Typeface.NORMAL)
-        }
-        status = label("", STATUS_SIZE, MUTED).apply { maxLines = 1 }
-        heading.addView(title)
-        heading.addView(status)
-        bar.addView(heading, LinearLayout.LayoutParams(0, WRAP, 1f))
-        undo = iconButton(R.drawable.ic_undo, R.string.undo, bar) { model.undo() }
-        redo = iconButton(R.drawable.ic_redo, R.string.redo, bar) { model.redo() }
-        share = iconButton(R.drawable.ic_share, R.string.share, bar) { model.share() }
-        save = pillButton(R.string.save_copy, bar) { launchPicker { savePdf.launch(exportName()) } }
-        root.addView(bar, LinearLayout.LayoutParams(MATCH, dp(BAR_HEIGHT_DP)))
-
-        val workspace = FrameLayout(this)
+        workspace = FrameLayout(this)
         page = InkPageView(this).apply {
             onTurnPage = ::turnPage
             onErase = model::eraseStrokes
         }
         workspace.addView(page, FrameLayout.LayoutParams(MATCH, MATCH))
+        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            isIndeterminate = true
+            indeterminateTintList = ColorStateList.valueOf(ui.color(R.color.accent))
+            visibility = View.GONE
+        }
+        workspace.addView(progress, FrameLayout.LayoutParams(MATCH, ui.dp(Size.PROGRESS), Gravity.TOP))
+        // On landscape screens the corner is free canvas beside the page.
+        val landscape = resources.configuration.screenWidthDp > resources.configuration.screenHeightDp
         pagePill = buildPagePill()
-        workspace.addView(pagePill, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-            bottomMargin = dp(PILL_MARGIN_DP)
+        val pillGravity = Gravity.BOTTOM or if (landscape) Gravity.END else Gravity.CENTER_HORIZONTAL
+        workspace.addView(pagePill, FrameLayout.LayoutParams(WRAP, WRAP, pillGravity).apply {
+            setMargins(ui.dp(Space.L), 0, ui.dp(Space.L), ui.dp(Space.L))
         })
         welcome = buildWelcome()
         workspace.addView(welcome, FrameLayout.LayoutParams(MATCH, MATCH))
-        loading = ProgressBar(this).apply {
-            isIndeterminate = true
-            indeterminateTintList = ColorStateList.valueOf(ACCENT)
-        }
-        workspace.addView(loading, FrameLayout.LayoutParams(dp(SPINNER_DP), dp(SPINNER_DP), Gravity.CENTER))
-        root.addView(workspace, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        loading = buildLoading()
+        workspace.addView(loading, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
+        notice = NoticeBar(this)
+        workspace.addView(notice, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            setMargins(ui.dp(Space.L), 0, ui.dp(Space.L), ui.dp(Space.L))
+        })
+        column.addView(workspace, LinearLayout.LayoutParams(MATCH, 0, 1f))
 
-        tools = buildToolStrip()
-        root.addView(tools, LinearLayout.LayoutParams(MATCH, dp(BAR_HEIGHT_DP)))
-        setContentView(root)
+        toolBar = buildToolBar()
+        column.addView(toolBar, LinearLayout.LayoutParams(MATCH, WRAP))
+        root = column
+        ViewCompat.setOnApplyWindowInsetsListener(column) { _, insets ->
+            systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            applyInsets()
+            WindowInsetsCompat.CONSUMED
+        }
+        setContentView(column)
     }
 
-    // Input mode as a two-button segment, then highlighter and eraser toggles,
-    // then ink colours, then pen widths.
-    // Centred on wide screens; scrolls on phones narrower than the strip.
-    private fun buildToolStrip(): View {
-        val strip = row().apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(4), 0, dp(4), 0)
+    private fun buildTopBar(): View {
+        val short = resources.configuration.screenHeightDp < COMPACT_HEIGHT_DP
+        val bar = row().apply { minimumHeight = ui.dp(if (short) Size.TOP_BAR_COMPACT else Size.TOP_BAR) }
+        open = ui.iconButton(R.drawable.ic_open, R.string.open_pdf) { requestOpen() }
+        bar.addView(open, square())
+        val heading = column().apply { setPadding(ui.dp(Space.XS), ui.dp(Space.S), ui.dp(Space.S), ui.dp(Space.S)) }
+        // File names differ most at their end ("Report v2 final.pdf"), so the middle gives way.
+        // Aligned to the bar's start, not the text's: an English name in a
+        // right-to-left layout would otherwise drift away from its status dot.
+        title = ui.text(TextStyle.TITLE).apply {
+            isSingleLine = true
+            ellipsize = TextUtils.TruncateAt.MIDDLE
+            textAlignment = View.TEXT_ALIGNMENT_VIEW_START
         }
-        val modes = row().apply { background = rounded(SEGMENT, dp(SEGMENT_RADIUS_DP)) }
-        penMode = iconButton(R.drawable.ic_pen, R.string.pen_only, modes) { changeMode(InputMode.PEN) }
-        touchMode = iconButton(R.drawable.ic_touch, R.string.touch_ink, modes) { changeMode(InputMode.TOUCH) }
-        strip.addView(modes)
-        strip.addView(divider())
-        val kinds = row().apply { background = rounded(SEGMENT, dp(SEGMENT_RADIUS_DP)) }
-        highlight = iconButton(R.drawable.ic_highlighter, R.string.highlighter, kinds) { toggleHighlighter() }
-        eraser = iconButton(R.drawable.ic_eraser, R.string.eraser, kinds) { toggleEraser() }
-        strip.addView(kinds)
-        strip.addView(divider())
-        swatches = COLORS.indices.map { index ->
-            choice(strip, COLOR_NAMES[index]) {
-                colorIndex = index
-                configurePen()
-            }
+        status = ui.text(TextStyle.CAPTION).apply {
+            isSingleLine = true
+            textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+            ellipsize = TextUtils.TruncateAt.END
+            compoundDrawablePadding = ui.dp(Space.XS + Space.XXS)
         }
-        strip.addView(divider())
-        widths = WIDTHS.indices.map { index ->
-            choice(strip, WIDTH_NAMES[index]) {
-                widthIndex = index
-                configurePen()
-            }.apply { radius = WIDTH_DOTS_DP[index] }
-        }
-        return HorizontalScrollView(this).apply {
-            isFillViewport = true
-            isHorizontalScrollBarEnabled = false
-            addView(strip)
-        }
+        heading.addView(title)
+        heading.addView(status)
+        bar.addView(heading, LinearLayout.LayoutParams(0, WRAP, 1f))
+        share = ui.iconButton(R.drawable.ic_share, R.string.share) { model.share() }
+        bar.addView(share, square())
+        // With very large text on a phone the label would leave no room for the
+        // file name; the action keeps its graphite weight as an icon.
+        val crowded = resources.configuration.fontScale >= LARGE_FONT_SCALE && resources.configuration.screenWidthDp < SAVE_LABEL_MIN_WIDTH_DP
+        val saveCopy = { launchPicker { savePdf.launch(exportName()) } }
+        save = if (crowded) ui.primaryIconButton(R.drawable.ic_save, R.string.save_copy, saveCopy)
+            else ui.primaryButton(R.string.save_copy, ButtonSize.REGULAR, action = saveCopy)
+        bar.addView(save, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = ui.dp(Space.XS) })
+        return bar
     }
 
+    // Previous, the page number (tap to jump), next, then Fit.
     private fun buildPagePill(): View {
         val pill = row().apply {
-            background = rounded(PILL, dp(PILL_RADIUS_DP))
-            setPadding(dp(2), 0, dp(2), 0)
+            background = ui.raisedPill()
+            elevation = ui.dp(Elevation.RAISED).toFloat()
+            setPadding(ui.dp(Space.XXS), 0, ui.dp(Space.XXS), 0)
         }
-        previous = iconButton(R.drawable.ic_previous, R.string.previous, pill, PILL_ICON) { turnPage(-1) }
-        counter = label("", COUNTER_SIZE, Color.WHITE).apply {
+        previous = ui.iconButton(R.drawable.ic_previous, R.string.previous) { turnPage(-1) }
+        pill.addView(previous, square())
+        counter = ui.text(TextStyle.COUNTER).apply {
             gravity = Gravity.CENTER
-            minWidth = dp(COUNTER_MIN_WIDTH_DP)
-            setPadding(dp(4), 0, dp(4), 0)
-            background = ripple(null, rounded(Color.WHITE, dp(PILL_RADIUS_DP)))
+            minWidth = ui.dp(COUNTER_MIN_WIDTH_DP)
+            setPadding(ui.dp(Space.XS), 0, ui.dp(Space.XS), 0)
+            background = ui.ripple(content = null, mask = ui.rounded(Color.WHITE, Radius.SMALL))
             tooltipText = getString(R.string.go_to_page)
             setOnClickListener { askForPage() }
         }
-        pill.addView(counter, LinearLayout.LayoutParams(WRAP, dp(PILL_HEIGHT_DP)))
-        next = iconButton(R.drawable.ic_next, R.string.next, pill, PILL_ICON) { turnPage(1) }
-        pill.addView(View(this).apply { setBackgroundColor(PILL_DIVIDER) }, LinearLayout.LayoutParams(dp(1), dp(DIVIDER_HEIGHT_DP)))
-        fit = iconButton(R.drawable.ic_fit, R.string.fit, pill, PILL_ICON) { page.resetZoom() }
+        pill.addView(counter, LinearLayout.LayoutParams(WRAP, ui.dp(Size.TOUCH)))
+        next = ui.iconButton(R.drawable.ic_next, R.string.next) { turnPage(1) }
+        pill.addView(next, square())
+        pill.addView(ui.divider(), LinearLayout.LayoutParams(ui.dp(Size.HAIRLINE), ui.dp(Size.DIVIDER)).apply {
+            setMargins(ui.dp(Space.XS), 0, ui.dp(Space.XS), 0)
+        })
+        fit = ui.iconButton(R.drawable.ic_fit, R.string.fit) { page.resetZoom() }
+        pill.addView(fit, square())
         return pill
     }
 
-    private fun buildWelcome(): View = column().apply {
-        gravity = Gravity.CENTER
-        setPadding(dp(32), dp(24), dp(32), dp(24))
-        setBackgroundColor(CANVAS)
-        addView(ImageView(context).apply {
+    // History, writing tools and the finger toggle, ink colours, pen widths.
+    // Measured controls and available width choose the rows, so narrow windows
+    // and system insets never squeeze or clip the touch targets.
+    private fun buildToolBar(): View {
+        undo = ui.iconButton(R.drawable.ic_undo, R.string.undo) { model.undo() }
+        redo = ui.iconButton(R.drawable.ic_redo, R.string.redo) { model.redo() }
+        tools = SegmentedControl(this)
+        for (choice in ToolChoice.entries) {
+            tools.addView(ui.segment(choice.icon, choice.chosenIcon, choice.label, choice.ordinal) { selectTool(choice) }, square())
+        }
+        ui.choiceGroup(tools, ToolChoice.entries.size)
+        fingerDrawing = ui.toggleButton(R.drawable.ic_touch, R.drawable.ic_touch_filled, R.string.draw_with_finger) { toggleFingerDrawing() }
+        swatches = COLORS.indices.map { index -> ui.choice(COLOR_NAMES[index], index) { pickColor(index) } }
+        widths = WIDTHS.indices.map { index ->
+            ui.choice(WIDTH_NAMES[index], index) { pickWidth(index) }.apply { radius = WIDTH_DOTS_DP[index] }
+        }
+
+        val history = group(undo, redo)
+        val colors = group(*swatches.toTypedArray()).also { ui.choiceGroup(it, swatches.size) }
+        val sizes = group(*widths.toTypedArray()).also { ui.choiceGroup(it, widths.size) }
+
+        fun wideRow() = row().apply {
+            gravity = Gravity.CENTER
+            addView(history, LinearLayout.LayoutParams(WRAP, WRAP))
+            addView(tools, gap(Space.XL))
+            addView(fingerDrawing, square().apply { marginStart = ui.dp(Space.S) })
+            addView(colors, gap(Space.XL))
+            addView(sizes, gap(Space.L))
+        }
+
+        val initialRow = wideRow()
+        initialRow.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            View.MeasureSpec.makeMeasureSpec(ui.dp(Size.TOOL_ROW), View.MeasureSpec.EXACTLY))
+        val singleRowWidth = initialRow.measuredWidth
+        val doubleRowWidth = maxOf(
+            maxOf(history.measuredWidth, fingerDrawing.measuredWidth) * 2 + tools.measuredWidth,
+            colors.measuredWidth + sizes.measuredWidth,
+        )
+
+        fun stackedRows(arrangement: ToolBarRows) = column().apply {
+            // Equal side cells centre the tools where possible. On narrower
+            // windows each side keeps its own content width instead.
+            val sideWidth = if (arrangement == ToolBarRows.DOUBLE) 0 else WRAP
+            val writing = row()
+            writing.addView(history, LinearLayout.LayoutParams(sideWidth, WRAP, 1f))
+            writing.addView(tools, LinearLayout.LayoutParams(WRAP, WRAP))
+            writing.addView(row().apply {
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                addView(fingerDrawing, square())
+            }, LinearLayout.LayoutParams(sideWidth, WRAP, 1f))
+            addView(writing, LinearLayout.LayoutParams(MATCH, ui.dp(Size.TOOL_ROW)))
+
+            if (arrangement == ToolBarRows.TRIPLE) {
+                for (choices in listOf(colors, sizes)) {
+                    addView(row().apply {
+                        gravity = Gravity.CENTER
+                        addView(choices, LinearLayout.LayoutParams(WRAP, WRAP))
+                    }, LinearLayout.LayoutParams(MATCH, ui.dp(Size.TOOL_ROW)))
+                }
+                return@apply
+            }
+
+            val ink = row()
+            ink.addView(colors, LinearLayout.LayoutParams(0, WRAP, 1f))
+            ink.addView(sizes, LinearLayout.LayoutParams(WRAP, WRAP))
+            addView(ink, LinearLayout.LayoutParams(MATCH, ui.dp(Size.TOOL_ROW)))
+        }
+
+        return object : LinearLayout(this) {
+            private var arrangement = ToolBarRows.SINGLE
+
+            init {
+                orientation = VERTICAL
+                setPadding(0, ui.dp(Space.XS), 0, ui.dp(Space.XS))
+                addView(initialRow, LayoutParams(MATCH, ui.dp(Size.TOOL_ROW)))
+            }
+
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                val available = if (MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.UNSPECIFIED) Int.MAX_VALUE
+                    else MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight
+                val next = when {
+                    available >= singleRowWidth -> ToolBarRows.SINGLE
+                    available >= doubleRowWidth -> ToolBarRows.DOUBLE
+                    else -> ToolBarRows.TRIPLE
+                }
+                if (next != arrangement) {
+                    arrangement = next
+                    // Reuse the controls so reflow preserves selection and listeners.
+                    for (control in listOf(history, tools, fingerDrawing, colors, sizes)) {
+                        (control.parent as? ViewGroup)?.removeView(control)
+                    }
+                    removeAllViews()
+                    val content = if (next == ToolBarRows.SINGLE) wideRow() else stackedRows(next)
+                    val height = if (next == ToolBarRows.SINGLE) ui.dp(Size.TOOL_ROW) else WRAP
+                    addView(content, LayoutParams(MATCH, height))
+                }
+                super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+            }
+        }
+    }
+
+    private fun buildWelcome(): View {
+        val content = MaxWidthLayout(this).apply {
+            maxWidth = ui.dp(Size.CONTENT_MAX)
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(ui.dp(Space.XL), ui.dp(Space.XXL), ui.dp(Space.XL), ui.dp(Space.XXL))
+        }
+        content.addView(ImageView(this).apply {
             setImageResource(R.drawable.ic_asterisk)
-            imageTintList = ColorStateList.valueOf(ACCENT)
+            imageTintList = ColorStateList.valueOf(ui.color(R.color.accent))
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }, LinearLayout.LayoutParams(dp(MARK_DP), dp(MARK_DP)))
-        addView(label(getString(R.string.welcome_title), WELCOME_TITLE_SIZE, TEXT).apply {
+        }, LinearLayout.LayoutParams(ui.dp(Size.MARK), ui.dp(Size.MARK)))
+        // Balanced breaks keep a centred heading from ending on one orphaned word.
+        content.addView(ui.text(TextStyle.DISPLAY, getString(R.string.welcome_title)).apply {
             gravity = Gravity.CENTER
-            typeface = Typeface.create(MEDIUM_FONT, Typeface.NORMAL)
-            setPadding(0, dp(20), 0, 0)
-        })
-        addView(label(getString(R.string.welcome_body), WELCOME_BODY_SIZE, MUTED).apply {
+            breakStrategy = LineBreaker.BREAK_STRATEGY_BALANCED
+            ViewCompat.setAccessibilityHeading(this, true)
+        }, spaced(Space.XL))
+        content.addView(ui.text(TextStyle.BODY, getString(R.string.welcome_body)).apply {
             gravity = Gravity.CENTER
-            setPadding(0, dp(12), 0, dp(28))
-        })
-        pillButton(R.string.open_pdf, this) { requestOpen() }
+            breakStrategy = LineBreaker.BREAK_STRATEGY_BALANCED
+            setLineSpacing(0f, BODY_LINE_SPACING)
+        }, spaced(Space.M))
+        content.addView(ui.primaryButton(R.string.open_pdf, ButtonSize.LARGE, R.drawable.ic_open) { requestOpen() }, spaced(Space.XXL))
+        content.addView(ui.text(TextStyle.CAPTION, getString(R.string.welcome_caption)).apply {
+            gravity = Gravity.CENTER
+            breakStrategy = LineBreaker.BREAK_STRATEGY_BALANCED
+            setLineSpacing(0f, BODY_LINE_SPACING)
+        }, spaced(Space.L))
+
+        // Scrolls only when large text no longer fits; otherwise centred.
+        return ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+            setBackgroundColor(ui.color(R.color.surface))
+            addView(FrameLayout(context).apply {
+                addView(content, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.CENTER))
+            }, FrameLayout.LayoutParams(MATCH, MATCH))
+        }
+    }
+
+    private fun buildLoading(): View = column().apply {
+        gravity = Gravity.CENTER_HORIZONTAL
+        addView(ProgressBar(context).apply {
+            isIndeterminate = true
+            indeterminateTintList = ColorStateList.valueOf(ui.color(R.color.accent))
+        }, LinearLayout.LayoutParams(ui.dp(Size.SPINNER), ui.dp(Size.SPINNER)))
+        addView(ui.text(TextStyle.CAPTION, getString(R.string.opening)), spaced(Space.M))
     }
 
     private fun configurePen() {
@@ -250,20 +456,20 @@ internal class MainActivity : ComponentActivity() {
         // The same colour and width choices pick a highlighter tint and a line-height width.
         val colors = if (highlighting) HIGHLIGHT_COLORS else COLORS
         val names = if (highlighting) HIGHLIGHT_NAMES else COLOR_NAMES
-        select(penMode, mode == InputMode.PEN)
-        select(touchMode, mode == InputMode.TOUCH)
-        select(highlight, highlighting)
-        select(eraser, tool == InkTool.ERASER)
+        tools.select(currentTool().ordinal)
+        fingerDrawing.isSelected = mode == InputMode.TOUCH
         swatches.forEachIndexed { index, swatch ->
             swatch.isSelected = index == colorIndex
             swatch.fill = colors[index]
             swatch.contentDescription = getString(names[index])
             swatch.tooltipText = swatch.contentDescription
         }
-        // Width dots preview the current ink colour.
+        // Width dots preview the current ink colour, unless it would vanish
+        // into the bar (graphite at night, yellow by day).
         widths.forEachIndexed { index, dot ->
             dot.isSelected = index == widthIndex
-            dot.fill = colors[colorIndex]
+            val ink = colors[colorIndex]
+            dot.fill = if (dot.blendsIn(ink)) ui.color(R.color.on_surface_variant) else ink
         }
         val width = (if (highlighting) HIGHLIGHT_WIDTHS else WIDTHS)[widthIndex]
         page.configure(mode, colors[colorIndex], width, kind, model::addStroke)
@@ -276,41 +482,68 @@ internal class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun toggleHighlighter() {
-        kind = if (kind == InkKind.HIGHLIGHTER) InkKind.PEN else InkKind.HIGHLIGHTER
-        // Picking a writing tool puts the eraser away.
-        tool = InkTool.PEN
-        configurePen()
-        if (kind == InkKind.HIGHLIGHTER) hint(R.string.highlight_hint)
+    private fun currentTool(): ToolChoice = when {
+        tool == InkTool.ERASER -> ToolChoice.ERASER
+        kind == InkKind.HIGHLIGHTER -> ToolChoice.HIGHLIGHTER
+        else -> ToolChoice.PEN
     }
 
-    private fun toggleEraser() {
-        tool = if (tool == InkTool.ERASER) InkTool.PEN else InkTool.ERASER
+    private fun selectTool(choice: ToolChoice) {
+        if (choice == currentTool()) return
+
+        // The eraser leaves the ink kind alone, so the colours keep showing the
+        // pen or highlighter palette it interrupted.
+        when (choice) {
+            ToolChoice.PEN -> { kind = InkKind.PEN; tool = InkTool.PEN }
+            ToolChoice.HIGHLIGHTER -> { kind = InkKind.HIGHLIGHTER; tool = InkTool.PEN }
+            ToolChoice.ERASER -> tool = InkTool.ERASER
+        }
+        tick()
         configurePen()
-        if (tool == InkTool.ERASER) hint(R.string.eraser_hint)
+        choice.hint?.let(::hint)
     }
 
-    private fun hint(message: Int) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-
-    private fun changeMode(next: InputMode) {
-        if (mode == next) return
-        mode = next
+    private fun toggleFingerDrawing() {
+        mode = if (mode == InputMode.TOUCH) InputMode.PEN else InputMode.TOUCH
+        tick()
         configurePen()
         // The mode changes what fingers do; say so once, where the user is looking.
         hint(if (mode == InputMode.PEN) R.string.input_hint else R.string.touch_hint)
     }
 
+    // Picking ink means writing: it also puts the eraser away.
+    private fun pickColor(index: Int) {
+        colorIndex = index
+        tool = InkTool.PEN
+        tick()
+        configurePen()
+    }
+
+    private fun pickWidth(index: Int) {
+        widthIndex = index
+        tool = InkTool.PEN
+        tick()
+        configurePen()
+    }
+
+    private fun tick() {
+        root.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+    }
+
+    private fun hint(message: Int) = notice.show(getString(message), Tone.INFO)
+
     private fun show(state: EditorState) {
         val draft = state.draft
         val ready = draft != null && !state.busy
-        title.text = draft?.name ?: getString(R.string.app_name)
-        status.text = state.statusText()?.let(::getString).orEmpty()
-        status.setTextColor(if (draft?.dirty == true && !state.busy) ACCENT else MUTED)
-        status.visibility = if (status.text.isEmpty()) View.GONE else View.VISIBLE
+        showScreen(when {
+            draft != null -> Screen.EDITOR
+            state.busy -> Screen.LOADING
+            else -> Screen.WELCOME
+        })
+        title.text = draft?.name.orEmpty()
+        showStatus(state.statusText())
+        progress.visibility = if (draft != null && state.busy) View.VISIBLE else View.GONE
 
-        // Editor controls exist only once there is a document to edit.
-        val editing = if (draft != null) View.VISIBLE else View.GONE
-        listOf(open, undo, redo, share, save, tools, pagePill).forEach { it.visibility = editing }
         open.isEnabled = !state.busy
         save.isEnabled = ready
         share.isEnabled = ready
@@ -319,19 +552,17 @@ internal class MainActivity : ComponentActivity() {
         fit.isEnabled = ready
         previous.isEnabled = ready && draft!!.page > 0
         next.isEnabled = ready && draft!!.page < state.pages.lastIndex
-        (listOf(penMode, touchMode, highlight, eraser) + swatches + widths).forEach { it.isEnabled = ready }
+        tools.isEnabled = ready
+        (listOf(fingerDrawing) + swatches + widths).forEach { it.isEnabled = ready }
         if (draft != null) {
             counter.text = getString(R.string.page_position, draft.page + 1, state.pages.size)
             counter.contentDescription = getString(R.string.page_count, draft.page + 1, state.pages.size)
             counter.isEnabled = ready && state.pages.size > 1
         }
 
-        // While a draft restores or a PDF opens, show progress rather than the welcome.
-        welcome.visibility = if (draft == null && !state.busy) View.VISIBLE else View.GONE
-        loading.visibility = if (draft == null && state.busy) View.VISIBLE else View.GONE
         page.show(state)
         state.message?.let {
-            Toast.makeText(this, it, Toast.LENGTH_LONG).show()
+            notice.show(it.text, it.tone)
             model.acknowledgeMessage()
         }
         state.shared?.let {
@@ -347,6 +578,69 @@ internal class MainActivity : ComponentActivity() {
                 model.open(uri)
             }
         }
+    }
+
+    // Welcome and loading take the whole screen; the editor brings its bars.
+    // Switching cross-fades, except on the first frame.
+    private fun showScreen(next: Screen) {
+        if (screen == next) return
+        if (screen != null) TransitionManager.beginDelayedTransition(root, Fade().setDuration(Motion.SHORT))
+        screen = next
+        val editing = next == Screen.EDITOR
+        listOf(topBar, toolBar, pagePill).forEach { it.visibility = if (editing) View.VISIBLE else View.GONE }
+        // Invisible rather than gone, so the page keeps its size for the editor.
+        page.visibility = if (editing) View.VISIBLE else View.INVISIBLE
+        welcome.visibility = if (next == Screen.WELCOME) View.VISIBLE else View.GONE
+        loading.visibility = if (next == Screen.LOADING) View.VISIBLE else View.GONE
+        workspace.setBackgroundColor(ui.color(if (editing) R.color.canvas else R.color.surface))
+        if (next == Screen.LOADING) {
+            // Restoring a draft is usually instant; only a slow load shows the spinner.
+            loading.alpha = 0f
+            loading.animate().alpha(1f).setStartDelay(Motion.LOADING_DELAY).setDuration(Motion.SHORT).start()
+        }
+        applyInsets()
+    }
+
+    // The line under the title: a red dot while notes are unexported, a check
+    // once they all are.
+    private fun showStatus(text: Int?) {
+        status.text = text?.let(::getString).orEmpty()
+        status.visibility = if (text == null) View.GONE else View.VISIBLE
+        val marker: Drawable? = when (text) {
+            R.string.unsaved -> GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(ui.color(R.color.accent))
+                setBounds(0, 0, ui.dp(Size.STATUS_DOT), ui.dp(Size.STATUS_DOT))
+            }
+            R.string.saved -> getDrawable(R.drawable.ic_success)!!.mutate().apply {
+                setTint(ui.color(R.color.on_surface_variant))
+                setBounds(0, 0, ui.dp(Size.STATUS_ICON), ui.dp(Size.STATUS_ICON))
+            }
+            else -> null
+        }
+        status.setCompoundDrawablesRelative(marker, null, null, null)
+    }
+
+    // Bars extend behind the system bars and pad their content out of them;
+    // the page keeps clear of side insets (landscape navigation, cutouts).
+    private fun applyInsets() {
+        if (screen == null) return
+        val editing = screen == Screen.EDITOR
+        // Insets are physical sides; the top bar's padding follows the reading
+        // direction, so Open stays above Undo right to left as well.
+        val rightToLeft = resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        val startInset = if (rightToLeft) systemBars.right else systemBars.left
+        val endInset = if (rightToLeft) systemBars.left else systemBars.right
+        topBar.updatePaddingRelative(start = startInset + ui.dp(Space.XS), top = systemBars.top, end = endInset + ui.dp(Space.M))
+        // Both bars inset their outer icons alike, so they line up vertically.
+        toolBar.updatePadding(left = systemBars.left + ui.dp(Space.XS), right = systemBars.right + ui.dp(Space.XS),
+            bottom = systemBars.bottom + ui.dp(Space.XS))
+        workspace.updatePadding(left = systemBars.left, right = systemBars.right,
+            top = if (editing) 0 else systemBars.top, bottom = if (editing) 0 else systemBars.bottom)
+        // Notices sit above the page pill, so page navigation stays in reach.
+        (notice.layoutParams as FrameLayout.LayoutParams).bottomMargin =
+            ui.dp(if (editing) Space.L + Size.TOUCH + Space.S else Space.L)
+        notice.requestLayout()
     }
 
     // VIEW carries the PDF as data, SEND as a stream extra. A task relaunched from
@@ -367,18 +661,7 @@ internal class MainActivity : ComponentActivity() {
     private fun askForPage() {
         val state = model.state.value ?: return
         val draft = state.draft ?: return
-        val picker = NumberPicker(this).apply {
-            minValue = 1
-            maxValue = state.pages.size
-            value = draft.page + 1
-            wrapSelectorWheel = false
-        }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.go_to_page)
-            .setView(picker)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(android.R.string.ok) { _, _ -> model.goToPage(picker.value - 1) }
-            .show()
+        pageDialog = showPageDialog(this, ui, draft.page, state.pages.size, model::goToPage)
     }
 
     private fun requestOpen() {
@@ -417,88 +700,27 @@ internal class MainActivity : ComponentActivity() {
 
     private fun launchPicker(action: () -> Unit) {
         try { action() } catch (_: ActivityNotFoundException) {
-            Toast.makeText(this, R.string.no_picker, Toast.LENGTH_LONG).show()
+            notice.show(getString(R.string.no_picker), Tone.ERROR)
         }
     }
 
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-    private fun label(value: String, size: Float, color: Int) = TextView(this).apply {
-        text = value
-        textSize = size
-        setTextColor(color)
-        gravity = Gravity.CENTER_VERTICAL
+    private fun group(vararg views: View) = row().apply { views.forEach { addView(it, square()) } }
+    private fun square() = LinearLayout.LayoutParams(ui.dp(Size.TOUCH), ui.dp(Size.TOUCH))
+    private fun gap(space: Int) = LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = ui.dp(space) }
+    private fun spaced(space: Int) = LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = ui.dp(space) }
+
+    private enum class Screen { WELCOME, LOADING, EDITOR }
+
+    private enum class ToolBarRows { SINGLE, DOUBLE, TRIPLE }
+
+    /** The writing tools, in tool bar order. */
+    private enum class ToolChoice(val icon: Int, val chosenIcon: Int, val label: Int, val hint: Int?) {
+        PEN(R.drawable.ic_pen, R.drawable.ic_pen_filled, R.string.pen, null),
+        HIGHLIGHTER(R.drawable.ic_highlighter, R.drawable.ic_highlighter_filled, R.string.highlighter, R.string.highlight_hint),
+        ERASER(R.drawable.ic_eraser, R.drawable.ic_eraser_filled, R.string.eraser, R.string.eraser_hint),
     }
-
-    private fun iconButton(icon: Int, label: Int, parent: LinearLayout, tint: Int = ICON, action: () -> Unit) = ImageButton(this).apply {
-        setImageResource(icon)
-        imageTintList = enabledColors(tint, DISABLED)
-        background = ripple(null, oval())
-        contentDescription = getString(label)
-        tooltipText = contentDescription
-        setOnClickListener { action() }
-        parent.addView(this, LinearLayout.LayoutParams(dp(TOUCH_TARGET_DP), dp(TOUCH_TARGET_DP)))
-    }
-
-    private fun pillButton(label: Int, parent: LinearLayout, action: () -> Unit) = Button(this).apply {
-        setText(label)
-        isAllCaps = false
-        textSize = BUTTON_TEXT_SIZE
-        typeface = Typeface.create(MEDIUM_FONT, Typeface.NORMAL)
-        setTextColor(enabledColors(Color.WHITE, MUTED))
-        stateListAnimator = null
-        minHeight = dp(PILL_BUTTON_HEIGHT_DP)
-        minimumHeight = dp(PILL_BUTTON_HEIGHT_DP)
-        setPadding(dp(18), 0, dp(18), 0)
-        val shape = GradientDrawable().apply {
-            cornerRadius = dp(PILL_BUTTON_HEIGHT_DP) / 2f
-            color = enabledColors(ACCENT, DISABLED_FILL)
-        }
-        background = ripple(shape)
-        setOnClickListener { action() }
-        parent.addView(this, LinearLayout.LayoutParams(WRAP, dp(PILL_BUTTON_HEIGHT_DP)))
-    }
-
-    private fun choice(parent: LinearLayout, label: Int, action: () -> Unit) = ChoiceDot(this).apply {
-        contentDescription = getString(label)
-        tooltipText = contentDescription
-        ringColor = ACCENT
-        background = ripple(null, oval())
-        setOnClickListener { action() }
-        parent.addView(this, LinearLayout.LayoutParams(dp(CHOICE_DP), dp(TOUCH_TARGET_DP)))
-    }
-
-    private fun select(button: ImageButton, selected: Boolean) {
-        button.isSelected = selected
-        button.imageTintList = enabledColors(if (selected) ACCENT else ICON, DISABLED)
-        val highlight = if (selected) rounded(SELECTED, dp(SEGMENT_RADIUS_DP)) else null
-        button.background = ripple(highlight, highlight ?: oval())
-    }
-
-    private fun divider() = View(this).apply {
-        setBackgroundColor(DIVIDER)
-        layoutParams = LinearLayout.LayoutParams(dp(1), dp(DIVIDER_HEIGHT_DP)).apply { setMargins(dp(8), 0, dp(8), 0) }
-    }
-
-    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
-        cornerRadius = radius.toFloat()
-        setColor(color)
-    }
-
-    private fun oval() = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.WHITE)
-    }
-
-    // The mask bounds the touch ripple; it defaults to the visible content.
-    private fun ripple(content: Drawable?, mask: Drawable? = content) = RippleDrawable(ColorStateList.valueOf(RIPPLE), content, mask)
-
-    private fun enabledColors(enabled: Int, disabled: Int) = ColorStateList(
-        arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()),
-        intArrayOf(disabled, enabled),
-    )
-
-    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     private companion object {
         const val PDF_MIME = "application/pdf"
@@ -516,42 +738,14 @@ internal class MainActivity : ComponentActivity() {
         const val DEFAULT_WIDTH = 1
         const val MATCH = LinearLayout.LayoutParams.MATCH_PARENT
         const val WRAP = LinearLayout.LayoutParams.WRAP_CONTENT
-        const val MEDIUM_FONT = "sans-serif-medium"
-        const val TITLE_SIZE = 17f
-        const val STATUS_SIZE = 12f
-        const val COUNTER_SIZE = 14f
-        const val BUTTON_TEXT_SIZE = 14f
-        const val WELCOME_TITLE_SIZE = 26f
-        const val WELCOME_BODY_SIZE = 15f
-        const val BAR_HEIGHT_DP = 56
-        const val TOUCH_TARGET_DP = 44
-        const val CHOICE_DP = 40
-        const val PILL_BUTTON_HEIGHT_DP = 36
-        const val PILL_HEIGHT_DP = 40
-        const val PILL_RADIUS_DP = 20
-        const val PILL_MARGIN_DP = 16
-        const val SEGMENT_RADIUS_DP = 18
         const val COUNTER_MIN_WIDTH_DP = 64
-        const val DIVIDER_HEIGHT_DP = 24
-        const val SPINNER_DP = 40
-        const val MARK_DP = 88
-
-        // Palette taken from the launcher icon: slate lines, white page, red asterisk.
-        val CHROME = Color.rgb(251, 251, 253)
-        val CANVAS = Color.rgb(232, 236, 243)
-        val TEXT = Color.rgb(43, 50, 64)
-        val MUTED = Color.rgb(104, 114, 132)
-        val ICON = Color.rgb(74, 85, 104)
-        val DISABLED = Color.rgb(185, 193, 206)
-        val DISABLED_FILL = Color.rgb(222, 226, 233)
-        val ACCENT = Color.rgb(211, 17, 28)
-        val SELECTED = Color.rgb(252, 228, 229)
-        val SEGMENT = Color.rgb(238, 241, 246)
-        val DIVIDER = Color.rgb(222, 226, 233)
-        val RIPPLE = Color.argb(40, 43, 50, 64)
-        val PILL = Color.argb(214, 43, 50, 64)
-        val PILL_ICON = Color.WHITE
-        val PILL_DIVIDER = Color.argb(70, 255, 255, 255)
+        const val BODY_LINE_SPACING = 1.2f
+        // Large-text phones use the icon-only Save button.
+        const val SAVE_LABEL_MIN_WIDTH_DP = 680
+        // Phones in landscape: a lower top bar leaves more height for the page.
+        const val COMPACT_HEIGHT_DP = 480
+        // Android's "largest" text sizes start around 1.5x.
+        const val LARGE_FONT_SCALE = 1.5f
 
         val COLORS = intArrayOf(Color.rgb(25, 38, 46), Color.rgb(32, 85, 184), Color.rgb(179, 47, 61), Color.rgb(32, 113, 73))
         val COLOR_NAMES = intArrayOf(R.string.black, R.string.blue, R.string.red, R.string.green)
