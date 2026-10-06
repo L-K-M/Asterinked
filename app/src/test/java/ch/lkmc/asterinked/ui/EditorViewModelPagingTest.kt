@@ -95,6 +95,38 @@ class EditorViewModelPagingTest {
         assertEquals(3, documents.saved.single().ink[0]!!.size)
     }
 
+    @Test fun undoReachesTheLastEditAfterAPageTurnAndShowsItsPage() {
+        settle()
+        model.addStroke(stroke())
+        model.goToPage(3)
+        assertTrue("Undo is offered on a page without ink", state.canUndo)
+
+        model.undo()
+
+        assertEquals("Undo turns back to the edited page", 0, state.draft!!.page)
+        assertTrue(state.draft!!.ink[0].orEmpty().isEmpty())
+        assertTrue(state.canRedo)
+        model.goToPage(3)
+        model.redo()
+        assertEquals(0, state.draft!!.page)
+        assertEquals(1, state.draft!!.ink[0]!!.size)
+        settle()
+        assertSame("The page it turned to is rendered", documents.cachedPreview(state.draft!!), state.preview)
+        assertEquals("The turn is saved like any other", 0, documents.saved.last().page)
+    }
+
+    @Test fun undoOnTheVisiblePageStaysThere() {
+        settle()
+        model.goToPage(2)
+        model.addStroke(stroke())
+        model.addStroke(stroke())
+
+        model.undo()
+
+        assertEquals(2, state.draft!!.page)
+        assertEquals(1, state.draft!!.ink[2]!!.size)
+    }
+
     private fun stroke() = InkStroke(listOf(InkPoint(10f, 10f, 0.5f), InkPoint(20f, 20f, 0.5f)), 0, 2f)
 
     private fun idleMain() = shadowOf(Looper.getMainLooper()).idle()

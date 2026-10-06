@@ -19,6 +19,7 @@ import ch.lkmc.asterinked.document.PageSpec
 import ch.lkmc.asterinked.document.toProblem
 import ch.lkmc.asterinked.ink.InkHistory
 import ch.lkmc.asterinked.ink.InkStroke
+import ch.lkmc.asterinked.ink.PageInk
 import java.io.File
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -86,19 +87,10 @@ internal class EditorViewModel internal constructor(
         }
     }
 
-    // Turns instantly: a prefetched preview shows at once; otherwise the page is
-    // drawn blank with its ink until the render lands, and writing can start
-    // right away. Nothing is disabled while a page renders.
     fun goToPage(page: Int) {
         val draft = current.draft ?: return
         if (current.busy || page !in current.pages.indices || page == draft.page) return
-        val next = draft.copy(page = page)
-        visiblePage.set(page)
-        val preview = service.cachedPreview(next)
-        publish(withHistory(current.copy(draft = next, preview = preview)))
-        saveDraft(next)
-        if (preview == null) renderVisible(next)
-        prefetchAround(next)
+        showPage(draft.copy(page = page))
     }
 
     fun addStroke(stroke: InkStroke) {
@@ -119,18 +111,17 @@ internal class EditorViewModel internal constructor(
         if (remaining.size != strokes.size) edit(draft, strokes, remaining)
     }
 
+    /** Undoes the last edit in the document, turning to its page if needed. */
     fun undo() {
         val draft = current.draft ?: return
         if (current.busy) return
-        val strokes = history.undo(draft.page, draft.ink[draft.page].orEmpty()) ?: return
-        changeInk(draft.copy(ink = draft.ink + (draft.page to strokes)))
+        history.undo(draft.page, draft.ink)?.let { applyHistory(draft, it) }
     }
 
     fun redo() {
         val draft = current.draft ?: return
         if (current.busy) return
-        val strokes = history.redo(draft.page, draft.ink[draft.page].orEmpty()) ?: return
-        changeInk(draft.copy(ink = draft.ink + (draft.page to strokes)))
+        history.redo(draft.ink)?.let { applyHistory(draft, it) }
     }
 
     fun export(uri: Uri) {
@@ -172,6 +163,24 @@ internal class EditorViewModel internal constructor(
         prefetchAround(document.draft)
     }
 
+    // An edit on another page is shown on its page, so the user sees what changed.
+    private fun applyHistory(draft: Draft, change: PageInk) {
+        val edited = draft.copy(ink = draft.ink + (change.page to change.strokes))
+        if (change.page == draft.page) changeInk(edited) else showPage(edited.copy(page = change.page))
+    }
+
+    // Turns instantly: a prefetched preview shows at once; otherwise the page is
+    // drawn blank with its ink until the render lands, and writing can start
+    // right away. Nothing is disabled while a page renders.
+    private fun showPage(next: Draft) {
+        visiblePage.set(next.page)
+        val preview = service.cachedPreview(next)
+        publish(withHistory(current.copy(draft = next, preview = preview)))
+        saveDraft(next)
+        if (preview == null) renderVisible(next)
+        prefetchAround(next)
+    }
+
     private fun edit(draft: Draft, before: List<InkStroke>, after: List<InkStroke>) {
         history.record(draft.page, before, after)
         changeInk(draft.copy(ink = draft.ink + (draft.page to after)))
@@ -179,7 +188,7 @@ internal class EditorViewModel internal constructor(
 
     private fun withHistory(state: EditorState): EditorState {
         val draft = state.draft ?: return state.copy(canUndo = false, canRedo = false)
-        return state.copy(canUndo = history.canUndo(draft.page, draft.ink[draft.page].orEmpty()), canRedo = history.canRedo(draft.page))
+        return state.copy(canUndo = history.canUndo(draft.page, draft.ink), canRedo = history.canRedo())
     }
 
     private fun changeInk(draft: Draft) {
