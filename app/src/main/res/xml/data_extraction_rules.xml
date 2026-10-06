@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- allowBackup=false already keeps drafts out of cloud backup; say so again
+     here so the rule survives a future allowBackup flip. Device-to-device
+     transfer stays allowed, so a new phone restores the current document. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+    </cloud-backup>
+</data-extraction-rules>
