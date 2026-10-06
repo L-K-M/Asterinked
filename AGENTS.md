@@ -85,6 +85,9 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   enforces it, with no overlaps, on phone, landscape, tablet and 200% text.
 - The tool bar wraps from its measured, inset-adjusted width. Narrow phones
   need three rows to keep 48dp targets; `screenWidthDp` is not the usable width.
+- `InkPageView` updates its shared page rectangle and scale synchronously after
+  page, size, pan and zoom changes, including animation frames. Drawing and
+  input only consume that transform; no draw may be required before ink or erase.
 - `UiScreenshotTest` renders every screen state (light, dark, phone, tablet,
   large text, dialogs, notices) to `app/build/reports/screens/`. Look at the
   PNGs after any UI change; Robolectric cannot show a device, these can.
