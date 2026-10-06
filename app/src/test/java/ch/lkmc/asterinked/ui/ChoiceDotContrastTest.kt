@@ -21,33 +21,37 @@ import kotlin.math.roundToInt
 class ChoiceDotContrastTest {
     @Test @Config(qualifiers = "notnight-xhdpi")
     fun paleHighlightersHaveVisibleUnselectedEdges() {
-        assertVisibleEdges(listOf(Color.rgb(255, 228, 92), Color.rgb(255, 168, 207)))
+        assertVisibleEdges(R.string.yellow to Color.rgb(255, 228, 92), R.string.pink to Color.rgb(255, 168, 207))
     }
 
     @Test @Config(qualifiers = "night-xhdpi")
     fun darkPenChoicesHaveVisibleUnselectedEdges() {
-        assertVisibleEdges(listOf(Color.rgb(25, 38, 46), Color.rgb(32, 85, 184), Color.rgb(179, 47, 61)))
+        assertVisibleEdges(R.string.black to Color.rgb(25, 38, 46), R.string.blue to Color.rgb(32, 85, 184), R.string.red to Color.rgb(179, 47, 61))
     }
 
-    private fun assertVisibleEdges(colors: List<Int>) {
+    private fun assertVisibleEdges(vararg swatches: Pair<Int, Int>) {
         val context = RuntimeEnvironment.getApplication()
         val ui = Components(context)
         val backdrop = context.getColor(R.color.surface)
         val size = ui.dp(Size.TOUCH)
         val center = size / 2
 
-        for (color in colors) {
-            val choice = ui.choice(R.string.blue, 0) {}.apply {
+        for ((label, color) in swatches) {
+            val choice = ui.choice(label, 0) {}.apply {
                 fill = color
                 layout(0, 0, size, size)
             }
             val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).apply { eraseColor(backdrop) }
             choice.draw(Canvas(bitmap))
 
-            // Sample inside the circumference, avoiding its anti-aliased outer pixel.
-            val edgeX = center + ((choice.radius - EDGE_INSET_DP) * context.resources.displayMetrics.density).roundToInt()
-            val contrast = ColorUtils.calculateContrast(bitmap.getPixel(edgeX, center), backdrop)
-            assertTrue("Unselected ${Integer.toHexString(color)} edge has $contrast:1 contrast", contrast >= MIN_CONTROL_CONTRAST)
+            // Pixel centres are half-integral: mirror indices, not distances,
+            // to sample the same fully-covered edge on all four sides.
+            val near = center + ((choice.radius - EDGE_INSET_DP) * context.resources.displayMetrics.density).roundToInt()
+            val far = size - 1 - near
+            for ((x, y) in listOf(near to center, far to center, center to near, center to far)) {
+                val contrast = ColorUtils.calculateContrast(bitmap.getPixel(x, y), backdrop)
+                assertTrue("Unselected ${context.getString(label)} edge at ($x,$y) has $contrast:1 contrast", contrast >= MIN_CONTROL_CONTRAST)
+            }
             assertEquals("The ink tint stays unchanged", color, bitmap.getPixel(center, center))
             bitmap.recycle()
         }
