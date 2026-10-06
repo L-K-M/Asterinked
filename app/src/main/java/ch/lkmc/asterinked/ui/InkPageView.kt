@@ -167,6 +167,9 @@ internal class InkPageView(context: Context) : View(context) {
         if (pageKey != key) {
             cancelStroke()
             cancelZoomAnimation()
+            // Brief page-flip micro-animation: fade and slide.
+            alpha = 0.85f
+            animate().alpha(1f).translationX(0f).setDuration(180).start()
             if (document != null && document == documentKey) {
                 // Keep the zoom and column across page turns; start at the page top.
                 alignTopPending = true
