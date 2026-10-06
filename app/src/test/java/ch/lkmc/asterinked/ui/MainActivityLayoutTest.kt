@@ -15,6 +15,7 @@ import ch.lkmc.asterinked.ui.EditorScreens.descendants
 import ch.lkmc.asterinked.ui.EditorScreens.editing
 import ch.lkmc.asterinked.ui.EditorScreens.publish
 import ch.lkmc.asterinked.ui.EditorScreens.settle
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -106,6 +107,12 @@ class MainActivityLayoutTest {
         assertTrue("Text ends at $textRight, dot starts at $dotLeft", dotLeft - textRight <= status.compoundDrawablePadding + 1)
     }
 
+    @Test @Config(qualifiers = "w411dp-h891dp-port-mdpi")
+    fun theBarsLineUpTheirStartIcons() = assertStartIconsAlign()
+
+    @Test @Config(qualifiers = "ar-ldrtl-w411dp-h891dp-port-mdpi")
+    fun theBarsLineUpTheirStartIconsRightToLeft() = assertStartIconsAlign()
+
     private fun assertControlsFit() = editor(::assertControlsFit)
 
     // On screen, at least 48dp square, and never on top of another control.
@@ -125,6 +132,19 @@ class MainActivityLayoutTest {
                 assertFalse("$name overlaps ${other.contentDescription}", Rect.intersects(rect, otherRect))
             }
         }
+    }
+
+    // Open heads the top bar and undo the stacked tool bar: both keep the same
+    // distance from the start edge, whichever side that is.
+    private fun assertStartIconsAlign() = editor { root ->
+        val open = descendants(root).single { it.contentDescription == app.getString(R.string.open_pdf) }
+        val undo = descendants(root).single { it.contentDescription == app.getString(R.string.undo) }
+        assertEquals("Open and undo start equally far from the edge", startInset(root, open), startInset(root, undo))
+    }
+
+    private fun startInset(root: View, view: View): Int {
+        val left = IntArray(2).also(view::getLocationInWindow)[0]
+        return if (root.layoutDirection == View.LAYOUT_DIRECTION_RTL) root.width - left - view.width else left
     }
 
     private fun editor(check: (View) -> Unit) {

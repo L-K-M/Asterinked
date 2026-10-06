@@ -43,6 +43,7 @@ import androidx.core.os.BundleCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import androidx.core.view.updatePaddingRelative
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.ink.InkKind
 import java.io.File
@@ -587,6 +588,8 @@ internal class MainActivity : ComponentActivity() {
         screen = next
         val editing = next == Screen.EDITOR
         listOf(topBar, toolBar, pagePill).forEach { it.visibility = if (editing) View.VISIBLE else View.GONE }
+        // Invisible rather than gone, so the page keeps its size for the editor.
+        page.visibility = if (editing) View.VISIBLE else View.INVISIBLE
         welcome.visibility = if (next == Screen.WELCOME) View.VISIBLE else View.GONE
         loading.visibility = if (next == Screen.LOADING) View.VISIBLE else View.GONE
         workspace.setBackgroundColor(ui.color(if (editing) R.color.canvas else R.color.surface))
@@ -623,7 +626,12 @@ internal class MainActivity : ComponentActivity() {
     private fun applyInsets() {
         if (screen == null) return
         val editing = screen == Screen.EDITOR
-        topBar.updatePadding(left = systemBars.left + ui.dp(Space.XS), top = systemBars.top, right = systemBars.right + ui.dp(Space.M))
+        // Insets are physical sides; the top bar's padding follows the reading
+        // direction, so Open stays above Undo right to left as well.
+        val rightToLeft = resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        val startInset = if (rightToLeft) systemBars.right else systemBars.left
+        val endInset = if (rightToLeft) systemBars.left else systemBars.right
+        topBar.updatePaddingRelative(start = startInset + ui.dp(Space.XS), top = systemBars.top, end = endInset + ui.dp(Space.M))
         // Both bars inset their outer icons alike, so they line up vertically.
         toolBar.updatePadding(left = systemBars.left + ui.dp(Space.XS), right = systemBars.right + ui.dp(Space.XS),
             bottom = systemBars.bottom + ui.dp(Space.XS))
