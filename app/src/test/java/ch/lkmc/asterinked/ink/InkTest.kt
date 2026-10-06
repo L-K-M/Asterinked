@@ -23,6 +23,13 @@ class InkTest {
         assertTrue(segments.all { it.width > 0f && it.width <= 4f })
     }
 
+    @Test fun centerlineFollowsTheSmoothedSegments() {
+        val stroke = InkStroke(listOf(InkPoint(0f, 0f, .2f), InkPoint(30f, 0f, .5f), InkPoint(30f, 30f, 1f)), 0, 12f, InkKind.HIGHLIGHTER)
+        val segments = InkGeometry.segments(stroke)
+        assertEquals(listOf(segments.first().start) + segments.map { it.end }, InkGeometry.centerline(stroke))
+        assertEquals(InkKind.PEN, InkStroke(emptyList(), 0, 1f).kind)
+    }
+
     @Test fun invalidPressureAndHugeDistanceStayBounded() {
         val points = listOf(InkPoint(0f, 0f, Float.NaN), InkPoint(1e20f, 0f, 7f))
         val segments = InkGeometry.segments(InkStroke(points, 0, 3f))

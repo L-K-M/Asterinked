@@ -10,8 +10,8 @@ android {
         applicationId = "ch.lkmc.asterinked"
         minSdk = 29
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     signingConfigs {
@@ -48,6 +48,13 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+}
+
+// PdfEngineRasterTest writes the fixtures that scripts/verify_pdf.py re-renders.
+// Declaring them as an output makes a build-cache hit restore them instead of
+// skipping the test run and leaving the PDFium check without input.
+tasks.withType<Test>().matching { it.name == "testDebugUnitTest" }.configureEach {
+    outputs.dir(layout.buildDirectory.dir("test-output/raster-proof"))
 }
 
 dependencies {
