@@ -73,6 +73,12 @@ internal class InkPageView(context: Context) : View(context) {
     private val erasing: MutableSet<InkStroke> = Collections.newSetFromMap(IdentityHashMap())
     private val eraserRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = Color.argb(160, 60, 70, 80) }
     private var eraserAt: InkPoint? = null
+    // Where a hovering stylus would land, in page units; null while it is away or down.
+    private var hoverAt: InkPoint? = null
+    private var hoverErases = false
+    private val hoverRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val hoverHalo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = HOVER_HALO_COLOR }
+    private val hoverMarker = Paint(Paint.ANTI_ALIAS_FLAG).apply { blendMode = BlendMode.MULTIPLY }
     private var activeErasing = false
     private var activePointer = NO_POINTER
     private var activeColor = Color.BLACK
@@ -239,11 +245,51 @@ internal class InkPageView(context: Context) : View(context) {
             drawInk(canvas, activeColor, live.settled)
             drawInk(canvas, activeColor, live.tail)
         }
-        eraserAt?.let {
-            eraserRing.strokeWidth = resources.displayMetrics.density / scale
-            canvas.drawCircle(it.x, it.y, eraserRadius(), eraserRing)
-        }
+        eraserAt?.let { drawEraserRing(canvas, it, scale) }
+        hoverAt?.takeIf { liveStroke == null && eraserAt == null }?.let { drawHover(canvas, it, scale) }
         canvas.restore()
+    }
+
+    private fun drawEraserRing(canvas: Canvas, at: InkPoint, scale: Float) {
+        eraserRing.strokeWidth = density / scale
+        canvas.drawCircle(at.x, at.y, eraserRadius(), eraserRing)
+    }
+
+    // The ring is as wide as the line at full pressure, but never smaller than a
+    // few dp on screen; a pale halo keeps it visible over ink of its own colour.
+    // A light highlighter tint would vanish as a ring, so it previews the mark.
+    private fun drawHover(canvas: Canvas, at: InkPoint, scale: Float) {
+        if (hoverErases) {
+            drawEraserRing(canvas, at, scale)
+            return
+        }
+        val radius = maxOf(inkWidth / 2f, HOVER_MIN_RADIUS_DP * density / scale)
+        if (inkKind == InkKind.HIGHLIGHTER) {
+            hoverMarker.color = inkColor
+            canvas.drawCircle(at.x, at.y, radius, hoverMarker)
+            return
+        }
+        val line = HOVER_LINE_DP * density / scale
+        hoverHalo.strokeWidth = line * 3f
+        canvas.drawCircle(at.x, at.y, radius, hoverHalo)
+        hoverRing.color = inkColor
+        hoverRing.strokeWidth = line
+        canvas.drawCircle(at.x, at.y, radius, hoverRing)
+    }
+
+    // Styluses that report hover show where the nib will land, since the glass
+    // between nib and pixels makes that spot hard to judge. Finger hover is
+    // TalkBack's explore-by-touch and is left to the framework.
+    override fun onHoverEvent(event: MotionEvent): Boolean {
+        val tool = event.getToolType(0)
+        if (tool != MotionEvent.TOOL_TYPE_STYLUS && tool != MotionEvent.TOOL_TYPE_ERASER) return super.onHoverEvent(event)
+
+        val shown = hoverAt
+        val hovering = event.actionMasked == MotionEvent.ACTION_HOVER_ENTER || event.actionMasked == MotionEvent.ACTION_HOVER_MOVE
+        hoverAt = if (hovering && isEnabled && pageRect.contains(event.x, event.y)) pagePoint(event.x, event.y, 1f) else null
+        hoverErases = tool == MotionEvent.TOOL_TYPE_ERASER || this.tool == InkTool.ERASER || event.buttonState and STYLUS_BUTTONS != 0
+        if (shown != null || hoverAt != null) invalidate()
+        return true
     }
 
     override fun onDetachedFromWindow() {
@@ -341,6 +387,7 @@ internal class InkPageView(context: Context) : View(context) {
         if ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) &&
             (stylus || eraserEnd || (inputMode == InputMode.TOUCH && event.pointerCount == 1))) {
             if (pageRect.contains(event.getX(index), event.getY(index))) {
+                hoverAt = null
                 activePointer = event.getPointerId(index)
                 activeColor = inkColor
                 activeWidth = inkWidth
@@ -442,12 +489,17 @@ internal class InkPageView(context: Context) : View(context) {
         if (activeErasing) eraseAlong(event, index) else addSamples(event, index)
     }
 
+    // Screen pixels to page units; null before the page is laid out.
+    private fun pagePoint(x: Float, y: Float, pressure: Float): InkPoint? {
+        val page = spec ?: return null
+        val point = InkPoint((x - pageRect.left) / pageRect.width() * page.displayWidth,
+            (y - pageRect.top) / pageRect.height() * page.displayHeight, pressure)
+        return point.takeIf { it.x.isFinite() && it.y.isFinite() }
+    }
+
     private fun eraseAlong(event: MotionEvent, index: Int) {
-        val page = spec ?: return
         fun erase(x: Float, y: Float) {
-            val point = InkPoint((x - pageRect.left) / pageRect.width() * page.displayWidth,
-                (y - pageRect.top) / pageRect.height() * page.displayHeight, 1f)
-            if (!point.x.isFinite() || !point.y.isFinite()) return
+            val point = pagePoint(x, y, 1f) ?: return
             val candidates = strokes.filter { it !in erasing }
             // The cached ink must be re-recorded without the newly hidden strokes.
             if (erasing.addAll(eraser.hits(candidates, eraserAt, point, eraserRadius()))) inkNodeStale = true
@@ -471,15 +523,10 @@ internal class InkPageView(context: Context) : View(context) {
     }
 
     private fun addSamples(event: MotionEvent, index: Int) {
-        val page = spec ?: return
         fun add(x: Float, y: Float, pressure: Float) {
-            val point = InkPoint((x - pageRect.left) / pageRect.width() * page.displayWidth,
-                (y - pageRect.top) / pageRect.height() * page.displayHeight,
-                if (event.getToolType(index) == MotionEvent.TOOL_TYPE_STYLUS) pressure else TOUCH_PRESSURE)
-            if (point.x.isFinite() && point.y.isFinite()) {
-                points.add(point)
-                (liveStroke ?: InkStrokeBuilder(activeWidth).also { liveStroke = it }).add(point)
-            }
+            val point = pagePoint(x, y, if (event.getToolType(index) == MotionEvent.TOOL_TYPE_STYLUS) pressure else TOUCH_PRESSURE) ?: return
+            points.add(point)
+            (liveStroke ?: InkStrokeBuilder(activeWidth).also { liveStroke = it }).add(point)
         }
         // Historical samples retain curves during fast writing and batched input.
         for (history in 0 until event.historySize) {
@@ -554,6 +601,9 @@ internal class InkPageView(context: Context) : View(context) {
         const val SWIPE_VELOCITY_DP = 600f
         const val SWIPE_DIRECTION_RATIO = 1.5f
         const val ERASER_RADIUS_DP = 10f
+        const val HOVER_MIN_RADIUS_DP = 4f
+        const val HOVER_LINE_DP = 1.5f
+        val HOVER_HALO_COLOR = Color.argb(150, 255, 255, 255)
         // Most pens report the side button as primary; older S Pens report secondary.
         const val STYLUS_BUTTONS = MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_SECONDARY
         const val SHADOW_RADIUS_DP = 6f
