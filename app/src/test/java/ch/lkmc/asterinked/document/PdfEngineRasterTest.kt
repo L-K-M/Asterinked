@@ -1,6 +1,7 @@
 package ch.lkmc.asterinked.document
 
 import android.graphics.Color
+import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
@@ -8,6 +9,8 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
+import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
+import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.util.Matrix
 import org.junit.Assert.assertTrue
@@ -27,9 +30,13 @@ class PdfEngineRasterTest {
         PDFBoxResourceLoader.init(app)
         val engine = PdfEngine(app.cacheDir)
         val output = File("build/test-output/raster-proof").apply { mkdirs() }
-        for (rotation in listOf(0, 90, 180, 270)) {
-            val source = File(output, "source-$rotation.pdf")
-            val exported = File(output, "export-$rotation.pdf")
+        // name to (rotation, owner-restricted encryption, highlight across the text line)
+        val cases = listOf(0, 90, 180, 270).map { "$it" to Triple(it, false, false) } +
+            ("encrypted" to Triple(0, true, false)) + ("highlight" to Triple(0, false, true))
+        for ((name, options) in cases) {
+            val (rotation, encrypted, highlight) = options
+            val source = File(output, "source-$name.pdf")
+            val exported = File(output, "export-$name.pdf")
             PDDocument().use { document ->
                 val page = PDPage(PDRectangle.LETTER).apply {
                     this.rotation = rotation
@@ -47,15 +54,23 @@ class PdfEngineRasterTest {
                     stream.addRect(0f, 0f, 5f, 5f)
                     stream.clip()
                 }
+                if (encrypted) {
+                    // Opens without a password but forbids printing: the export must keep that.
+                    val permissions = AccessPermission().apply { setCanPrint(false) }
+                    document.protect(StandardProtectionPolicy("owner", "", permissions).apply { encryptionKeyLength = 128 })
+                }
                 document.save(source)
             }
             val spec = engine.inspect(source).single()
             val x = spec.displayWidth * 0.23f
             val y = spec.displayHeight * 0.31f
+            // The text baseline sits at user y=700: display y = 48 + 696 - 700 = 44, so a
+            // 12-wide marker centred at y=40 covers the glyphs from baseline to cap height.
+            val marker = InkStroke(listOf(InkPoint(30f, 40f, 1f), InkPoint(150f, 40f, .3f)), Color.rgb(255, 228, 92), 12f, InkKind.HIGHLIGHTER)
             val ink = listOf(
                 InkStroke(listOf(InkPoint(x, y, 1f)), Color.RED, 10f),
                 InkStroke(listOf(InkPoint(x - 20f, y, .2f), InkPoint(x + 20f, y, 1f)), Color.RED, 5f),
-            )
+            ) + if (highlight) listOf(marker) else emptyList()
             engine.export(source, exported, mapOf(0 to ink))
             assertTrue(exported.length() > source.length())
         }
