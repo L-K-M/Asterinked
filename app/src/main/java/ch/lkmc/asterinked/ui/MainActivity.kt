@@ -42,6 +42,7 @@ import androidx.core.content.edit
 import androidx.core.graphics.Insets
 import androidx.core.os.BundleCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.core.view.updatePaddingRelative
@@ -109,6 +110,7 @@ internal class MainActivity : ComponentActivity() {
     private var incoming: Uri? = null
     private var confirming: AlertDialog? = null
     private var pageDialog: AlertDialog? = null
+    private var lastDestination: Uri? = null
 
     private val openPdf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(model::open)
@@ -120,7 +122,11 @@ internal class MainActivity : ComponentActivity() {
             try {
                 contentResolver.takePersistableUriPermission(it,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            } catch (_: SecurityException) { }
+            } catch (_: SecurityException) {
+                // Some providers persist a subset of the flags; write is the
+                // one Save needs, so keep at least that when possible.
+                runCatching { contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+            }
             model.export(it)
         }
     }
@@ -277,8 +283,8 @@ internal class MainActivity : ComponentActivity() {
         // One tap writes back to the remembered file; a long press opens the
         // picker to save a copy somewhere else.
         val saveOrPick = {
-            model.state.value?.draft?.destination?.let(model::export)
-                ?: launchPicker { savePdf.launch(exportName()) }
+            val remembered = model.state.value?.draft?.destination
+            if (remembered != null) model.export(remembered) else launchPicker { savePdf.launch(exportName()) }
         }
         save = if (crowded) ui.primaryIconButton(R.drawable.ic_save, R.string.save_copy, saveOrPick)
             else ui.primaryButton(R.string.save_copy, ButtonSize.REGULAR, action = saveOrPick)
@@ -286,6 +292,12 @@ internal class MainActivity : ComponentActivity() {
             if (!save.isEnabled) return@setOnLongClickListener false
             launchPicker { savePdf.launch(exportName()) }
             true
+        }
+        // A long press is invisible to TalkBack unless it is a labelled action.
+        ViewCompat.replaceAccessibilityAction(save, AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_LONG_CLICK,
+            getString(R.string.save_copy)) { _, _ ->
+            if (!save.isEnabled) false
+            else { launchPicker { savePdf.launch(exportName()) }; true }
         }
         bar.addView(save, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = ui.dp(Space.XS) })
         return bar
@@ -549,6 +561,14 @@ internal class MainActivity : ComponentActivity() {
         root.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
     }
 
+    // Grants are finite (~128 per app), so a replaced destination gives its
+    // back; either flag may be missing if the provider persisted only write.
+    private fun releaseGrant(uri: Uri) {
+        for (flag in intArrayOf(Intent.FLAG_GRANT_WRITE_URI_PERMISSION, Intent.FLAG_GRANT_READ_URI_PERMISSION)) {
+            runCatching { contentResolver.releasePersistableUriPermission(uri, flag) }
+        }
+    }
+
     private fun hint(message: Int) = notice.show(getString(message), Tone.INFO)
 
     private fun show(state: EditorState) {
@@ -565,6 +585,13 @@ internal class MainActivity : ComponentActivity() {
 
         open.isEnabled = !state.busy
         save.isEnabled = ready
+        // A replaced or cleared destination drops the grant we took for it;
+        // the last one survives on purpose — it is the quick-save target.
+        val destination = draft?.destination
+        if (destination != lastDestination) {
+            lastDestination?.let(::releaseGrant)
+            lastDestination = destination
+        }
         // Once a destination is remembered the button writes back to it; until
         // then every save goes through the picker.
         val quickLabel = if (draft?.destination == null) R.string.save_copy else R.string.save

@@ -141,7 +141,13 @@ internal class EditorViewModel internal constructor(
         val draft = current.draft ?: return
         if (current.busy) return
         val saved = draft.copy(savedInk = draft.ink, destination = uri)
-        perform({ service.export(draft, uri); service.saveDraft(saved) }) {
+        perform({ service.export(draft, uri); service.saveDraft(saved) }, failed = { error ->
+            // A retry of the remembered target that can no longer be written
+            // is a dead end: forget it so the next Save asks for a new file.
+            if (draft.destination == uri && error.toProblem(DocumentProblem.UNEXPECTED) == DocumentProblem.DESTINATION_UNWRITABLE) {
+                publish(current.copy(draft = current.draft?.copy(destination = null)))
+            }
+        }) {
             publish(current.copy(draft = saved, busy = false, message = EditorMessage(text(R.string.pdf_saved), Tone.SUCCESS)))
         }
     }
@@ -229,7 +235,7 @@ internal class EditorViewModel internal constructor(
         }
     }
 
-    private fun <T> perform(work: () -> T, completed: () -> Unit = {}, success: (T) -> Unit) {
+    private fun <T> perform(work: () -> T, completed: () -> Unit = {}, failed: (Throwable) -> Unit = {}, success: (T) -> Unit) {
         publish(current.copy(busy = true, message = null))
         worker.execute {
             val result = runCatching(work)
@@ -237,6 +243,7 @@ internal class EditorViewModel internal constructor(
                 if (cleared) return@post
                 result.fold(success) { error ->
                     publish(current.copy(busy = false, message = messageFor(error)))
+                    failed(error)
                 }
                 completed()
             }

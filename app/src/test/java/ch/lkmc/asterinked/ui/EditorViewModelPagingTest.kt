@@ -3,7 +3,9 @@ package ch.lkmc.asterinked.ui
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Looper
+import ch.lkmc.asterinked.document.DocumentException
 import ch.lkmc.asterinked.document.DocumentOperations
+import ch.lkmc.asterinked.document.DocumentProblem
 import ch.lkmc.asterinked.document.Draft
 import ch.lkmc.asterinked.document.OpenDocument
 import ch.lkmc.asterinked.document.PageSpec
@@ -115,6 +117,26 @@ class EditorViewModelPagingTest {
         assertEquals(listOf(destination, destination), documents.exportedTo)
     }
 
+    @Test fun aDestinationThatStoppedTakingWritesIsForgotten() {
+        settle()
+        model.addStroke(stroke())
+        settle()
+        val destination = Uri.parse("content://test/saved.pdf")
+        model.export(destination)
+        settle()
+        assertEquals(destination, state.draft!!.destination)
+
+        // The provider revoked the grant or deleted the file: the next write
+        // fails, the destination is dropped, and Save asks for a file again.
+        documents.failExports = true
+        model.export(destination)
+        settle()
+
+        assertNull(state.draft!!.destination)
+        assertEquals(listOf(destination), documents.exportedTo)
+        assertTrue(state.message != null)
+    }
+
     private fun stroke() = InkStroke(listOf(InkPoint(10f, 10f, 0.5f), InkPoint(20f, 20f, 0.5f)), 0, 2f)
 
     private fun idleMain() = shadowOf(Looper.getMainLooper()).idle()
@@ -155,6 +177,7 @@ class EditorViewModelPagingTest {
         val rendered = mutableListOf<Int>()
         val saved = mutableListOf<Draft>()
         val exportedTo = mutableListOf<Uri>()
+        var failExports = false
 
         override fun restore(): OpenDocument {
             val draft = Draft(source, "fake.pdf")
@@ -175,6 +198,7 @@ class EditorViewModelPagingTest {
         override fun open(uri: Uri): OpenDocument = throw UnsupportedOperationException()
 
         override fun export(draft: Draft, destination: Uri) {
+            if (failExports) throw DocumentException(DocumentProblem.DESTINATION_UNWRITABLE)
             exportedTo += destination
         }
         override fun share(draft: Draft): File = throw UnsupportedOperationException()
