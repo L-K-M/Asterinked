@@ -73,6 +73,12 @@ internal class InkPageView(context: Context) : View(context) {
     private val erasing: MutableSet<InkStroke> = Collections.newSetFromMap(IdentityHashMap())
     private val eraserRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = Color.argb(160, 60, 70, 80) }
     private var eraserAt: InkPoint? = null
+    // A pen hovers before it touches: the cursor shows where it would land.
+    private val hoverRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; alpha = 160 }
+    private val hoverDot = Paint(Paint.ANTI_ALIAS_FLAG).apply { alpha = 160 }
+    private var hoverX = 0f
+    private var hoverY = 0f
+    private var hoverVisible = false
     private var activeErasing = false
     private var activePointer = NO_POINTER
     private var activeColor = Color.BLACK
@@ -243,8 +249,26 @@ internal class InkPageView(context: Context) : View(context) {
             eraserRing.strokeWidth = resources.displayMetrics.density / scale
             canvas.drawCircle(it.x, it.y, eraserRadius(), eraserRing)
         }
+        hoverAt?.let {
+            val eraseMode = tool == InkTool.ERASER
+            hoverRing.strokeWidth = density / scale
+            hoverRing.color = if (eraseMode) eraserRing.color else inkColor
+            hoverDot.color = hoverRing.color
+            val radius = if (eraseMode) eraserRadius() else maxOf(inkWidth / 2f, hoverMinRadius())
+            canvas.drawCircle(it.x, it.y, radius, hoverRing)
+            canvas.drawCircle(it.x, it.y, density / scale, hoverDot)
+        }
         canvas.restore()
     }
+
+    /** The page point under a hovering stylus; nothing while writing or off-page. */
+    val hoverAt: InkPoint?
+        get() {
+            val page = spec ?: return null
+            if (!hoverVisible || !isEnabled || activePointer != NO_POINTER || !pageRect.contains(hoverX, hoverY)) return null
+            return InkPoint((hoverX - pageRect.left) / pageRect.width() * page.displayWidth,
+                (hoverY - pageRect.top) / pageRect.height() * page.displayHeight, 0f)
+        }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
@@ -299,6 +323,22 @@ internal class InkPageView(context: Context) : View(context) {
                 InkKind.HIGHLIGHTER -> drawHighlight(canvas, stroke.color, stroke.width, highlightPaths.getValue(stroke))
             }
         }
+    }
+
+    // Only pens hover; fingers and mice pass through to the default handling.
+    override fun onHoverEvent(event: MotionEvent): Boolean {
+        val tool = event.getToolType(0)
+        if (tool != MotionEvent.TOOL_TYPE_STYLUS && tool != MotionEvent.TOOL_TYPE_ERASER) return super.onHoverEvent(event)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE -> {
+                hoverX = event.x
+                hoverY = event.y
+                hoverVisible = true
+            }
+            MotionEvent.ACTION_HOVER_EXIT -> hoverVisible = false
+        }
+        invalidate()
+        return true
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -470,6 +510,12 @@ internal class InkPageView(context: Context) : View(context) {
         return ERASER_RADIUS_DP * resources.displayMetrics.density * page.displayWidth / pageRect.width()
     }
 
+    // The cursor never shrinks under a readable ring, however fine the pen is.
+    private fun hoverMinRadius(): Float {
+        val page = spec ?: return 0f
+        return HOVER_MIN_RADIUS_DP * density * page.displayWidth / pageRect.width()
+    }
+
     private fun addSamples(event: MotionEvent, index: Int) {
         val page = spec ?: return
         fun add(x: Float, y: Float, pressure: Float) {
@@ -554,6 +600,7 @@ internal class InkPageView(context: Context) : View(context) {
         const val SWIPE_VELOCITY_DP = 600f
         const val SWIPE_DIRECTION_RATIO = 1.5f
         const val ERASER_RADIUS_DP = 10f
+        const val HOVER_MIN_RADIUS_DP = 4f
         // Most pens report the side button as primary; older S Pens report secondary.
         const val STYLUS_BUTTONS = MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_SECONDARY
         const val SHADOW_RADIUS_DP = 6f

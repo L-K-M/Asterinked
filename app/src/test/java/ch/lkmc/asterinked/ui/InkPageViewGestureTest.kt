@@ -11,6 +11,9 @@ import ch.lkmc.asterinked.document.PageSpec
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -170,6 +173,33 @@ class InkPageViewGestureTest {
         assertTrue(turns.isEmpty())
     }
 
+    @Test fun aHoveringPenLeavesACursorWhereItWouldLand() {
+        val view = pageView(InputMode.PEN)
+        val tap = pageAt(view, 300f, 400f)
+
+        hover(view, 300f, 400f)
+
+        assertEquals(tap.x, view.hoverAt!!.x, 0.5f)
+        assertEquals(tap.y, view.hoverAt!!.y, 0.5f)
+    }
+
+    @Test fun theCursorDucksWhileWritingAndLeavesWithThePen() {
+        val view = pageView(InputMode.PEN)
+        hover(view, 300f, 400f)
+        assertNotNull(view.hoverAt)
+
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(9, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f)))
+        assertNull("The cursor ducks out while the pen writes", view.hoverAt)
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(9, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f)))
+        assertNotNull("The cursor returns once the pen lifts", view.hoverAt)
+
+        hover(view, 300f, 400f, exit = true)
+        assertNull(view.hoverAt)
+
+        assertFalse(view.onHoverEvent(hoverEvent(MotionEvent.ACTION_HOVER_MOVE, MotionEvent.TOOL_TYPE_FINGER, 300f, 400f)))
+        assertNull("A finger hovering shows nothing", view.hoverAt)
+    }
+
     @Test fun zoomSurvivesPageTurnButNotANewDocument() {
         val view = pageView(InputMode.PEN)
         val fit = unitsPer100px(view)
@@ -258,6 +288,19 @@ class InkPageViewGestureTest {
     }
 
     private fun finger(id: Int, x: Float) = Pointer(id, MotionEvent.TOOL_TYPE_FINGER, x, 400f)
+
+    private fun hover(view: InkPageView, x: Float, y: Float, exit: Boolean = false) {
+        val event = hoverEvent(if (exit) MotionEvent.ACTION_HOVER_EXIT else MotionEvent.ACTION_HOVER_MOVE,
+            MotionEvent.TOOL_TYPE_STYLUS, x, y)
+        try { view.onHoverEvent(event) } finally { event.recycle() }
+    }
+
+    private fun hoverEvent(action: Int, tool: Int, x: Float, y: Float): MotionEvent {
+        val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 9; toolType = tool })
+        val coordinates = arrayOf(MotionEvent.PointerCoords().apply { this.x = x; this.y = y })
+        val source = if (tool == MotionEvent.TOOL_TYPE_STYLUS) InputDevice.SOURCE_STYLUS else InputDevice.SOURCE_TOUCHSCREEN
+        return MotionEvent.obtain(clock, clock, action, 1, properties, coordinates, 0, 0, 1f, 1f, 0, 0, source, 0)
+    }
 
     private var downTime = 0L
 
