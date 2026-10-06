@@ -8,12 +8,14 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PointF
 import android.graphics.RectF
 import android.graphics.RenderNode
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.animation.DecelerateInterpolator
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.document.PageSpec
@@ -28,6 +30,7 @@ import ch.lkmc.asterinked.ink.InkStrokeBuilder
 import java.util.Collections
 import java.util.IdentityHashMap
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.min
 
 internal enum class InputMode { PEN, TOUCH }
@@ -104,6 +107,14 @@ internal class InkPageView(context: Context) : View(context) {
 
     /** Receives the strokes one erase gesture removed, once the gesture ends. */
     var onErase: (Collection<InkStroke>) -> Unit = {}
+
+    /** Called when two fingers tap the page. */
+    var onUndo: () -> Unit = {}
+
+    /** Called when three fingers tap the page. */
+    var onRedo: () -> Unit = {}
+
+    private val fingerTaps = FingerTaps(ViewConfiguration.get(context).scaledTouchSlop.toFloat())
 
     var tool = InkTool.PEN
         set(value) {
@@ -304,6 +315,12 @@ internal class InkPageView(context: Context) : View(context) {
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isEnabled || spec == null) return false
         val action = event.actionMasked
+        // Seen before anything else consumes the event: in touch-ink mode the
+        // first finger starts a stroke, which the second finger cancels.
+        when (fingerTaps.track(event)) {
+            UNDO_FINGERS -> onUndo()
+            REDO_FINGERS -> onRedo()
+        }
         if (action == MotionEvent.ACTION_CANCEL) {
             cancelStroke()
             scaleDetector.onTouchEvent(event)
@@ -541,8 +558,52 @@ internal class InkPageView(context: Context) : View(context) {
 
     private fun maxPan(pageSize: Float, viewSize: Int): Float = ((pageSize - viewSize) / 2f + pageMargin).coerceAtLeast(0f)
 
+    /**
+     * Recognizes a quick tap with several fingers: every finger lands and lifts
+     * within [MAX_TAP_MS] of the first touch without moving past the touch
+     * slop. A stylus in the gesture, a drag or a pinch rules it out.
+     */
+    private class FingerTaps(private val slop: Float) {
+        private val starts = HashMap<Int, PointF>()
+        private var ruledOut = false
+
+        /** Returns the number of fingers when [event] completes a tap, otherwise null. */
+        fun track(event: MotionEvent): Int? {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    starts.clear()
+                    ruledOut = false
+                    land(event, 0)
+                }
+                MotionEvent.ACTION_POINTER_DOWN -> land(event, event.actionIndex)
+                MotionEvent.ACTION_MOVE -> for (index in 0 until event.pointerCount) checkMoved(event, index)
+                MotionEvent.ACTION_CANCEL -> ruledOut = true
+                MotionEvent.ACTION_UP -> {
+                    checkMoved(event, 0)
+                    val quick = event.eventTime - event.downTime <= MAX_TAP_MS
+                    if (!ruledOut && quick && starts.size >= UNDO_FINGERS) return starts.size
+                }
+            }
+            return null
+        }
+
+        private fun land(event: MotionEvent, index: Int) {
+            if (event.getToolType(index) != MotionEvent.TOOL_TYPE_FINGER || starts.size == REDO_FINGERS) ruledOut = true
+            starts[event.getPointerId(index)] = PointF(event.getX(index), event.getY(index))
+        }
+
+        private fun checkMoved(event: MotionEvent, index: Int) {
+            val start = starts[event.getPointerId(index)] ?: return
+            if (hypot(event.getX(index) - start.x, event.getY(index) - start.y) > slop) ruledOut = true
+        }
+    }
+
     private companion object {
         const val NO_POINTER = -1
+        const val UNDO_FINGERS = 2
+        const val REDO_FINGERS = 3
+        // Longer than a one-finger tap: several fingers rarely land at once.
+        const val MAX_TAP_MS = 300L
         const val DEFAULT_WIDTH = 2.2f
         const val TOUCH_PRESSURE = 0.65f
         const val MAX_ZOOM = 5f
