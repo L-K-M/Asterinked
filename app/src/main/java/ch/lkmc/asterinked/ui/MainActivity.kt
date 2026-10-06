@@ -94,6 +94,7 @@ internal class MainActivity : ComponentActivity() {
     private lateinit var redo: ImageButton
     private lateinit var tools: SegmentedControl
     private lateinit var fingerDrawing: ImageButton
+    private lateinit var nightToggle: ImageButton
     private lateinit var swatches: List<ChoiceDot>
     private lateinit var widths: List<ChoiceDot>
     private var screen: Screen? = null
@@ -312,6 +313,11 @@ internal class MainActivity : ComponentActivity() {
         }
         ui.choiceGroup(tools, ToolChoice.entries.size)
         fingerDrawing = ui.toggleButton(R.drawable.ic_touch, R.drawable.ic_touch_filled, R.string.draw_with_finger) { toggleFingerDrawing() }
+        nightToggle = ui.toggleButton(R.drawable.ic_success, R.drawable.ic_success, R.string.night_mode) {
+            val enabled = !nightToggle.isSelected
+            nightToggle.isSelected = enabled
+            page.setNightMode(enabled)
+        }
         swatches = COLORS.indices.map { index -> ui.choice(COLOR_NAMES[index], index) { pickColor(index) } }
         widths = WIDTHS.indices.map { index ->
             ui.choice(WIDTH_NAMES[index], index) { pickWidth(index) }.apply { radius = WIDTH_DOTS_DP[index] }
@@ -326,6 +332,7 @@ internal class MainActivity : ComponentActivity() {
             addView(history, LinearLayout.LayoutParams(WRAP, WRAP))
             addView(tools, gap(Space.XL))
             addView(fingerDrawing, square().apply { marginStart = ui.dp(Space.S) })
+            addView(nightToggle, square().apply { marginStart = ui.dp(Space.S) })
             addView(colors, gap(Space.XL))
             addView(sizes, gap(Space.L))
         }
@@ -349,6 +356,7 @@ internal class MainActivity : ComponentActivity() {
             writing.addView(row().apply {
                 gravity = Gravity.END or Gravity.CENTER_VERTICAL
                 addView(fingerDrawing, square())
+                addView(nightToggle, square().apply { marginStart = ui.dp(Space.S) })
             }, LinearLayout.LayoutParams(sideWidth, WRAP, 1f))
             addView(writing, LinearLayout.LayoutParams(MATCH, ui.dp(Size.TOOL_ROW)))
 
@@ -388,7 +396,7 @@ internal class MainActivity : ComponentActivity() {
                 if (next != arrangement) {
                     arrangement = next
                     // Reuse the controls so reflow preserves selection and listeners.
-                    for (control in listOf(history, tools, fingerDrawing, colors, sizes)) {
+                    for (control in listOf(history, tools, fingerDrawing, nightToggle, colors, sizes)) {
                         (control.parent as? ViewGroup)?.removeView(control)
                     }
                     removeAllViews()

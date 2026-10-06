@@ -9,6 +9,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.RenderNode
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -90,6 +91,7 @@ internal class InkPageView(context: Context) : View(context) {
     private var penGesture = false
     private var zoomAnimator: ValueAnimator? = null
     private var inputMode = InputMode.PEN
+    private var nightMode = false
     private var inkColor = Color.rgb(25, 38, 46)
     private var inkWidth = DEFAULT_WIDTH
     private var inkKind = InkKind.PEN
@@ -191,6 +193,20 @@ internal class InkPageView(context: Context) : View(context) {
             }
             inkNodeStale = true
         }
+        invalidate()
+    }
+
+    fun setNightMode(enabled: Boolean) {
+        nightMode = enabled
+        val filter = if (enabled) ColorMatrixColorFilter(floatArrayOf(
+            -1f, 0f, 0f, 0f, 255f,
+            0f, -1f, 0f, 0f, 255f,
+            0f, 0f, -1f, 0f, 255f,
+            0f, 0f, 0f, 1f, 0f
+        )) else null
+        bitmapPaint.colorFilter = filter
+        highlighter.colorFilter = filter
+        paint.colorFilter = filter
         invalidate()
     }
 

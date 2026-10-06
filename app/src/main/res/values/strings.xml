@@ -59,5 +59,6 @@
     <string name="error_destination_unwritable">Couldn’t save to that location. Your notes are safe. Try saving somewhere else.</string>
     <string name="error_out_of_space">Your device is out of storage. Free up some space and try again.</string>
     <string name="error_out_of_memory">This PDF is too large to handle on this device.</string>
+    <string name="night_mode">Night mode</string>
     <string name="error_unexpected">Something went wrong. Please try again.</string>
 </resources>
