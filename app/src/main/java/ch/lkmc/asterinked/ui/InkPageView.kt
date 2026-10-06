@@ -29,6 +29,8 @@ import ch.lkmc.asterinked.ink.InkStrokeBuilder
 import java.util.Collections
 import java.util.IdentityHashMap
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.min
 
 internal enum class InputMode { PEN, TOUCH }
@@ -259,6 +261,8 @@ internal class InkPageView(context: Context) : View(context) {
             // setColor carries no alpha; the cursor stays a ghost in ink mode too.
             hoverRing.alpha = HOVER_CURSOR_ALPHA
             hoverDot.color = hoverRing.color
+            // setColor carries no alpha; the dot stays a ghost too.
+            hoverDot.alpha = HOVER_CURSOR_ALPHA
             val radius = if (eraseMode) eraserRadius() else maxOf(inkWidth / 2f, hoverMinRadius())
             canvas.drawCircle(it.x, it.y, radius, hoverRing)
             canvas.drawCircle(it.x, it.y, density / scale, hoverDot)
@@ -354,12 +358,15 @@ internal class InkPageView(context: Context) : View(context) {
 
     private fun hoverEraseMode() = tool == InkTool.ERASER || hoverEraserEnd
 
-    // Hover events arrive at stylus rates; only the cursor's patch repaints.
+    // Hover events arrive at stylus rates; the dirty rect scopes the redraw
+    // where the framework honors it (HW views may repaint more than asked).
     private fun invalidateHover() {
         val page = spec ?: return
         val px = pageRect.width() / page.displayWidth
         val reach = (if (hoverEraseMode()) eraserRadius() else maxOf(inkWidth / 2f, hoverMinRadius())) * px + density + 1
-        hoverDirty.set((hoverX - reach).toInt(), (hoverY - reach).toInt(), (hoverX + reach).toInt() + 1, (hoverY + reach).toInt() + 1)
+        // Floor/ceil, not truncation: a sliver under a pixel still leaves a trail.
+        hoverDirty.set(floor(hoverX - reach).toInt(), floor(hoverY - reach).toInt(),
+            ceil(hoverX + reach).toInt(), ceil(hoverY + reach).toInt())
         invalidate(hoverDirty)
     }
 
