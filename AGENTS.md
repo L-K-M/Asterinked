@@ -88,6 +88,8 @@ The adaptive icon's foreground webp files are generated; regenerate them from
 - `InkPageView` updates its shared page rectangle and scale synchronously after
   page, size, pan and zoom changes, including animation frames. Drawing and
   input only consume that transform; no draw may be required before ink or erase.
+  An unavailable transform cancels active ink/erase. `ACTION_CANCEL` cleanup
+  precedes input eligibility checks.
 - `UiScreenshotTest` renders every screen state (light, dark, phone, tablet,
   large text, dialogs, notices) to `app/build/reports/screens/`. Look at the
   PNGs after any UI change; Robolectric cannot show a device, these can.

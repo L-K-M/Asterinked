@@ -301,7 +301,7 @@ internal class InkPageView(context: Context) : View(context) {
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (!isEnabled || spec == null || pageRect.isEmpty) return false
+        // Cancellation releases ownership even when layout cannot accept input.
         val action = event.actionMasked
         if (action == MotionEvent.ACTION_CANCEL) {
             cancelStroke()
@@ -309,6 +309,7 @@ internal class InkPageView(context: Context) : View(context) {
             gestureDetector.onTouchEvent(event)
             return true
         }
+        if (!isEnabled || spec == null || pageRect.isEmpty) return false
         if (action == MotionEvent.ACTION_DOWN) penGesture = false
 
         // Track the pen by pointer ID: a palm may become pointer index zero.
@@ -413,9 +414,13 @@ internal class InkPageView(context: Context) : View(context) {
     private fun updatePageTransform() {
         pageRect.setEmpty()
         pageScale = 0f
-        val page = spec ?: return
-        val fit = fitScale(page)
-        if (fit <= 0f) return
+        val page = spec
+        val fit = page?.let { fitScale(it) } ?: 0f
+        if (page == null || fit <= 0f) {
+            // A contact cannot survive losing its page coordinate space.
+            cancelStroke()
+            return
+        }
 
         val scale = fit * zoom
         val pageWidth = page.displayWidth * scale

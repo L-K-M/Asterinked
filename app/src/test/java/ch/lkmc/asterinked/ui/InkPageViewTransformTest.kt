@@ -217,6 +217,26 @@ class InkPageViewTransformTest {
     }
 
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun collapsedInkIsCanceledAfterCancel() = assertCollapsedInkCanceled(MotionEvent.ACTION_CANCEL)
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun collapsedInkIsCanceledAfterUp() = assertCollapsedInkCanceled(MotionEvent.ACTION_UP)
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun collapsedEraseIsCanceledAfterCancel() = assertCollapsedEraseCanceled(MotionEvent.ACTION_CANCEL)
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun collapsedEraseIsCanceledAfterUp() = assertCollapsedEraseCanceled(MotionEvent.ACTION_UP)
+
+    @Test fun cancellationIsHandledWhenTransformUnavailable() {
+        val view = pageView()
+        view.layout(0, 0, 600, COLLAPSED_HEIGHT)
+
+        assertTrue("CANCEL cleanup is reachable without a transform", send(view, MotionEvent.ACTION_CANCEL,
+            listOf(Pointer(9, MotionEvent.TOOL_TYPE_STYLUS, 200f, 300f))))
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     @Test fun immediatePageChangeInkRendersUnderTheTap() {
         val view = pageView()
         val pages = listOf(portrait, landscapePages.first())
@@ -250,6 +270,47 @@ class InkPageViewTransformTest {
     private fun newView() = InkPageView(RuntimeEnvironment.getApplication()).apply {
         configure(InputMode.PEN, Color.BLACK, 6f) { strokes.add(it) }
         onErase = { erased.addAll(it) }
+    }
+
+    private fun assertCollapsedInkCanceled(endAction: Int) {
+        val view = pageView()
+        val pen = Pointer(9, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)
+        send(view, MotionEvent.ACTION_DOWN, listOf(pen))
+        send(view, MotionEvent.ACTION_MOVE, listOf(pen.copy(x = 250f)))
+        view.layout(0, 0, 600, COLLAPSED_HEIGHT)
+        send(view, endAction, listOf(pen.copy(x = 250f)))
+        assertTrue("Collapsed ink is never committed", strokes.isEmpty())
+        view.layout(0, 0, 600, 800)
+
+        val restored = screenshot(view, "page-transform-collapse-ink-${MotionEvent.actionToString(endAction).lowercase()}")
+        // Reuse pointer 9 without reconfiguring, which would hide stale ownership.
+        tap(view, 400f, 500f)
+
+        val fresh = strokes.single()
+        assertEquals("Only the new DOWN and UP become ink", 2, fresh.points.size)
+        for (point in fresh.points) assertPoint(277.31958f, 377.31958f, point)
+        assertEquals("Canceled live ink is absent after restoring the view", Color.WHITE, restored.getPixel(200, 300))
+    }
+
+    private fun assertCollapsedEraseCanceled(endAction: Int) {
+        val oldTarget = dot(122.68041f, 222.68041f)
+        val newTarget = dot(277.31958f, 377.31958f)
+        val view = pageView(listOf(oldTarget, newTarget))
+        view.tool = InkTool.ERASER
+        val pen = Pointer(9, MotionEvent.TOOL_TYPE_STYLUS, 200f, 300f)
+        send(view, MotionEvent.ACTION_DOWN, listOf(pen))
+        view.layout(0, 0, 600, COLLAPSED_HEIGHT)
+        send(view, endAction, listOf(pen))
+        assertTrue("Collapsed erasing is never committed", erased.isEmpty())
+        view.layout(0, 0, 600, 800)
+
+        val restored = screenshot(view, "page-transform-collapse-erase-${MotionEvent.actionToString(endAction).lowercase()}")
+        tap(view, 400f, 500f)
+
+        assertEquals("The new gesture erases only its own target", listOf(newTarget), erased)
+        assertTrue("Canceled erase restores its hidden stroke", Color.red(restored.getPixel(200, 300)) < 128)
+        assertTrue("The untouched stroke remains before the new gesture", Color.red(restored.getPixel(400, 500)) < 128)
+        assertTrue("Erasing adds no ink", strokes.isEmpty())
     }
 
     private fun pageView(ink: List<InkStroke> = emptyList()) = newView().apply {
@@ -324,7 +385,7 @@ class InkPageViewTransformTest {
 
     private fun finger(id: Int, x: Float, y: Float) = Pointer(id, MotionEvent.TOOL_TYPE_FINGER, x, y)
 
-    private fun send(view: InkPageView, action: Int, pointers: List<Pointer>, actionIndex: Int = 0) {
+    private fun send(view: InkPageView, action: Int, pointers: List<Pointer>, actionIndex: Int = 0): Boolean {
         if (action == MotionEvent.ACTION_DOWN) downTime = clock
         clock += 4
         val properties = pointers.map { MotionEvent.PointerProperties().apply { id = it.id; toolType = it.tool } }.toTypedArray()
@@ -332,7 +393,7 @@ class InkPageViewTransformTest {
         val source = if (pointers.any { it.tool == MotionEvent.TOOL_TYPE_STYLUS }) InputDevice.SOURCE_STYLUS else InputDevice.SOURCE_TOUCHSCREEN
         val event = MotionEvent.obtain(downTime, clock, action or (actionIndex shl MotionEvent.ACTION_POINTER_INDEX_SHIFT),
             pointers.size, properties, coordinates, 0, 0, 1f, 1f, 0, 0, source, 0)
-        try { view.onTouchEvent(event) } finally { event.recycle() }
+        return try { view.onTouchEvent(event) } finally { event.recycle() }
     }
 
     private fun redraw(view: InkPageView): Bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888).also {
@@ -350,5 +411,7 @@ class InkPageViewTransformTest {
 
     private companion object {
         const val GESTURE_STEPS = 6
+        // Less than the combined 24dp page margins at mdpi: no fit is available.
+        const val COLLAPSED_HEIGHT = 20
     }
 }
