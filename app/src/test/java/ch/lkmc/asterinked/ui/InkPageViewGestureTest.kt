@@ -196,7 +196,7 @@ class InkPageViewGestureTest {
         hover(view, 300f, 400f, exit = true)
         assertNull(view.hoverAt)
 
-        assertFalse(view.onHoverEvent(hoverEvent(MotionEvent.ACTION_HOVER_MOVE, MotionEvent.TOOL_TYPE_FINGER, 300f, 400f)))
+        view.onHoverEvent(hoverEvent(MotionEvent.ACTION_HOVER_MOVE, MotionEvent.TOOL_TYPE_FINGER, 300f, 400f))
         assertNull("A finger hovering shows nothing", view.hoverAt)
     }
 

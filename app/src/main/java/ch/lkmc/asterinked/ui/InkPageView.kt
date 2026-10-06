@@ -8,6 +8,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.RenderNode
 import android.view.GestureDetector
@@ -74,11 +75,13 @@ internal class InkPageView(context: Context) : View(context) {
     private val eraserRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = Color.argb(160, 60, 70, 80) }
     private var eraserAt: InkPoint? = null
     // A pen hovers before it touches: the cursor shows where it would land.
-    private val hoverRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; alpha = 160 }
-    private val hoverDot = Paint(Paint.ANTI_ALIAS_FLAG).apply { alpha = 160 }
+    private val hoverRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; alpha = HOVER_CURSOR_ALPHA }
+    private val hoverDot = Paint(Paint.ANTI_ALIAS_FLAG).apply { alpha = HOVER_CURSOR_ALPHA }
     private var hoverX = 0f
     private var hoverY = 0f
     private var hoverVisible = false
+    private var hoverEraserEnd = false
+    private val hoverDirty = Rect()
     private var activeErasing = false
     private var activePointer = NO_POINTER
     private var activeColor = Color.BLACK
@@ -250,9 +253,11 @@ internal class InkPageView(context: Context) : View(context) {
             canvas.drawCircle(it.x, it.y, eraserRadius(), eraserRing)
         }
         hoverAt?.let {
-            val eraseMode = tool == InkTool.ERASER
+            val eraseMode = hoverEraseMode()
             hoverRing.strokeWidth = density / scale
             hoverRing.color = if (eraseMode) eraserRing.color else inkColor
+            // setColor carries no alpha; the cursor stays a ghost in ink mode too.
+            hoverRing.alpha = HOVER_CURSOR_ALPHA
             hoverDot.color = hoverRing.color
             val radius = if (eraseMode) eraserRadius() else maxOf(inkWidth / 2f, hoverMinRadius())
             canvas.drawCircle(it.x, it.y, radius, hoverRing)
@@ -331,14 +336,31 @@ internal class InkPageView(context: Context) : View(context) {
         if (tool != MotionEvent.TOOL_TYPE_STYLUS && tool != MotionEvent.TOOL_TYPE_ERASER) return super.onHoverEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE -> {
+                if (hoverVisible) invalidateHover()
                 hoverX = event.x
                 hoverY = event.y
                 hoverVisible = true
+                // A flipped pen previews the eraser even while PEN is selected.
+                hoverEraserEnd = tool == MotionEvent.TOOL_TYPE_ERASER
+                invalidateHover()
             }
-            MotionEvent.ACTION_HOVER_EXIT -> hoverVisible = false
+            MotionEvent.ACTION_HOVER_EXIT -> {
+                invalidateHover()
+                hoverVisible = false
+            }
         }
-        invalidate()
         return true
+    }
+
+    private fun hoverEraseMode() = tool == InkTool.ERASER || hoverEraserEnd
+
+    // Hover events arrive at stylus rates; only the cursor's patch repaints.
+    private fun invalidateHover() {
+        val page = spec ?: return
+        val px = pageRect.width() / page.displayWidth
+        val reach = (if (hoverEraseMode()) eraserRadius() else maxOf(inkWidth / 2f, hoverMinRadius())) * px + density + 1
+        hoverDirty.set((hoverX - reach).toInt(), (hoverY - reach).toInt(), (hoverX + reach).toInt() + 1, (hoverY + reach).toInt() + 1)
+        invalidate(hoverDirty)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -601,6 +623,7 @@ internal class InkPageView(context: Context) : View(context) {
         const val SWIPE_DIRECTION_RATIO = 1.5f
         const val ERASER_RADIUS_DP = 10f
         const val HOVER_MIN_RADIUS_DP = 4f
+        const val HOVER_CURSOR_ALPHA = 160
         // Most pens report the side button as primary; older S Pens report secondary.
         const val STYLUS_BUTTONS = MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_SECONDARY
         const val SHADOW_RADIUS_DP = 6f
