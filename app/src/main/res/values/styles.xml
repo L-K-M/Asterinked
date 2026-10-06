@@ -1,9 +1,99 @@
 <resources>
-    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+    <!-- values-night swaps these two parents; everything else follows the colour tokens. -->
+    <style name="Base.AppTheme" parent="android:style/Theme.Material.Light.NoActionBar" />
+    <style name="Base.AlertDialogTheme" parent="android:style/Theme.Material.Light.Dialog.Alert" />
+
+    <style name="AppTheme" parent="Base.AppTheme">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#D3111C</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:colorControlActivated">@color/accent</item>
+        <item name="android:colorBackground">@color/surface</item>
+        <item name="android:windowBackground">@color/surface</item>
+        <item name="android:textColorPrimary">@color/on_surface</item>
+        <item name="android:textColorSecondary">@color/on_surface_variant</item>
         <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:alertDialogTheme">@style/AlertDialogTheme</item>
+    </style>
+
+    <style name="AlertDialogTheme" parent="Base.AlertDialogTheme">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorBackground">@color/surface_raised</item>
+        <item name="android:dialogCornerRadius">@dimen/dialog_radius</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:colorControlActivated">@color/accent</item>
+        <item name="android:textColorPrimary">@color/on_surface</item>
+        <item name="android:textColorSecondary">@color/on_surface_variant</item>
+        <item name="android:windowTitleStyle">@style/DialogTitle</item>
+        <item name="android:buttonBarButtonStyle">@style/DialogButton</item>
+        <item name="android:buttonBarNegativeButtonStyle">@style/DialogButton</item>
+        <item name="android:buttonBarNeutralButtonStyle">@style/DialogButton</item>
+        <item name="android:buttonBarPositiveButtonStyle">@style/DialogButton.Positive</item>
+    </style>
+
+    <style name="DialogTitle">
+        <item name="android:textAppearance">@style/TextAppearance.Asterinked.Headline</item>
+    </style>
+
+    <!-- Sentence case, like the rest of the app. The positive button carries the
+         accent: it is the step that changes something. -->
+    <style name="DialogButton" parent="android:style/Widget.Material.Button.Borderless.Colored">
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textAppearance">@style/TextAppearance.Asterinked.Label</item>
+        <item name="android:textColor">@color/dialog_button</item>
+    </style>
+
+    <style name="DialogButton.Positive">
+        <item name="android:textColor">@color/dialog_button_positive</item>
+    </style>
+
+    <!-- Type scale. Sizes in sp so they follow the system font size. -->
+    <style name="TextAppearance.Asterinked" parent="android:style/TextAppearance.Material">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textColor">@color/on_surface</item>
+    </style>
+
+    <style name="TextAppearance.Asterinked.Display">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">28sp</item>
+        <item name="android:letterSpacing">-0.01</item>
+    </style>
+
+    <style name="TextAppearance.Asterinked.Headline">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">20sp</item>
+    </style>
+
+    <style name="TextAppearance.Asterinked.Title">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+
+    <style name="TextAppearance.Asterinked.Body">
+        <item name="android:textColor">@color/on_surface_variant</item>
+    </style>
+
+    <style name="TextAppearance.Asterinked.Label">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:letterSpacing">0.005</item>
+    </style>
+
+    <style name="TextAppearance.Asterinked.Caption">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/on_surface_variant</item>
+    </style>
+
+    <!-- Tabular figures keep the page pill from changing width as pages turn. -->
+    <style name="TextAppearance.Asterinked.Counter">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+    </style>
+
+    <style name="TextAppearance.Asterinked.Field">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">22sp</item>
+        <item name="android:fontFeatureSettings">tnum</item>
     </style>
 </resources>

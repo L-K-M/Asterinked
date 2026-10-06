@@ -1,0 +1,60 @@
+package ch.lkmc.asterinked.ui
+
+import android.app.Activity
+import android.os.Looper
+import android.widget.FrameLayout
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import java.time.Duration
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+class NoticeBarTest {
+    // Attached to a window: a detached view never runs its posted timers and animations.
+    private val notice = Robolectric.buildActivity(Activity::class.java).setup().get().let { activity ->
+        NoticeBar(activity).also { activity.setContentView(FrameLayout(activity).apply { addView(it) }) }
+    }
+
+    @Test fun aNoticeHidesByItself() {
+        notice.show("Saved", Tone.SUCCESS)
+        assertEquals("Saved", notice.shown)
+        advance(Tone.SUCCESS.millis + ANIMATION_MS)
+        assertNull(notice.shown)
+    }
+
+    @Test fun aNewNoticeDuringDismissalStays() {
+        notice.show("First", Tone.INFO)
+        advance(ANIMATION_MS)
+        notice.dismiss()
+        notice.show("Second", Tone.ERROR)
+        advance(ANIMATION_MS)
+        assertEquals("Second", notice.shown)
+    }
+
+    @Test fun errorsStayLongerThanHints() {
+        notice.show("Couldn’t save", Tone.ERROR)
+        advance(Tone.INFO.millis + ANIMATION_MS)
+        assertEquals("Couldn’t save", notice.shown)
+    }
+
+    @Test fun aHintDoesNotHideAnError() {
+        notice.show("Couldn’t save", Tone.ERROR)
+        notice.show("Drag across strokes to erase them", Tone.INFO)
+        assertEquals("Couldn’t save", notice.shown)
+        advance(Tone.ERROR.millis + ANIMATION_MS)
+        notice.show("Drag across strokes to erase them", Tone.INFO)
+        assertEquals("Drag across strokes to erase them", notice.shown)
+    }
+
+    private fun advance(millis: Int) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(millis.toLong()))
+
+    private companion object {
+        const val ANIMATION_MS = 500
+    }
+}
