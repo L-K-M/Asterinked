@@ -98,7 +98,20 @@ internal class DocumentStore(context: Context) {
         val json = JSONObject(draftFile.openRead().bufferedReader().use { it.readText() })
         val source = File(directory, json.getString("source"))
         require(source.canonicalFile.parentFile == directory.canonicalFile && source.isFile) { "The saved PDF is missing." }
-        return Draft(source, json.getString("name"), json.getInt("page"), decodeInk(json.getJSONObject("ink")), decodeInk(json.getJSONObject("savedInk")))
+        // savedInk postdates the first draft format; old drafts are simply all-dirty.
+        val savedInk = json.optJSONObject("savedInk")?.let(::decodeInk).orEmpty()
+        return Draft(source, json.getString("name"), json.getInt("page"), decodeInk(json.getJSONObject("ink")), savedInk)
+    }
+
+    /**
+     * Moves an unreadable draft aside so the next launch starts clean instead of
+     * failing on the same file forever. One broken draft is kept for forensics.
+     */
+    fun quarantineBrokenDraft() {
+        directory.listFiles().orEmpty().filter { it.name.startsWith(BROKEN_PREFIX) }.forEach { it.delete() }
+        val stamp = System.currentTimeMillis()
+        draftFile.baseFile.renameTo(File(directory, "$BROKEN_PREFIX$stamp.json"))
+        File("${draftFile.baseFile}.bak").renameTo(File(directory, "$BROKEN_PREFIX$stamp.json.bak"))
     }
 
     private fun encodeInk(ink: Map<Int, List<InkStroke>>): JSONObject = JSONObject().apply {
@@ -133,5 +146,6 @@ internal class DocumentStore(context: Context) {
 
     private companion object {
         const val KIND_KEY = "kind"
+        const val BROKEN_PREFIX = "draft.broken-"
     }
 }

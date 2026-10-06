@@ -169,6 +169,8 @@ internal class EditorViewModel internal constructor(
     private fun show(document: OpenDocument) {
         visiblePage.set(document.draft.page)
         publish(withHistory(EditorState(document.draft, document.pages, document.preview, busy = false)))
+        // A restore that kept the draft but not the render retries it now.
+        if (document.preview == null) renderVisible(document.draft)
         prefetchAround(document.draft)
     }
 

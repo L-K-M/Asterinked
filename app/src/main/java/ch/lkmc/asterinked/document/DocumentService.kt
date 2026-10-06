@@ -8,7 +8,7 @@ import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import java.io.File
 import java.util.UUID
 
-internal data class OpenDocument(val draft: Draft, val pages: List<PageSpec>, val preview: Bitmap)
+internal data class OpenDocument(val draft: Draft, val pages: List<PageSpec>, val preview: Bitmap?)
 
 /**
  * What the editor needs from storage and rendering. Every call except
@@ -61,11 +61,35 @@ internal class DocumentService(context: Context) : DocumentOperations {
         }
     }
 
-    override fun restore(): OpenDocument? = during(DocumentProblem.DRAFT_UNREADABLE) {
-        val draft = store.restore() ?: return@during null
-        val pages = engine.inspect(draft.source)
-        require(draft.page in pages.indices) { "The saved page is invalid." }
-        OpenDocument(draft, pages, renderPage(draft))
+    /**
+     * A draft that can never open again (corrupt JSON, missing or unparseable
+     * PDF) is set aside once, so the next launch starts clean. Out of memory or
+     * storage can be transient, and a page that fails to render must not lose
+     * its ink: both keep the draft, and a missing preview is retried live.
+     */
+    override fun restore(): OpenDocument? {
+        val draft = try {
+            store.restore()
+        } catch (error: Exception) {
+            throw brokenDraft(error)
+        } ?: return null
+        val pages = try {
+            during(DocumentProblem.DRAFT_UNREADABLE) { engine.inspect(draft.source) }
+        } catch (error: DocumentException) {
+            if (error.problem == DocumentProblem.OUT_OF_MEMORY || error.problem == DocumentProblem.OUT_OF_SPACE) throw error
+            throw brokenDraft(error)
+        }
+        if (draft.page !in pages.indices) throw brokenDraft(DocumentException(DocumentProblem.DRAFT_UNREADABLE))
+        // Any render failure (OOM on a huge page, a renderer that will not
+        // open) keeps the draft: the editor retries the render live and
+        // reports it there if it fails again.
+        val preview = runCatching { renderPage(draft) }.getOrNull()
+        return OpenDocument(draft, pages, preview)
+    }
+
+    private fun brokenDraft(cause: Exception): DocumentException {
+        store.quarantineBrokenDraft()
+        return DocumentException(DocumentProblem.DRAFT_UNREADABLE, cause)
     }
 
     override fun render(draft: Draft): Bitmap = during(DocumentProblem.NOT_A_PDF) { renderPage(draft) }
