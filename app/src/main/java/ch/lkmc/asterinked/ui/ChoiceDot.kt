@@ -131,9 +131,8 @@ internal class ChoiceDot(context: Context) : View(context) {
         const val RING_WIDTH_DP = 2f
         const val RING_START_SCALE = 0.8f
         const val EDGE_WIDTH_DP = 1f
-        // Highlighter yellow on the light bar is about 1.3:1, graphite on the dark
-        // bar about 1.2:1; below this the outline carries the shape.
-        const val MIN_CONTRAST = 1.6
+        // Below the non-text control contrast target, the edge carries the shape.
+        const val MIN_CONTRAST = 3.0
         const val OPAQUE_MASK = 0xFF000000.toInt()
     }
 }

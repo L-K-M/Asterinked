@@ -173,7 +173,7 @@ internal class Components(private val context: Context) {
     /** An ink colour or pen width at [position] in its row, announced as one of a set. */
     fun choice(@StringRes label: Int, position: Int, action: () -> Unit): ChoiceDot = ChoiceDot(context).apply {
         ringColor = color(R.color.on_surface)
-        outlineColor = color(R.color.outline)
+        outlineColor = color(R.color.on_surface_variant)
         backdrop = color(R.color.surface)
         background = ripple(content = null, mask = disc(Size.BUTTON))
         describe(label)
