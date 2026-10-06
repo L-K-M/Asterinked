@@ -288,16 +288,13 @@ internal class MainActivity : ComponentActivity() {
         }
         save = if (crowded) ui.primaryIconButton(R.drawable.ic_save, R.string.save_copy, saveOrPick)
             else ui.primaryButton(R.string.save_copy, ButtonSize.REGULAR, action = saveOrPick)
-        save.setOnLongClickListener {
-            if (!save.isEnabled) return@setOnLongClickListener false
-            launchPicker { savePdf.launch(exportName()) }
-            true
-        }
-        // A long press is invisible to TalkBack unless it is a labelled action.
+        val saveAs = { launchPicker { savePdf.launch(exportName()) } }
+        save.setOnLongClickListener { saveAs(); true }
+        // A long press is invisible to TalkBack unless it is a labelled action;
+        // the name stays distinct from the button's own label in both states.
         ViewCompat.replaceAccessibilityAction(save, AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_LONG_CLICK,
-            getString(R.string.save_copy)) { _, _ ->
-            if (!save.isEnabled) false
-            else { launchPicker { savePdf.launch(exportName()) }; true }
+            getString(R.string.save_as)) { _, _ ->
+            if (save.isEnabled) { saveAs(); true } else false
         }
         bar.addView(save, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = ui.dp(Space.XS) })
         return bar
