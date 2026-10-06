@@ -30,6 +30,7 @@ import java.time.Duration
 class InkPageViewGestureTest {
     private val strokes = mutableListOf<InkStroke>()
     private val turns = mutableListOf<Int>()
+    private val historyGestures = mutableListOf<String>()
     private var clock = 1_000L
 
     @Test fun twoFingersPanInTouchMode() {
@@ -183,9 +184,54 @@ class InkPageViewGestureTest {
         assertEquals(fit, unitsPer100px(view), 0.01f)
     }
 
+    @Test fun twoFingerTapUndoesAndThreeFingerTapRedoes() {
+        val view = pageView(InputMode.PEN)
+        multiTap(view, fingers = 2)
+        multiTap(view, fingers = 3)
+        assertEquals(listOf("undo", "redo"), historyGestures)
+    }
+
+    @Test fun aTwoFingerDragIsNotAnUndo() {
+        val view = pageView(InputMode.PEN)
+        pinch(view, 200f to 400f, 100f to 500f)
+        drag(view, listOf(260f to 400f, 340f to 400f), dx = 60f)
+        assertTrue("A two-finger drag pans, it does not undo: $historyGestures", historyGestures.isEmpty())
+    }
+
+    @Test fun aSlowTwoFingerPressIsNotAnUndo() {
+        val view = pageView(InputMode.PEN)
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 260f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        clock += 500
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_UP, listOf(finger(0, 260f)))
+        assertTrue(historyGestures.isEmpty())
+    }
+
+    @Test fun aStylusAndFingerComboIsNotAnUndo() {
+        val view = pageView(InputMode.PEN)
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 260f, 400f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 260f, 400f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 260f, 400f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 260f, 400f)))
+        assertTrue(historyGestures.isEmpty())
+    }
+
+    private fun multiTap(view: InkPageView, fingers: Int) {
+        val pointers = { offset: Float -> (0 until fingers).map { Pointer(it, MotionEvent.TOOL_TYPE_FINGER, 300f + it * 60f + offset, 400f) } }
+        send(view, MotionEvent.ACTION_DOWN, pointers(0f).take(1))
+        for (id in 1 until fingers) send(view, MotionEvent.ACTION_POINTER_DOWN, pointers(0f).take(id + 1), actionIndex = id)
+        clock += 20
+        for (id in (1 until fingers).reversed()) send(view, MotionEvent.ACTION_POINTER_UP, pointers(0f).take(id + 1), actionIndex = id)
+        send(view, MotionEvent.ACTION_UP, pointers(0f).take(1))
+        redraw(view)
+    }
+
     private fun pageView(mode: InputMode) = InkPageView(RuntimeEnvironment.getApplication()).apply {
         configure(mode, Color.BLACK, 2f) { strokes.add(it) }
         onTurnPage = { turns.add(it) }
+        onUndo = { historyGestures.add("undo") }
+        onRedo = { historyGestures.add("redo") }
         show(state(page = 0))
         layout(0, 0, 600, 800)
         redraw(this)

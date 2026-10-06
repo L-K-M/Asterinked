@@ -14,6 +14,7 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.animation.DecelerateInterpolator
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.document.PageSpec
@@ -28,6 +29,8 @@ import ch.lkmc.asterinked.ink.InkStrokeBuilder
 import java.util.Collections
 import java.util.IdentityHashMap
 import kotlin.math.abs
+import kotlin.math.hypot
+import kotlin.math.max
 import kotlin.math.min
 
 internal enum class InputMode { PEN, TOUCH }
@@ -89,6 +92,13 @@ internal class InkPageView(context: Context) : View(context) {
     private var gestureScaled = false
     private var penGesture = false
     private var zoomAnimator: ValueAnimator? = null
+    // Multi-finger tap detection (two fingers undo, three redo).
+    private var tapPointers = 0
+    private var tapDownAt = 0L
+    private var tapCentroidX = 0f
+    private var tapCentroidY = 0f
+    private var tapSpan = 0f
+    private var tapValid = false
     private var inputMode = InputMode.PEN
     private var inkColor = Color.rgb(25, 38, 46)
     private var inkWidth = DEFAULT_WIDTH
@@ -98,12 +108,17 @@ internal class InkPageView(context: Context) : View(context) {
     private val pageMargin = PAGE_MARGIN_DP * density
     private val swipeDistance = SWIPE_DISTANCE_DP * density
     private val swipeVelocity = SWIPE_VELOCITY_DP * density
+    private val multiTapSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
 
     /** Called with +1 or -1 when a finger swipes the page at fit zoom in pen mode. */
     var onTurnPage: (Int) -> Unit = {}
 
     /** Receives the strokes one erase gesture removed, once the gesture ends. */
     var onErase: (Collection<InkStroke>) -> Unit = {}
+
+    /** Two fingertips tapped together: undo. Three: redo. (Procreate convention.) */
+    var onUndo: () -> Unit = {}
+    var onRedo: () -> Unit = {}
 
     var tool = InkTool.PEN
         set(value) {
@@ -303,6 +318,7 @@ internal class InkPageView(context: Context) : View(context) {
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isEnabled || spec == null) return false
+        trackMultiTap(event)
         val action = event.actionMasked
         if (action == MotionEvent.ACTION_CANCEL) {
             cancelStroke()
@@ -394,6 +410,63 @@ internal class InkPageView(context: Context) : View(context) {
         }
         lastFocusX = focusX
         lastFocusY = focusY
+    }
+
+    // Two or three fingertips landing and lifting together, without the pen
+    // taking part and without travelling, undo or redo. The centroid and the
+    // span are the references: a symmetric pinch keeps its centroid still, so
+    // both must stay within the slop for the gesture to count as a tap.
+    private fun trackMultiTap(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                tapPointers = 1
+                tapDownAt = event.eventTime
+                tapValid = event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER
+                tapCentroidX = event.x
+                tapCentroidY = event.y
+                tapSpan = 0f
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                tapPointers = maxOf(tapPointers, event.pointerCount)
+                if (tapPointers > 3 || event.getToolType(event.actionIndex) != MotionEvent.TOOL_TYPE_FINGER) tapValid = false
+                tapCentroidX = centroid(event, true)
+                tapCentroidY = centroid(event, false)
+                tapSpan = span(event)
+            }
+            MotionEvent.ACTION_MOVE -> if (tapValid) {
+                // One finger of a pair moving the full slop moves the centroid half.
+                if (abs(centroid(event, true) - tapCentroidX) > multiTapSlop ||
+                    abs(centroid(event, false) - tapCentroidY) > multiTapSlop ||
+                    abs(span(event) - tapSpan) > multiTapSlop) tapValid = false
+            }
+            MotionEvent.ACTION_UP -> {
+                if (tapValid && tapPointers >= 2 && event.eventTime - tapDownAt <= MULTI_TAP_WINDOW_MS) {
+                    if (tapPointers == 2) onUndo() else onRedo()
+                }
+                tapValid = false
+            }
+            MotionEvent.ACTION_CANCEL -> tapValid = false
+        }
+    }
+
+    private fun centroid(event: MotionEvent, x: Boolean): Float {
+        var sum = 0f
+        for (pointer in 0 until event.pointerCount) sum += if (x) event.getX(pointer) else event.getY(pointer)
+        return sum / event.pointerCount
+    }
+
+    private fun span(event: MotionEvent): Float {
+        var minX = Float.MAX_VALUE
+        var maxX = Float.MIN_VALUE
+        var minY = Float.MAX_VALUE
+        var maxY = Float.MIN_VALUE
+        for (pointer in 0 until event.pointerCount) {
+            minX = min(minX, event.getX(pointer))
+            maxX = max(maxX, event.getX(pointer))
+            minY = min(minY, event.getY(pointer))
+            maxY = max(maxY, event.getY(pointer))
+        }
+        return hypot(maxX - minX, maxY - minY)
     }
 
     private fun zoomAround(target: Float, focusX: Float, focusY: Float) {
@@ -553,6 +626,8 @@ internal class InkPageView(context: Context) : View(context) {
         const val SWIPE_DISTANCE_DP = 64f
         const val SWIPE_VELOCITY_DP = 600f
         const val SWIPE_DIRECTION_RATIO = 1.5f
+        // Two fingertips need a moment longer to land together than one.
+        const val MULTI_TAP_WINDOW_MS = 300L
         const val ERASER_RADIUS_DP = 10f
         // Most pens report the side button as primary; older S Pens report secondary.
         const val STYLUS_BUTTONS = MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_SECONDARY

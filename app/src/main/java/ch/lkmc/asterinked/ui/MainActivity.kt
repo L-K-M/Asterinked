@@ -201,6 +201,8 @@ internal class MainActivity : ComponentActivity() {
         page = InkPageView(this).apply {
             onTurnPage = ::turnPage
             onErase = model::eraseStrokes
+            onUndo = { if (model.state.value?.canUndo == true) { tick(); model.undo() } }
+            onRedo = { if (model.state.value?.canRedo == true) { tick(); model.redo() } }
         }
         workspace.addView(page, FrameLayout.LayoutParams(MATCH, MATCH))
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
