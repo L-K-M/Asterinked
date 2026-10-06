@@ -39,10 +39,15 @@ internal data class EditorState(
     val message: EditorMessage? = null,
     /** An annotated copy ready for the share sheet; acknowledge once handed over. */
     val shared: File? = null,
+    /** Where the last export landed; acknowledge once the notice is shown. */
+    val exported: Uri? = null,
 )
 
+/** What a notice's action button does when the message offers one. */
+internal enum class MessageAction { SAVE_COPY }
+
 /** Something to tell the user once; [tone] says whether it went well. */
-internal data class EditorMessage(val text: String, val tone: Tone)
+internal data class EditorMessage(val text: String, val tone: Tone, val action: MessageAction? = null)
 
 internal class EditorViewModel internal constructor(
     application: Application,
@@ -141,8 +146,11 @@ internal class EditorViewModel internal constructor(
         val draft = current.draft ?: return
         if (current.busy) return
         val saved = draft.copy(savedInk = draft.ink)
-        perform({ service.export(draft, uri); service.saveDraft(saved) }) {
-            publish(current.copy(draft = saved, busy = false, message = EditorMessage(text(R.string.pdf_saved), Tone.SUCCESS)))
+        perform({ service.export(draft, uri) }) {
+            // The copy exists even if recording the draft fails below: mark it
+            // exported anyway and let saveDraft report its own failure.
+            publish(current.copy(draft = saved, busy = false, exported = uri))
+            saveDraft(saved)
         }
     }
 
@@ -158,6 +166,10 @@ internal class EditorViewModel internal constructor(
 
     fun acknowledgeShare() {
         publish(current.copy(shared = null))
+    }
+
+    fun acknowledgeExport() {
+        publish(current.copy(exported = null))
     }
 
     fun acknowledgeMessage() {
@@ -199,7 +211,7 @@ internal class EditorViewModel internal constructor(
                 service.saveDraft(latest)
             } catch (error: Exception) {
                 Log.w(TAG, "Draft could not be saved", error)
-                main.post { if (!cleared) publish(current.copy(message = EditorMessage(text(R.string.notes_not_saved), Tone.ERROR))) }
+                main.post { if (!cleared) publish(current.copy(message = EditorMessage(text(R.string.notes_not_saved), Tone.ERROR, MessageAction.SAVE_COPY))) }
             }
         }
     }
@@ -246,7 +258,11 @@ internal class EditorViewModel internal constructor(
     // Users see what went wrong and what to do; the raw exception goes to the log.
     private fun messageFor(error: Throwable): EditorMessage {
         Log.w(TAG, "Document operation failed", error)
-        return EditorMessage(text(error.toProblem(DocumentProblem.UNEXPECTED).userMessage), Tone.ERROR)
+        val problem = error.toProblem(DocumentProblem.UNEXPECTED)
+        // A draft-write failure leaves notes unbacked: offer the one action
+        // that preserves them.
+        val action = if (problem == DocumentProblem.DRAFT_NOT_SAVED) MessageAction.SAVE_COPY else null
+        return EditorMessage(text(problem.userMessage), Tone.ERROR, action)
     }
 
     private fun text(id: Int): String = getApplication<Application>().getString(id)

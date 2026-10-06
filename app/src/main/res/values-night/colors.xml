@@ -24,4 +24,5 @@
     <color name="inverse_on_surface">#1B1F27</color>
     <color name="notice_success">#1B7A3A</color>
     <color name="notice_error">#BF1520</color>
+    <color name="notice_action">#A00C15</color>
 </resources>

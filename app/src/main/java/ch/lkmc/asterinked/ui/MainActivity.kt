@@ -562,16 +562,21 @@ internal class MainActivity : ComponentActivity() {
 
         page.show(state)
         state.message?.let {
-            val actionLabel = if (it.text.contains("couldn\u2019t be stored")) getString(R.string.save_copy) else null
-            val action = if (actionLabel != null) {
-                { launchPicker { savePdf.launch(exportName()) } }
-            } else null
-            notice.show(it.text, it.tone, actionLabel, action)
+            val action = when (it.action) {
+                MessageAction.SAVE_COPY -> NoticeAction(getString(R.string.save_copy)) { launchPicker { savePdf.launch(exportName()) } }
+                null -> null
+            }
+            notice.show(it.text, it.tone, action)
             model.acknowledgeMessage()
         }
         state.shared?.let {
             model.acknowledgeShare()
             sendToShareSheet(it)
+        }
+        state.exported?.let {
+            model.acknowledgeExport()
+            notice.show(getString(R.string.pdf_saved), Tone.SUCCESS,
+                NoticeAction(getString(R.string.open)) { openExported(it) })
         }
         // Cleared only once the user decides, so a rotation during the prompt asks
         // again; a newer PDF that arrived meanwhile stays pending.
@@ -687,6 +692,18 @@ internal class MainActivity : ComponentActivity() {
             .show()
     }
 
+    // The export destination is ours to read back; the grant reaches the
+    // chosen viewer through ClipData, and Asterinked itself is excluded so the
+    // copy cannot be mistaken for a document to annotate.
+    private fun openExported(uri: Uri) {
+        val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, PDF_MIME)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        view.clipData = ClipData.newRawUri(uri.lastPathSegment ?: exportName(), uri)
+        val chooser = Intent.createChooser(view, getString(R.string.open_title))
+            .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(ComponentName(this, MainActivity::class.java)))
+        launchPicker(R.string.no_viewer) { startActivity(chooser) }
+    }
+
     private fun sendToShareSheet(file: File) {
         val uri = FileProvider.getUriForFile(this, "$packageName$FILE_AUTHORITY_SUFFIX", file)
         val send = Intent(Intent.ACTION_SEND)
@@ -702,9 +719,9 @@ internal class MainActivity : ComponentActivity() {
 
     private fun exportName(): String = model.state.value?.draft?.exportName ?: DEFAULT_EXPORT_NAME
 
-    private fun launchPicker(action: () -> Unit) {
+    private fun launchPicker(failure: Int = R.string.no_picker, action: () -> Unit) {
         try { action() } catch (_: ActivityNotFoundException) {
-            notice.show(getString(R.string.no_picker), Tone.ERROR)
+            notice.show(getString(failure), Tone.ERROR)
         }
     }
 

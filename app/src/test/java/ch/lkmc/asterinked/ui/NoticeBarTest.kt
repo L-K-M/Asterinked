@@ -2,9 +2,11 @@ package ch.lkmc.asterinked.ui
 
 import android.app.Activity
 import android.os.Looper
+import android.widget.Button
 import android.widget.FrameLayout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -63,6 +65,36 @@ class NoticeBarTest {
         notice.show("Drag across strokes to erase them", Tone.INFO)
         assertEquals("Drag across strokes to erase them", notice.shown)
     }
+
+    @Test fun anActionRunsItsCallbackAndHidesTheNotice() {
+        var ran = false
+        notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") { ran = true })
+        assertEquals("Open", notice.actionLabel)
+
+        actionButton()!!.performClick()
+
+        assertTrue(ran)
+        advance(ANIMATION_MS)
+        assertNull(notice.shown)
+    }
+
+    @Test fun anActionNoticeStaysLongEnoughToReachIt() {
+        notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") {})
+        advance(Tone.SUCCESS.millis + ANIMATION_MS)
+        assertEquals("PDF saved.", notice.shown)
+    }
+
+    @Test fun aNoticeWithoutAnActionDropsTheOldOne() {
+        notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") {})
+        notice.show("Drag across strokes to erase them", Tone.INFO)
+        assertEquals("Drag across strokes to erase them", notice.shown)
+        assertNull(notice.actionLabel)
+    }
+
+    private fun actionButton(): Button? = (0 until notice.childCount)
+        .map { notice.getChildAt(it) }
+        .filterIsInstance<Button>()
+        .singleOrNull()
 
     private fun advance(millis: Int) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(millis.toLong()))
 

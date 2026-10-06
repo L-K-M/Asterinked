@@ -107,7 +107,7 @@ class UiScreenshotTest {
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun editorSuccess() = shoot("editor-success") {
-        publish(it, editing(exported = true).copy(message = EditorMessage(app.getString(R.string.pdf_saved), Tone.SUCCESS)))
+        publish(it, editing(exported = true).copy(exported = android.net.Uri.parse("content://test/saved.pdf")))
     }
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")

@@ -46,6 +46,9 @@
     <string name="medium">Medium</string>
     <string name="bold">Bold</string>
     <string name="no_picker">No document picker is available on this device.</string>
+    <string name="no_viewer">No PDF viewer is available on this device.</string>
+    <string name="open">Open</string>
+    <string name="open_title">Open annotated PDF</string>
     <string name="pdf_saved">PDF saved.</string>
     <string name="notes_not_saved">Your latest notes couldn’t be stored on this device. Save a PDF copy now.</string>
     <string name="error_source_unreadable">Couldn’t read this file. The app that provides it may not allow access. Try downloading it first.</string>

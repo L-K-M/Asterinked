@@ -26,23 +26,36 @@ internal enum class Tone(@param:DrawableRes val icon: Int, @param:ColorRes val t
  * accessibility settings) and hides at once when tapped. TalkBack reads it as
  * a polite live region.
  */
+/** An action offered on a notice, like a snackbar's. */
+internal class NoticeAction(val label: CharSequence, val run: () -> Unit)
+
 internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
     private val ui = Components(context)
     private val icon = ImageView(context)
     private val message = ui.text(TextStyle.MESSAGE).apply { maxLines = MAX_LINES }
+    // A borderless text action, accent-tinted like a snackbar action.
+    private val action = Button(context, null, android.R.attr.borderlessButtonStyle).apply {
+        isAllCaps = false
+        setTextAppearance(TextStyle.LABEL.appearance)
+        setTextColor(ui.color(R.color.notice_action))
+        minimumWidth = ui.dp(Size.TOUCH)
+        minimumHeight = ui.dp(Size.TOUCH)
+        setPadding(ui.dp(Space.M), 0, ui.dp(Space.M), 0)
+        visibility = GONE
+        setOnClickListener {
+            (tag as? NoticeAction)?.run()
+            dismiss()
+        }
+    }
     private val accessibility = context.getSystemService(AccessibilityManager::class.java)
     private val hide = Runnable { dismiss() }
     private var tone = Tone.INFO
-    private val actionButton = Button(context).apply {
-        visibility = GONE
-        setTextAppearance(android.R.style.TextAppearance_Material_Widget_Button)
-        setPadding(ui.dp(Space.S), 0, ui.dp(Space.S), 0)
-        minimumHeight = 0
-        minimumWidth = 0
-    }
 
     /** The message on screen, or null while hidden. */
     val shown: CharSequence? get() = if (isVisible) message.text else null
+
+    /** The label of the action on the current notice, or null. */
+    val actionLabel: CharSequence? get() = if (isVisible && action.isVisible) action.text else null
 
     init {
         maxWidth = ui.dp(Size.NOTICE_MAX)
@@ -55,30 +68,28 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
         accessibilityLiveRegion = ACCESSIBILITY_LIVE_REGION_POLITE
         addView(icon, LayoutParams(ui.dp(Size.ICON_SMALL), ui.dp(Size.ICON_SMALL)).apply { marginEnd = ui.dp(Space.M) })
         addView(message, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = ui.dp(Space.S) })
-        addView(actionButton, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+        addView(action, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { marginStart = ui.dp(Space.S) })
         icon.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
         visibility = GONE
         setOnClickListener { dismiss() }
     }
 
-    fun show(text: CharSequence, tone: Tone, actionLabel: CharSequence? = null, action: (() -> Unit)? = null) {
+    fun show(text: CharSequence, tone: Tone, action: NoticeAction? = null) {
         // A tool hint must not wipe out an error the user has not read yet.
-        if (tone == Tone.INFO && this.tone == Tone.ERROR && isVisible && action == null) return
+        if (tone == Tone.INFO && this.tone == Tone.ERROR && isVisible) return
 
         this.tone = tone
         message.text = text
+        this.action.tag = action
+        this.action.text = action?.label
+        this.action.contentDescription = action?.label
+        this.action.visibility = if (action == null) GONE else VISIBLE
         icon.setImageResource(tone.icon)
         icon.imageTintList = ColorStateList.valueOf(ui.color(tone.tint))
-        if (actionLabel != null && action != null) {
-            actionButton.text = actionLabel
-            actionButton.visibility = VISIBLE
-            actionButton.setOnClickListener { action(); dismiss() }
-        } else {
-            actionButton.visibility = GONE
-            actionButton.setOnClickListener(null)
-        }
         removeCallbacks(hide)
-        postDelayed(hide, accessibility.getRecommendedTimeoutMillis(tone.millis,
+        // An action needs longer than a glance: give the user time to reach it.
+        val millis = if (action == null) tone.millis else ACTION_MILLIS
+        postDelayed(hide, accessibility.getRecommendedTimeoutMillis(millis,
             AccessibilityManager.FLAG_CONTENT_ICONS or AccessibilityManager.FLAG_CONTENT_TEXT).toLong())
         // Restarting the animation also cancels a dismissal in progress.
         if (visibility != VISIBLE) {
@@ -104,5 +115,6 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
 
     private companion object {
         const val MAX_LINES = 5
+        const val ACTION_MILLIS = 10_000
     }
 }
