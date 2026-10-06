@@ -247,6 +247,7 @@ internal class InkPageView(context: Context) : View(context) {
     }
 
     override fun onDetachedFromWindow() {
+        cancelZoomAnimation()
         super.onDetachedFromWindow()
         inkNode.discardDisplayList()
         inkLayer.discardDisplayList()
@@ -368,9 +369,10 @@ internal class InkPageView(context: Context) : View(context) {
         return true
     }
 
-    // The page follows the centroid of the fingers, so a pinch also pans, two
-    // fingers pan in touch-ink mode, and lifting one finger never makes the page
-    // jump to where the remaining finger is.
+    // The page follows the centroid of the fingers, so a pinch also pans and
+    // lifting one finger never makes the page jump to where the remaining
+    // finger is. In touch-ink mode a second finger cancels the stroke the
+    // first one started (see onTouchEvent), then both fingers pan.
     private fun followFingers(event: MotionEvent) {
         val lifting = if (event.actionMasked == MotionEvent.ACTION_POINTER_UP) event.actionIndex else -1
         var sumX = 0f
@@ -524,7 +526,7 @@ internal class InkPageView(context: Context) : View(context) {
 
     private fun drawHighlight(canvas: Canvas, color: Int, width: Float, path: Path) {
         highlighter.color = color
-        highlighter.strokeWidth = width
+        highlighter.strokeWidth = InkGeometry.strokeWidth(width)
         canvas.drawPath(path, highlighter)
     }
 

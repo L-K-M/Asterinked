@@ -22,6 +22,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.File
+import java.util.Locale
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -142,7 +143,7 @@ class PdfEngineSecurityTest {
         obj("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Deep ${"[".repeat(depth)}${"]".repeat(depth)} >>")
         val xref = bytes.length
         bytes.append("xref\n0 ${offsets.size + 1}\n0000000000 65535 f \n")
-        offsets.forEach { bytes.append(String.format("%010d 00000 n \n", it)) }
+        offsets.forEach { bytes.append(String.format(Locale.ROOT, "%010d 00000 n \n", it)) }
         bytes.append("trailer << /Root 1 0 R /Size ${offsets.size + 1} >>\nstartxref\n$xref\n%%EOF\n")
         return file("deep").apply { writeText(bytes.toString(), Charsets.ISO_8859_1) }
     }

@@ -86,6 +86,26 @@ class DocumentStorePersistenceTest {
     }
 
     @Test
+    fun restore_sanitizesCorruptStrokeWidths() {
+        val store = DocumentStore(app)
+        val dir = File(app.filesDir, "documents").apply { mkdirs() }
+        val source = File(dir, "widths.pdf").apply { writeBytes(byteArrayOf(3)) }
+        val stroke = InkStroke(listOf(InkPoint(1f, 1f, 1f)), 1, 2f)
+        store.saveDraft(Draft(source, "w.pdf", ink = mapOf(0 to listOf(stroke, stroke))))
+
+        // org.json refuses NaN/Infinity at parse time (such drafts take the
+        // broken-draft path), but zero and negative widths parse fine.
+        val points = """[[1,1,1]]"""
+        File(dir, "draft.json").writeText(
+            """{"source":"${source.name}","name":"w.pdf","page":0,""" +
+                """"ink":{"0":[{"color":1,"width":0,"points":$points},""" +
+                """{"color":1,"width":-3,"points":$points}]},"savedInk":{}}""",
+        )
+        val widths = DocumentStore(app).restore()!!.ink.getValue(0).map { it.width }
+        assertEquals(listOf(2.2f, 2.2f), widths)
+    }
+
+    @Test
     fun saveAndRestore_cleanDraftStaysClean() {
         val store = DocumentStore(app)
         val dir = File(app.filesDir, "documents").apply { mkdirs() }
