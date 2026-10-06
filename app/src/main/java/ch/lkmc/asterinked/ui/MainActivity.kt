@@ -537,8 +537,9 @@ internal class MainActivity : ComponentActivity() {
     // Gestures do the navigating; tell a new user once, then get out of the way.
     private fun maybeHintGestures() {
         if (settings.getBoolean(GESTURE_HINT_KEY, false)) return
-        settings.edit { putBoolean(GESTURE_HINT_KEY, true) }
+        // Existing installs get the hint once after updating too — intended.
         hint(if (mode == InputMode.PEN) R.string.input_hint else R.string.touch_hint)
+        settings.edit { putBoolean(GESTURE_HINT_KEY, true) }
     }
 
     private fun show(state: EditorState) {
