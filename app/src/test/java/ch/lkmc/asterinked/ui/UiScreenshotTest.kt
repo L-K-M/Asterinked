@@ -73,6 +73,9 @@ class UiScreenshotTest {
     @Test @Config(qualifiers = "w1280dp-h800dp-land-notnight-mdpi")
     fun editorTabletLandscape() = shoot("editor-tablet-landscape") { publish(it, editing()) }
 
+    @Test @Config(qualifiers = "ar-ldrtl-w411dp-h891dp-port-notnight-xhdpi")
+    fun editorRightToLeft() = shoot("editor-rtl") { publish(it, editing()) }
+
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun editorLargeFont() {
         RuntimeEnvironment.setFontScale(2f)

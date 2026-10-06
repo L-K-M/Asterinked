@@ -243,12 +243,16 @@ internal class MainActivity : ComponentActivity() {
         bar.addView(open, square())
         val heading = column().apply { setPadding(ui.dp(Space.XS), ui.dp(Space.S), ui.dp(Space.S), ui.dp(Space.S)) }
         // File names differ most at their end ("Report v2 final.pdf"), so the middle gives way.
+        // Aligned to the bar's start, not the text's: an English name in a
+        // right-to-left layout would otherwise drift away from its status dot.
         title = ui.text(TextStyle.TITLE).apply {
             isSingleLine = true
             ellipsize = TextUtils.TruncateAt.MIDDLE
+            textAlignment = View.TEXT_ALIGNMENT_VIEW_START
         }
         status = ui.text(TextStyle.CAPTION).apply {
             isSingleLine = true
+            textAlignment = View.TEXT_ALIGNMENT_VIEW_START
             ellipsize = TextUtils.TruncateAt.END
             compoundDrawablePadding = ui.dp(Space.XS + Space.XXS)
         }
@@ -278,8 +282,6 @@ internal class MainActivity : ComponentActivity() {
         pill.addView(previous, square())
         counter = ui.text(TextStyle.COUNTER).apply {
             gravity = Gravity.CENTER
-            // "3 / 12" reads left to right in every language.
-            textDirection = View.TEXT_DIRECTION_LTR
             minWidth = ui.dp(COUNTER_MIN_WIDTH_DP)
             setPadding(ui.dp(Space.XS), 0, ui.dp(Space.XS), 0)
             background = ui.ripple(content = null, mask = ui.rounded(Color.WHITE, Radius.SMALL))

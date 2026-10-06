@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Rect
 import android.view.View
 import android.widget.TextView
+import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.ui.EditorScreens.descendants
 import ch.lkmc.asterinked.ui.EditorScreens.editing
 import ch.lkmc.asterinked.ui.EditorScreens.publish
@@ -53,6 +54,16 @@ class MainActivityLayoutTest {
             assertTrue("Title is ${title.width}px wide", title.width >= MIN_TITLE_DP)
             assertControlsFit(root)
         }
+    }
+
+    @Test @Config(qualifiers = "ar-ldrtl-w411dp-h891dp-port-mdpi")
+    fun theStatusDotStaysWithItsTextRightToLeft() = editor { root ->
+        val status = descendants(root).filterIsInstance<TextView>().single { it.text == app.getString(R.string.unsaved) }
+        val dot = status.compoundDrawablesRelative[0]!!
+        // Right to left the dot sits at the right edge; the text must end beside it.
+        val textRight = status.totalPaddingLeft + status.layout.getLineRight(0)
+        val dotLeft = status.width - status.paddingRight - dot.bounds.width()
+        assertTrue("Text ends at $textRight, dot starts at $dotLeft", dotLeft - textRight <= status.compoundDrawablePadding + 1)
     }
 
     private fun assertControlsFit() = editor(::assertControlsFit)
