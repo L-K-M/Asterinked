@@ -267,34 +267,14 @@ that no single PR shows on its own:
 ## 6. Backlog: visual and UX
 
 - **V6 (rest). Coach marks.** #16 replaces the permanent hint row with a
-  toast on mode change; a one-time first-run coach mark for swipe, pinch and
+  toast on mode change (a notice since #23); a one-time first-run coach mark for swipe, pinch and
   double-tap would help new users.
-- **V8. Dark theme.** Dark chrome with a white page for night reading
-  (the page itself stays white; see D-night for inverted pages).
 - **V9. Landscape fit-width** (with F3).
 - **V10. Page pill auto-hide.** From #16: the floating pill covers the bottom
   centre of the page; strokes that pass under it work, but one cannot start
   inside it. Fade it out while the pen writes and after ~3 s of inactivity;
   bring it back on page change or a tap near the bottom edge. Needs a
   "writing started/ended" callback from `InkPageView`.
-- **V12. Phone tool strip overflow.** With #18's highlighter and eraser
-  segment the strip is wider than a 411dp phone; the width dots need a
-  scroll. Options: move the widths into a popover on the selected swatch, or
-  wrap into two rows below ~480dp. Verify with the Robolectric screenshot
-  approach (T4) at `w411dp`.
-- **V13. Highlight width dots are faint.** The width dots preview the ink
-  colour, so light highlight tints (yellow on the white strip) barely show.
-  Give dots a 1dp `ICON`-coloured outline when the fill is light (luminance
-  above ~0.7), in `ChoiceDot`.
-- **V14. Phone top bar crowding.** Open, undo, redo, share and the Save copy
-  pill leave about 100dp for the title on a phone. Candidates: fold Share
-  into a split Save button or an overflow menu below 480dp.
-- **V15. Touch targets.** #16 sizes icon buttons at 44dp and swatches at
-  40dp wide; Android's accessibility guidance (and Accessibility Scanner)
-  asks for 48dp. Check the phone layout (V12, V14) before raising them, since
-  the strip and top bar are already tight.
-- **V11. Status dot.** A small filled dot beside the title for unexported
-  notes, instead of (or in addition to) #16's red status line.
 - **U1. Auto pen-only.** After the first stylus event, stop fingers from
   inking (palm safety) and say so once. Today touch-ink mode lets a resting
   palm draw.
@@ -302,15 +282,22 @@ that no single PR shows on its own:
   current colour and width where the nib will land (`onHoverEvent`).
 - **U3. Gesture shortcuts.** Two-finger tap = undo, three-finger tap = redo.
   Must coexist with the pinch detector (#11).
-- **U4. Export feedback.** After saving, a snackbar with "Open" and "Share"
-  instead of a plain toast.
+- **U4. Export feedback.** After saving, "Open" and "Share" actions on the
+  "PDF saved" notice (needs U8).
 - **U5. Busy states.** Export disables everything including pan and zoom.
   Keep navigation available and show determinate progress for large
   documents.
 - **U6. Undo scope.** Undo is per page; after turning the page the last edit
   elsewhere is out of reach. Consider global chronological undo that jumps
   back to the page, or at least show where the next undo applies.
-- **U7. Haptics.** A light tick on page turn, undo/redo and tool switch.
+- **U7 (rest). Haptics.** Tool, colour, width and finger-mode changes tick
+  (#23); page turns and undo/redo do not yet.
+- **V16. Phone landscape.** At about 411dp tall the bars leave a page roughly
+  250dp high (#23 lowers the top bar and moves the page pill to the corner).
+  A side rail for the tools, keyed on height below ~480dp, or fit-width (V9)
+  would give writing room back.
+- **U8. Notice actions.** `NoticeBar` has no action slot. "Your latest notes
+  couldn't be stored" could offer Save copy, a failed save Try again (with U4).
 
 ---
 
@@ -353,9 +340,9 @@ G8 (test gaps) is partly done: #11 tests gestures, #12 the error mapping,
 - **T3.** Model tests for undo/redo and erase through `EditorViewModel` once
   #13's `DocumentOperations` seam and #14's `InkHistory` are both on `main`
   (only `InkHistory` itself is tested today).
-- **T4.** A screenshot test harness: Robolectric `@GraphicsMode(NATIVE)`
-  renders of the welcome, phone and tablet editor, compared against golden
-  images with a tolerance, so UI regressions show in CI.
+- **T4 (rest).** #23's `UiScreenshotTest` renders every screen state to
+  `app/build/reports/screens/`; compare them against golden images with a
+  tolerance so UI regressions fail CI instead of waiting for a look.
 - **T5.** `EditorViewModelTest` busy-waits with `Thread.sleep`; move it to
   #13's queue executor.
 - **T6.** An end-to-end test through `DocumentService`: import a fixture,
@@ -418,3 +405,4 @@ stylus, for example a Samsung S Pen tablet):
 | B18 | Deeply nested PDFs crashed the app with `StackOverflowError` and left the imported copy | #12 |
 | CI | `main` CI failed on docs-only commits (cached tests skipped the PDFium fixtures) | #19 |
 | V1–V5, V7 | Compact chrome, inline swatches, modern controls, brand icon and palette, clear mode toggle | #16 |
+| V8, V11–V15 | Redesign: design tokens, dark theme, status dot, two-row phone tool bar, outlined light swatches, uncrowded top bar, 48dp targets, notices instead of toasts, edge-to-edge | #23 |

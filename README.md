@@ -10,16 +10,20 @@ Pen-based PDF annotation for Android 10 and newer.
 1. **Open PDF** through Android's document picker, or open or share a PDF to
    Asterinked from another app (Files, email, a browser download).
 2. Write with a stylus. Pressure changes line width; fingers pan and pinch to zoom.
-   Pick ink colour and pen width from the strip at the bottom; they stay as you
+   Pick ink colour and pen width in the tool bar at the bottom; they stay as you
    left them.
-3. Tap the finger icon to write with a finger, or the marker icon to highlight
-   text: highlights multiply with the page, so the text stays readable on screen
-   and in the export. The eraser icon removes whole strokes; a stylus side button
-   erases too. Use **Undo** or **Redo** to revise notes.
+3. Switch between pen, highlighter and eraser in the tool bar. Highlights
+   multiply with the page, so the text stays readable on screen and in the
+   export. The eraser removes whole strokes; a stylus side button erases too.
+   Turn on the hand icon to write with a finger. Undo and redo sit at the left
+   of the tool bar.
 4. Change pages with the arrows on the page pill (tap the page number to jump),
    then **Save copy** to export the whole document, or tap the share icon to send
    an annotated copy straight to another app. Sharing does not mark notes as
-   exported.
+   exported. With a keyboard: Ctrl+Z, Ctrl+Shift+Z, Ctrl+S, Ctrl+O, Page Up
+   and Page Down.
+
+The app follows the system's dark theme and text size; the PDF page stays white.
 
 Ink becomes vector page content in the exported PDF. Original text remains
 selectable; existing artwork and pages are preserved. Repeated exports do not

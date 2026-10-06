@@ -67,6 +67,30 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   same segments for every prefix. Changing stroke geometry changes every
   exported PDF, so do it deliberately and update that reference.
 
+## UI conventions
+
+- Screens are built in code, not XML layouts. Repeated controls come from
+  `ui/Components.kt` (icon button, toggle, segment, primary button, choice
+  dot) so they look and behave alike; add new ones there.
+- Design tokens: colours and type scale live in `res/values/colors.xml`,
+  `values-night/colors.xml` and `styles.xml` (they change with the theme);
+  spacing, sizes, radii and motion in `ui/DesignTokens.kt`. Never hard-code
+  a chrome colour: it breaks the dark theme. Ink and highlighter colours are
+  document content and stay constants in `MainActivity`.
+- Every tappable control is at least 48dp square; `MainActivityLayoutTest`
+  enforces it, with no overlaps, on phone, landscape, tablet and 200% text.
+- `UiScreenshotTest` renders every screen state (light, dark, phone, tablet,
+  large text, dialogs, notices) to `app/build/reports/screens/`. Look at the
+  PNGs after any UI change; Robolectric cannot show a device, these can.
+- Robolectric measures text only under `@GraphicsMode(NATIVE)`; in LEGACY
+  mode every character is one pixel wide, so width assertions lie. A view
+  must be attached to a window before its `postDelayed` timers and
+  `animate()` calls run.
+- Tests cannot open a real PDF (no PdfRenderer); `EditorScreens.publish`
+  puts the activity into an editor state with a drawn stand-in page.
+- Messages to the user go through `NoticeBar`, not toasts: Android 12+ cuts
+  toasts to two lines.
+
 ## CI/CD
 
 Three workflows: `ci.yml` (tests + lint + debug and release APKs + the PDFium
