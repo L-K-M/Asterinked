@@ -64,6 +64,7 @@ class MainActivityLayoutTest {
         measure(root)
         assertControlsFit(root)
         assertTrue("Ink selection survives reflow", blue.isSelected)
+        for (dot in descendants(root).filterIsInstance<ChoiceDot>()) assertChoiceAppearance(dot)
 
         val bold = descendants(root).single { it.contentDescription == app.getString(R.string.bold) }
         val position = IntArray(2).also(bold::getLocationInWindow)
