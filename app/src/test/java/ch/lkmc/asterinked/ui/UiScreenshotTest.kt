@@ -32,7 +32,7 @@ import java.io.File
 /**
  * Renders every screen state to build/reports/screens/ so the chrome can be
  * reviewed without a device. Robolectric draws in software with fake system
- * bar insets (24dp status bar, 48dp gesture area).
+ * bar insets (24dp status bar, 24dp gesture area).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])

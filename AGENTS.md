@@ -76,9 +76,11 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   dot) so they look and behave alike; add new ones there.
 - Design tokens: colours and type scale live in `res/values/colors.xml`,
   `values-night/colors.xml` and `styles.xml` (they change with the theme);
-  spacing, sizes, radii and motion in `ui/DesignTokens.kt`. Never hard-code
-  a chrome colour: it breaks the dark theme. Ink and highlighter colours are
-  document content and stay constants in `MainActivity`.
+  spacing, sizes, radii and motion in `ui/DesignTokens.kt`. Theme attributes
+  that need a resource (the dialog corner radius) use `values/dimens.xml`.
+  Never hard-code a chrome colour: it breaks the dark theme. Ink and
+  highlighter colours are document content and stay constants in
+  `MainActivity`.
 - Every tappable control is at least 48dp square; `MainActivityLayoutTest`
   enforces it, with no overlaps, on phone, landscape, tablet and 200% text.
 - The tool bar wraps from its measured, inset-adjusted width. Narrow phones
