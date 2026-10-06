@@ -408,11 +408,11 @@ internal class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(ui.dp(Space.XL), ui.dp(Space.XXL), ui.dp(Space.XL), ui.dp(Space.XXL))
         }
-        content.addView(ImageView(this).apply {
-            setImageResource(R.drawable.ic_asterisk)
-            imageTintList = ColorStateList.valueOf(ui.color(R.color.accent))
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }, LinearLayout.LayoutParams(ui.dp(Size.MARK), ui.dp(Size.MARK)))
+        val loader = InkLoaderView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(ui.dp(Size.MARK), ui.dp(Size.MARK))
+            startAnimation()
+        }
+        content.addView(loader, LinearLayout.LayoutParams(ui.dp(Size.MARK), ui.dp(Size.MARK)))
         // Balanced breaks keep a centred heading from ending on one orphaned word.
         content.addView(ui.text(TextStyle.DISPLAY, getString(R.string.welcome_title)).apply {
             gravity = Gravity.CENTER
