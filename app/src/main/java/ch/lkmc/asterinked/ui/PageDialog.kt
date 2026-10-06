@@ -45,7 +45,8 @@ internal fun showPageDialog(context: Context, ui: Components, current: Int, coun
     val total = ui.text(TextStyle.BODY, context.getString(R.string.of_pages, count))
     val problem = ui.text(TextStyle.CAPTION, context.getString(R.string.page_out_of_range, count)).apply {
         setTextColor(ui.color(R.color.accent))
-        visibility = View.INVISIBLE
+        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        visibility = View.GONE
     }
     val row = LinearLayout(context).apply {
         gravity = Gravity.CENTER_VERTICAL
@@ -76,7 +77,7 @@ internal fun showPageDialog(context: Context, ui: Components, current: Int, coun
     fun validate(): Int? {
         val page = chosen()
         dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = page != null
-        problem.visibility = if (page != null || field.text.isEmpty()) View.INVISIBLE else View.VISIBLE
+        problem.visibility = if (page != null || field.text.isEmpty()) View.GONE else View.VISIBLE
         return page
     }
     field.doAfterTextChanged { validate() }

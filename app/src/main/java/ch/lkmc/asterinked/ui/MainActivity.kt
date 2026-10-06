@@ -11,6 +11,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.text.Layout
 import android.text.TextUtils
 import android.transition.Fade
 import android.transition.TransitionManager
@@ -356,17 +357,21 @@ internal class MainActivity : ComponentActivity() {
             imageTintList = ColorStateList.valueOf(ui.color(R.color.accent))
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }, LinearLayout.LayoutParams(ui.dp(Size.MARK), ui.dp(Size.MARK)))
+        // Balanced breaks keep a centred heading from ending on one orphaned word.
         content.addView(ui.text(TextStyle.DISPLAY, getString(R.string.welcome_title)).apply {
             gravity = Gravity.CENTER
+            breakStrategy = Layout.BREAK_STRATEGY_BALANCED
             ViewCompat.setAccessibilityHeading(this, true)
         }, spaced(Space.XL))
         content.addView(ui.text(TextStyle.BODY, getString(R.string.welcome_body)).apply {
             gravity = Gravity.CENTER
+            breakStrategy = Layout.BREAK_STRATEGY_BALANCED
             setLineSpacing(0f, BODY_LINE_SPACING)
         }, spaced(Space.M))
         content.addView(ui.primaryButton(R.string.open_pdf, ButtonSize.LARGE, R.drawable.ic_open) { requestOpen() }, spaced(Space.XXL))
         content.addView(ui.text(TextStyle.CAPTION, getString(R.string.welcome_caption)).apply {
             gravity = Gravity.CENTER
+            breakStrategy = Layout.BREAK_STRATEGY_BALANCED
             setLineSpacing(0f, BODY_LINE_SPACING)
         }, spaced(Space.L))
 
