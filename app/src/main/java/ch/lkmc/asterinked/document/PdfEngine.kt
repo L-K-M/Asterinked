@@ -7,11 +7,13 @@ import android.os.ParcelFileDescriptor
 import ch.lkmc.asterinked.ink.InkGeometry
 import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkStroke
+import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
+import com.tom_roush.pdfbox.pdmodel.encryption.PDEncryption
 import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
 import com.tom_roush.pdfbox.pdmodel.graphics.blend.BlendMode
 import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
@@ -154,13 +156,26 @@ internal class PdfEngine(private val scratchDirectory: File) {
     // user password (the source opened without one), so owner restrictions such
     // as "no printing" carry over instead of being silently stripped. The owner
     // password is random: the original one is unknown to the app. 128-bit copies
-    // use AES (PDFBox 2 would pick RC4), so an AES source is never downgraded.
+    // use AES (PDFBox 2 would pick RC4).
     private fun keepProtection(document: PDDocument) {
         val permissions = AccessPermission(document.currentAccessPermission.permissionBytes)
         val policy = StandardProtectionPolicy(UUID.randomUUID().toString(), "", permissions)
-        policy.encryptionKeyLength = supportedKeyLength(document.encryption.length)
+        policy.encryptionKeyLength = effectiveKeyLength(document.encryption)
         policy.isPreferAES = true
         document.protect(policy)
+    }
+
+    private fun effectiveKeyLength(encryption: PDEncryption): Int {
+        // ISO 32000: V=5 fixes AES-256; V=4 uses StdCF's crypt method.
+        // PDFBox defaults an absent top-level /Length to 40 even for AES.
+        if (encryption.version == AES_256_SECURITY_VERSION) return AES_256_KEY_BITS
+        if (encryption.version != PDEncryption.VERSION4_SECURITY_HANDLER) return supportedKeyLength(encryption.length)
+
+        return when (encryption.stdCryptFilterDictionary?.cryptFilterMethod) {
+            COSName.AESV2 -> AES_128_KEY_BITS
+            COSName.AESV3 -> AES_256_KEY_BITS
+            else -> supportedKeyLength(encryption.length)
+        }
     }
 
     private fun supportedKeyLength(bits: Int): Int = SUPPORTED_KEY_LENGTHS.firstOrNull { bits <= it } ?: SUPPORTED_KEY_LENGTHS.last()
@@ -196,6 +211,10 @@ internal class PdfEngine(private val scratchDirectory: File) {
         const val PDF_MEMORY_BYTES = 32L * 1024 * 1024
         const val ROUND_CAP = 1
         const val CIRCLE_BEZIER = 0.55228475f
-        val SUPPORTED_KEY_LENGTHS = intArrayOf(40, 128, 256)
+        // PDFBox 2 exposes no constant for the PDF 1.7 extension's V=5.
+        const val AES_256_SECURITY_VERSION = 5
+        const val AES_128_KEY_BITS = 128
+        const val AES_256_KEY_BITS = 256
+        val SUPPORTED_KEY_LENGTHS = intArrayOf(PDEncryption.DEFAULT_LENGTH, AES_128_KEY_BITS, AES_256_KEY_BITS)
     }
 }

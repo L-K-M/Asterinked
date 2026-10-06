@@ -55,8 +55,16 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   re-renders them with PDFium — independent of PDFBox — checking ink
   placement and preserved text/artwork at all four rotations, that an
   owner-restricted encrypted export stays encrypted without regaining print
-  permission, and that text stays dark under a multiply-blended highlighter
-  marker. It only works after `testDebugUnitTest` ran in the same checkout.
+  permission, that AESV2/AESV3 sources without top-level `/Length` retain AES
+  strength and all permission bits, and that text stays dark under a
+  multiply-blended highlighter marker. It only works after `testDebugUnitTest`
+  ran in the same checkout.
+- PDFBox's `PDEncryption.length` defaults to 40 when `/Length` is absent;
+  its loaded `securityHandler.keyLength` also stays at 40. Export strength
+  comes from security version / `StdCF` method, not those getters. Standard
+  crypt filter `/Length` uses bytes per ISO 32000, but PDFBox writes bits;
+  do not use it as the export key length. Missing-Length AES test fixtures
+  use equal-size whitespace edits so ciphertext and xref offsets stay intact.
 - The debug build carries `applicationIdSuffix ".debug"` (and `-debug` on
   versionName) so it can sit next to a release install on the same device.
 - `InkPageView` replays committed ink from cached `RenderNode`s only on
