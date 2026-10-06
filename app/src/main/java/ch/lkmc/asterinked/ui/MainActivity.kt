@@ -295,7 +295,9 @@ internal class MainActivity : ComponentActivity() {
         pill.addView(ui.divider(), LinearLayout.LayoutParams(ui.dp(Size.HAIRLINE), ui.dp(Size.DIVIDER)).apply {
             setMargins(ui.dp(Space.XS), 0, ui.dp(Space.XS), 0)
         })
-        fit = ui.iconButton(R.drawable.ic_fit, R.string.fit) { page.resetZoom() }
+        fit = ui.iconButton(R.drawable.ic_fit, R.string.fit) { page.resetZoom() }.apply {
+            setOnLongClickListener { toggleFocusMode(); true }
+        }
         pill.addView(fit, square())
         return pill
     }
@@ -449,6 +451,21 @@ internal class MainActivity : ComponentActivity() {
             indeterminateTintList = ColorStateList.valueOf(ui.color(R.color.accent))
         }, LinearLayout.LayoutParams(ui.dp(Size.SPINNER), ui.dp(Size.SPINNER)))
         addView(ui.text(TextStyle.CAPTION, getString(R.string.opening)), spaced(Space.M))
+    }
+
+    private var focusMode = false
+
+    private fun toggleFocusMode() {
+        focusMode = !focusMode
+        val visible = if (focusMode) View.GONE else View.VISIBLE
+        topBar.visibility = visible
+        toolBar.visibility = visible
+        pagePill.visibility = visible
+        if (focusMode) {
+            workspace.setPadding(0, 0, 0, 0)
+        } else {
+            applyInsets()
+        }
     }
 
     private fun configurePen() {
