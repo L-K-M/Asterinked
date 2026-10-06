@@ -106,20 +106,23 @@ internal class PdfEngine(private val scratchDirectory: File) {
                 val crop = page.cropBox
                 val spec = PageSpec(crop.lowerLeftX, crop.lowerLeftY, crop.width, crop.height, page.rotation)
                 // Reset inherited graphics state; append keeps original text and artwork intact.
+                // One shared state per page: each new instance would add its own
+                // ExtGState resource, one per highlight.
+                val multiply = PDExtendedGraphicsState().apply { blendMode = BlendMode.MULTIPLY }
                 PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND, true, true).use { stream ->
                     stream.saveGraphicsState()
                     stream.transform(spec.displayToPdf())
                     stream.addRect(0f, 0f, spec.displayWidth, spec.displayHeight)
                     stream.clip()
                     stream.setLineCapStyle(ROUND_CAP)
-                    stream.setLineJoinStyle(ROUND_CAP)
+                    stream.setLineJoinStyle(ROUND_JOIN)
                     // Highlights go under all pen ink, as on screen, where multiply must
                     // blend with the page rather than with the cached pen layer.
                     for (stroke in strokes.sortedBy { it.kind != InkKind.HIGHLIGHTER }) {
                         stream.setStrokingColor(Color.red(stroke.color), Color.green(stroke.color), Color.blue(stroke.color))
                         stream.setNonStrokingColor(Color.red(stroke.color), Color.green(stroke.color), Color.blue(stroke.color))
                         if (stroke.kind == InkKind.HIGHLIGHTER) {
-                            highlight(stream, stroke)
+                            highlight(stream, stroke, multiply)
                             continue
                         }
                         for (segment in InkGeometry.segments(stroke)) {
@@ -167,11 +170,11 @@ internal class PdfEngine(private val scratchDirectory: File) {
 
     // One constant-width path multiplied onto the page, as on screen: text under it
     // stays dark, and the stroke never darkens where its own segments overlap.
-    private fun highlight(stream: PDPageContentStream, stroke: InkStroke) {
+    private fun highlight(stream: PDPageContentStream, stroke: InkStroke, multiply: PDExtendedGraphicsState) {
         val line = InkGeometry.centerline(stroke)
         if (line.isEmpty()) return
         stream.saveGraphicsState()
-        stream.setGraphicsStateParameters(PDExtendedGraphicsState().apply { blendMode = BlendMode.MULTIPLY })
+        stream.setGraphicsStateParameters(multiply)
         stream.setLineWidth(stroke.width)
         stream.moveTo(line.first().x, line.first().y)
         // A tap still leaves a round mark: a zero-length line with round caps.
@@ -194,7 +197,9 @@ internal class PdfEngine(private val scratchDirectory: File) {
     private companion object {
         const val PREVIEW_LONG_EDGE = 2048
         const val PDF_MEMORY_BYTES = 32L * 1024 * 1024
+        // PDF line cap and join styles (ISO 32000-1, 8.4.3.3 and 8.4.3.4).
         const val ROUND_CAP = 1
+        const val ROUND_JOIN = 1
         const val CIRCLE_BEZIER = 0.55228475f
         val SUPPORTED_KEY_LENGTHS = intArrayOf(40, 128, 256)
     }
