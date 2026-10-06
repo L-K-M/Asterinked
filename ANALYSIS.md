@@ -406,3 +406,84 @@ stylus, for example a Samsung S Pen tablet):
 | CI | `main` CI failed on docs-only commits (cached tests skipped the PDFium fixtures) | #19 |
 | V1–V5, V7 | Compact chrome, inline swatches, modern controls, brand icon and palette, clear mode toggle | #16 |
 | V8, V11–V15 | Redesign: design tokens, dark theme, status dot, two-row phone tool bar, outlined light swatches, uncrowded top bar, 48dp targets, notices instead of toasts, edge-to-edge | #23 |
+
+---
+
+## 11. Additional review findings (Inkling, 2026-10-06)
+
+Thorough review of `main` at `d48a41d` (post-#23). Focused on bugs, performance, visual/layout, aesthetics, and delightful ideas. Seven focused PRs opened; none depend on other agents' open PRs.
+
+### Bugs / hygiene fixed in PRs
+
+- **B15** (`bugfix/draw-highlight-width`, #45): `PdfEngine.export` used `ROUND_CAP` (value 1) for `setLineJoinStyle`; added `ROUND_JOIN` constant and corrected naming.
+- **B19** (`bugfix/draw-highlight-width`, #45): `DocumentStore.decodeInk` and `PdfEngine.highlight` used raw `stroke.width`; now sanitized with `InkGeometry.strokeWidth()`.
+- **B20** (`bugfix/draw-highlight-width`, #45): `InkPageView.onDetachedFromWindow` did not cancel `zoomAnimator`; fixed. `followFingers` comment corrected to match touch-ink behavior.
+
+### Features implemented in PRs
+
+- **D-1** (`feature/animated-loader`, #48): `InkLoaderView` replaces static welcome asterisk with progressive ink drawing (`Paint` with `accent` color, round caps, 6dp width).
+- **D-2** (`feature/quick-resave`, #47): `DocumentStore` stores previous `CreateDocument` URI (`SharedPreferences`). `MainActivity` quick-saves to it when available; falls back to picker.
+- **D-3** (`feature/night-mode`, #49): `InkPageView.setNightMode()` applies inverted `ColorMatrixColorFilter` to screen drawing only (`preview`, `highlighter`, pen `paint`). Toggle in tool bar.
+- **D-4** (`feature/focus-mode`, #51): Long-press on `fit` button hides `topBar`, `toolBar`, and `pagePill`; workspace expands to full canvas.
+- **D-5** (`feature/page-flip`, #52): Brief 180ms fade transition (`alpha` animation) in `InkPageView.show()` on page change.
+- **U8** (`feature/action-notice-bar`, #54): `NoticeBar.show()` accepts optional `actionLabel` and `action` callback; `MainActivity` passes `"Save copy"` for `notes_not_saved` errors.
+
+### Remaining shovel-ready backlog (preserved for future agents)
+
+- **B2**: Password prompt for protected PDFs (`DocumentProblem.PASSWORD_PROTECTED` → prompt, `PDDocument.load` with password, `PdfRenderer.Params` for API 35+, `setAllSecurityToBeRemoved` for older devices).
+- **B8**: Broken draft recovery (`draft.broken-<timestamp>.json` with message; render failure keeps draft with `preview = null`).
+- **B12**: Hard-coded strings (`InkPageView` description, `DocumentStore.import` fallback) should move to `strings.xml`.
+- **B14**: Move `pageRect` computation from `onDraw` to `computeLayout()` (called from `onSizeChanged` and gesture handlers).
+- **G1**: Apache NOTICE / licences screen (`res/xml/shared_files.xml` reference, static asset listing PDFBox-Android / BouncyCastle / AndroidX).
+- **G5**: `dataExtractionRules` (`res/xml/data_extraction_rules.xml`) excluding `documents` and `pen` preferences from cloud backup.
+- **G6**: Cache `PageSpec` in `draft.json` (schema version) instead of reloading PDFBox on every cold start.
+- **G7**: Replace `message` / `shared` with single-consumer event channels (`SharedFlow` / event queue in model).
+- **G9**: Derive AES key length from `StandardProtectionPolicy` version (`V >= 5` → 256-bit, `V == 4` → 128); strip encryption for fully unrestricted PDFs instead of re-locking.
+- **P5**: Per-page draft writes; append-only journal or revision marker instead of full `savedInk` copy.
+- **P6**: Quantize pen segment widths; emit polyline runs; update `InkIncrementalTest` reference.
+- **P8**: Sharp zoom: render visible region at screen resolution (`PdfRenderer.Page.render` with clip) after zoom settles.
+- **P9**: `androidx.graphics:graphics-core` front-buffered rendering; motion prediction (`input-motionprediction`).
+- **P10**: Reuse `Path` for live highlighter instead of rebuilding every frame.
+- **F3 (rest)**: Thumbnail strip (bottom sheet) marking pages with ink; reuse `PdfRenderer` at small size.
+- **F6 (rest)**: Full quick-resave with last URI persistence; overwrite original when provider grants write access.
+- **F7**: Editable export (`/Ink` annotations option); keep "burn in" as alternative.
+- **F8**: Keyboard shortcuts (`Ctrl+Z`, `Ctrl+Shift+Z` / `Ctrl+Y`, `Ctrl+S`, `Ctrl+O`, `PgUp`/`PgDn`).
+- **F9**: Multiple documents with draft index and per-document directories in `DocumentStore`.
+- **F11**: Full password prompt (see B2).
+- **F12**: Clear page (`InkHistory.record` undoable edit); close document (welcome after unsaved-notes prompt).
+- **F13**: Page tools: insert blank note page; "add margin" by widening crop/media box.
+- **F14**: Pressure curve customization (gamma, sensitivity slider) — changes `InkGeometry.widthAt`; update `InkIncrementalTest` reference.
+- **F15**: Text notes (`/Text` annotations) as typed sticky notes.
+- **V6**: One-time coach marks for swipe, pinch, double-tap.
+- **V9**: Landscape fit-width mode (`fit-width` for tablets).
+- **V10**: Page pill auto-hide while writing; fade out after ~3s inactivity; bring back on page change or bottom-edge tap.
+- **U1**: Auto `PEN` mode switch after first stylus event in `TOUCH` mode.
+- **U2**: Stylus hover cursor (`MotionEvent.ACTION_HOVER_MOVE`) — ring of current color/width.
+- **U3**: Gesture shortcuts (`ScaleGestureDetector` coexists with two-finger tap undo / three-finger tap redo).
+- **U4**: Export feedback: "Open" / "Share" actions on saved notice.
+- **U5**: Busy states: disable controls during export; determinate progress for large documents.
+- **U6**: Undo scope: global chronological undo (jumps back to page) or at least show next undo page.
+- **U7**: Haptics for page turns and undo/redo (`HapticFeedbackConstants`).
+- **V16**: Phone landscape side rail (`screenHeightDp < 480`) or fit-width (`V9`).
+- **D-night (expanded)**: Full dark-theme redesign (`values-night/colors.xml`, adaptive launcher colors, theme-aware shadows).
+- **D-stamps**: Review stamps (`✓ ✗ ? ! ✱`) at pen size.
+- **D-shape**: QuickShape — snap straight line at end of stroke.
+- **D-snap-highlight**: Highlight snaps to PDFBox text glyph boxes.
+- **D-scribble-erase**: Fast zig-zag over strokes deletes them.
+- **D-lasso**: Select strokes, then move/recolour/delete.
+- **D-replay**: Store timestamps per point; play back review writing.
+- **D-next-note**: "Next note" button; optional summary page on export.
+- **D-margin-mag**: Margin magnifier for fine notes.
+- **D-night-full**: Full theme redesign (see V-night / D-night expanded).
+- **D-volume-keys**: Volume keys turn pages (opt-in).
+- **D-eyedropper**: Pick ink colour from document.
+- **D-focus-deep**: Deeper focus mode (hide status bar, use edge taps for navigation).
+
+### Implementation notes for future agents
+
+- All seven PRs (`bugfix/draw-highlight-width`, `feature/quick-resave`, `feature/animated-loader`, `feature/night-mode`, `feature/focus-mode`, `feature/page-flip`, `feature/action-notice-bar`) branch from `d48a41d` (current `main`) and are independent.
+- `bugfix/draw-highlight-width` fixes hygiene items (B15, B19, B20) that other agents may have partially addressed; keep it in sync with any `InkGeometry` algorithm changes.
+- `feature/quick-resave` uses `SharedPreferences` key `"export"` rather than per-document storage; migrate to `DocumentStore` directory when implementing F9 (multiple documents).
+- `feature/night-mode` applies a screen-only `ColorMatrixColorFilter`; it does not modify theme tokens (`colors.xml`). A full dark-theme redesign should update `values-night/colors.xml` and adaptive launcher colors.
+- `feature/animated-loader` creates `InkLoaderView`; future work could extend it to play during slow `PdfRenderer` loads (not just the welcome screen).
+- `ANALYSIS.md` is the source of truth; `tmp.md` should stay discarded.
