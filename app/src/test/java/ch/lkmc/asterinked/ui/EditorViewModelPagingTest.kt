@@ -95,6 +95,26 @@ class EditorViewModelPagingTest {
         assertEquals(3, documents.saved.single().ink[0]!!.size)
     }
 
+    @Test fun anExportRemembersItsDestination() {
+        settle()
+        model.addStroke(stroke())
+        settle()
+        val destination = Uri.parse("content://test/saved.pdf")
+
+        model.export(destination)
+        settle()
+
+        assertEquals(destination, state.draft!!.destination)
+        assertEquals(state.draft!!.ink, state.draft!!.savedInk)
+        assertEquals(listOf(destination), documents.exportedTo)
+
+        // The remembered place takes the next save without asking again.
+        model.addStroke(stroke())
+        model.export(destination)
+        settle()
+        assertEquals(listOf(destination, destination), documents.exportedTo)
+    }
+
     private fun stroke() = InkStroke(listOf(InkPoint(10f, 10f, 0.5f), InkPoint(20f, 20f, 0.5f)), 0, 2f)
 
     private fun idleMain() = shadowOf(Looper.getMainLooper()).idle()
@@ -134,6 +154,7 @@ class EditorViewModelPagingTest {
         private val cache = mutableMapOf<Int, Bitmap>()
         val rendered = mutableListOf<Int>()
         val saved = mutableListOf<Draft>()
+        val exportedTo = mutableListOf<Uri>()
 
         override fun restore(): OpenDocument {
             val draft = Draft(source, "fake.pdf")
@@ -152,7 +173,10 @@ class EditorViewModelPagingTest {
         }
 
         override fun open(uri: Uri): OpenDocument = throw UnsupportedOperationException()
-        override fun export(draft: Draft, destination: Uri) = throw UnsupportedOperationException()
+
+        override fun export(draft: Draft, destination: Uri) {
+            exportedTo += destination
+        }
         override fun share(draft: Draft): File = throw UnsupportedOperationException()
         override fun close() = Unit
     }

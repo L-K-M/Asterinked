@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">Asterinked</string>
     <string name="open_pdf">Open PDF</string>
+    <string name="save">Save</string>
     <string name="save_copy">Save copy</string>
     <string name="share">Share</string>
     <string name="share_title">Share annotated PDF</string>

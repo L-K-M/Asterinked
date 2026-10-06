@@ -140,7 +140,7 @@ internal class EditorViewModel internal constructor(
         }
         val draft = current.draft ?: return
         if (current.busy) return
-        val saved = draft.copy(savedInk = draft.ink)
+        val saved = draft.copy(savedInk = draft.ink, destination = uri)
         perform({ service.export(draft, uri); service.saveDraft(saved) }) {
             publish(current.copy(draft = saved, busy = false, message = EditorMessage(text(R.string.pdf_saved), Tone.SUCCESS)))
         }

@@ -19,6 +19,8 @@ internal data class Draft(
     val page: Int = 0,
     val ink: Map<Int, List<InkStroke>> = emptyMap(),
     val savedInk: Map<Int, List<InkStroke>> = emptyMap(),
+    /** Where the last export landed; "Save" writes back there without asking. */
+    val destination: Uri? = null,
 ) {
     val dirty: Boolean get() = ink.filterValues { it.isNotEmpty() } != savedInk.filterValues { it.isNotEmpty() }
 
@@ -81,6 +83,9 @@ internal class DocumentStore(context: Context) {
             .put("page", draft.page)
             .put("ink", encodeInk(draft.ink))
             .put("savedInk", encodeInk(draft.savedInk))
+            // A destination without a surviving write grant would be a dead
+            // "Save" button after the next launch, so it is not recorded.
+            .put("destination", draft.destination?.takeIf(::canWrite)?.toString())
         val output = draftFile.startWrite()
         try {
             output.write(json.toString().toByteArray(Charsets.UTF_8))
@@ -98,8 +103,12 @@ internal class DocumentStore(context: Context) {
         val json = JSONObject(draftFile.openRead().bufferedReader().use { it.readText() })
         val source = File(directory, json.getString("source"))
         require(source.canonicalFile.parentFile == directory.canonicalFile && source.isFile) { "The saved PDF is missing." }
-        return Draft(source, json.getString("name"), json.getInt("page"), decodeInk(json.getJSONObject("ink")), decodeInk(json.getJSONObject("savedInk")))
+        return Draft(source, json.getString("name"), json.getInt("page"), decodeInk(json.getJSONObject("ink")), decodeInk(json.getJSONObject("savedInk")),
+            json.optString("destination").takeIf { it.isNotEmpty() }?.let(Uri::parse)?.takeIf(::canWrite))
     }
+
+    private fun canWrite(uri: Uri): Boolean =
+        resolver.persistedUriPermissions.any { it.uri == uri && it.isWritePermission }
 
     private fun encodeInk(ink: Map<Int, List<InkStroke>>): JSONObject = JSONObject().apply {
         for ((page, strokes) in ink) {

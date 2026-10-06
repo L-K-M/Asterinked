@@ -23,6 +23,7 @@ import android.view.KeyboardShortcutInfo
 import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -113,7 +114,15 @@ internal class MainActivity : ComponentActivity() {
         uri?.let(model::open)
     }
     private val savePdf = registerForActivityResult(ActivityResultContracts.CreateDocument(PDF_MIME)) { uri ->
-        uri?.let(model::export)
+        uri?.let {
+            // The grant dies with the process unless the provider lets us keep it;
+            // only a kept grant earns the draft its remembered destination.
+            try {
+                contentResolver.takePersistableUriPermission(it,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            } catch (_: SecurityException) { }
+            model.export(it)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -265,9 +274,19 @@ internal class MainActivity : ComponentActivity() {
         // With very large text on a phone the label would leave no room for the
         // file name; the action keeps its graphite weight as an icon.
         val crowded = resources.configuration.fontScale >= LARGE_FONT_SCALE && resources.configuration.screenWidthDp < SAVE_LABEL_MIN_WIDTH_DP
-        val saveCopy = { launchPicker { savePdf.launch(exportName()) } }
-        save = if (crowded) ui.primaryIconButton(R.drawable.ic_save, R.string.save_copy, saveCopy)
-            else ui.primaryButton(R.string.save_copy, ButtonSize.REGULAR, action = saveCopy)
+        // One tap writes back to the remembered file; a long press opens the
+        // picker to save a copy somewhere else.
+        val saveOrPick = {
+            model.state.value?.draft?.destination?.let(model::export)
+                ?: launchPicker { savePdf.launch(exportName()) }
+        }
+        save = if (crowded) ui.primaryIconButton(R.drawable.ic_save, R.string.save_copy, saveOrPick)
+            else ui.primaryButton(R.string.save_copy, ButtonSize.REGULAR, action = saveOrPick)
+        save.setOnLongClickListener {
+            if (!save.isEnabled) return@setOnLongClickListener false
+            launchPicker { savePdf.launch(exportName()) }
+            true
+        }
         bar.addView(save, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = ui.dp(Space.XS) })
         return bar
     }
@@ -546,6 +565,11 @@ internal class MainActivity : ComponentActivity() {
 
         open.isEnabled = !state.busy
         save.isEnabled = ready
+        // Once a destination is remembered the button writes back to it; until
+        // then every save goes through the picker.
+        val quickLabel = if (draft?.destination == null) R.string.save_copy else R.string.save
+        (save as? Button)?.setText(quickLabel)
+        save.contentDescription = getString(quickLabel)
         share.isEnabled = ready
         undo.isEnabled = ready && state.canUndo
         redo.isEnabled = ready && state.canRedo
