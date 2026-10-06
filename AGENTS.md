@@ -68,6 +68,11 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   to the v0.1.0 algorithm, and the live `InkStrokeBuilder` must produce the
   same segments for every prefix. Changing stroke geometry changes every
   exported PDF, so do it deliberately and update that reference.
+- Eraser contact uses continuous swept capsules against those rendered
+  segments, with local pressure widths for pens and a constant
+  `InkGeometry.strokeWidth`-sanitized width for highlighters. Raw samples,
+  nominal pen widths and sampled probes are not equivalent. Cache and hit
+  results retain stroke identity; `InkEraser.reset()` releases the gesture cache.
 
 ## UI conventions
 
