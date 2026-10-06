@@ -1,5 +1,6 @@
 package ch.lkmc.asterinked.document
 
+import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import org.junit.Assert.assertEquals
@@ -64,6 +65,24 @@ class DocumentStorePersistenceTest {
         assertEquals(savedInk.getValue(0).size, restored.savedInk.getValue(0).size)
         // Dirty state survives the round trip (page 2 tap not yet saved).
         assertEquals(true, restored.dirty)
+    }
+
+    @Test
+    fun saveAndRestore_keepsStrokeKindAndReadsOldDrafts() {
+        val store = DocumentStore(app)
+        val dir = File(app.filesDir, "documents").apply { mkdirs() }
+        val source = File(dir, "kinds.pdf").apply { writeBytes(byteArrayOf(9)) }
+        val pen = InkStroke(listOf(InkPoint(1f, 1f, 1f)), 1, 1f)
+        val marker = InkStroke(listOf(InkPoint(2f, 2f, 1f)), 2, 12f, InkKind.HIGHLIGHTER)
+        store.saveDraft(Draft(source, "k.pdf", ink = mapOf(0 to listOf(pen, marker))))
+
+        val json = File(dir, "draft.json").readText()
+        assertEquals("Pen strokes omit the key", 1, Regex("\"kind\"").findAll(json).count())
+        assertEquals(listOf(InkKind.PEN, InkKind.HIGHLIGHTER), store.restore()!!.ink.getValue(0).map { it.kind })
+
+        // A draft from a newer version with an unknown kind still restores its strokes.
+        File(dir, "draft.json").writeText(json.replace("\"highlighter\"", "\"calligraphy\""))
+        assertEquals(listOf(InkKind.PEN, InkKind.PEN), DocumentStore(app).restore()!!.ink.getValue(0).map { it.kind })
     }
 
     @Test

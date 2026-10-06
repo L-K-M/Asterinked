@@ -1,0 +1,6 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <!-- A chisel marker above the band it leaves. -->
+    <path android:fillColor="#FF000000" android:pathData="M8.58,9.18L14.88,2.88l4.24,4.24 -6.3,6.3zM7.9,9.86l4.24,4.24 -1.4,1.4 -2.1,0.35 -1.4,-1.4 0.35,-2.1zM6.4,15.3l1.4,1.4 -1.3,1.3H3.7z" />
+    <path android:fillColor="#FF000000" android:fillAlpha="0.45" android:pathData="M3,19.5h12v2.5H3z" />
+</vector>

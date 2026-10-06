@@ -1,5 +1,6 @@
 package ch.lkmc.asterinked.document
 
+import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
@@ -7,6 +8,7 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
+import com.tom_roush.pdfbox.pdmodel.graphics.blend.BlendMode
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import org.junit.Assert.assertEquals
@@ -206,6 +208,37 @@ class PdfEngineExportTest {
             val specs = engine.inspect(dest)
             assertEquals(rotation, specs[0].rotation)
         }
+    }
+
+    @Test
+    fun export_highlighterIsOneMultipliedPath() {
+        val source = sourcePdf()
+        val dest = tmp("highlight")
+        val marker = InkStroke(List(40) { InkPoint(80f + it * 3f, 90f, it / 40f) }, 0xFFFFE45C.toInt(), 12f, InkKind.HIGHLIGHTER)
+        engine.export(source, dest, mapOf(0 to listOf(marker)))
+
+        assertTrue(extractText(dest).contains("Asterinked original"))
+        val contents = contentsOf(dest, 0)
+        assertEquals("A highlight is stroked once, not segment by segment", 1, countOf(contents, "\nS"))
+        assertTrue("Uses an extended graphics state", contents.contains(" gs"))
+        PDDocument.load(dest).use { doc ->
+            val resources = doc.getPage(0).resources
+            val state = resources.extGStateNames.map { resources.getExtGState(it) }.single()
+            assertEquals(BlendMode.MULTIPLY, state.blendMode)
+        }
+    }
+
+    @Test
+    fun export_highlightsSitUnderPenInkWhateverTheirOrder() {
+        val source = sourcePdf()
+        val dest = tmp("highlight-order")
+        val pen = InkStroke(listOf(InkPoint(80f, 90f, 1f), InkPoint(200f, 90f, 1f)), 0xFFFF0000.toInt(), 2f)
+        val marker = InkStroke(listOf(InkPoint(140f, 60f, 1f), InkPoint(140f, 120f, 1f)), 0xFFFFE45C.toInt(), 12f, InkKind.HIGHLIGHTER)
+        engine.export(source, dest, mapOf(0 to listOf(pen, marker)))
+
+        // The editor draws highlights under all pen ink, so the export must too.
+        val contents = contentsOf(dest, 0)
+        assertTrue("Highlight drawn before pen ink", contents.indexOf(" gs") in 0 until contents.indexOf("1 0 0 RG"))
     }
 
     @Test

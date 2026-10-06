@@ -5,12 +5,19 @@ import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import ch.lkmc.asterinked.ink.InkGeometry
+import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkStroke
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
+import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
+import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
+import com.tom_roush.pdfbox.pdmodel.graphics.blend.BlendMode
+import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
 import com.tom_roush.pdfbox.util.Matrix
 import java.io.File
+import java.util.UUID
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -27,46 +34,68 @@ internal data class PageSpec(val left: Float, val bottom: Float, val width: Floa
     }
 }
 
+/** Not thread-safe: PdfRenderer and PDFBox handles are used from one worker only. */
 internal class PdfEngine(private val scratchDirectory: File) {
+    private var renderer: OpenRenderer? = null
+
+    // Encrypted PDFs that open without a password (owner restrictions only) are
+    // accepted; a PDF that needs a password fails in load().
     fun inspect(source: File): List<PageSpec> = load(source).use { document ->
-        require(!document.isEncrypted) { "Password-protected PDFs are not supported yet." }
-        require(document.currentAccessPermission.canModify()) { "This PDF does not allow changes." }
-        require(document.numberOfPages > 0) { "This PDF has no pages." }
+        if (!document.currentAccessPermission.canModify()) throw DocumentException(DocumentProblem.EDITING_NOT_ALLOWED)
+        if (document.numberOfPages == 0) throw DocumentException(DocumentProblem.NO_PAGES)
         document.pages.map { page ->
             val crop = page.cropBox
-            require(crop.width.isFinite() && crop.height.isFinite() && crop.width > 0 && crop.height > 0) {
-                "This PDF has an invalid page size."
+            if (!crop.width.isFinite() || !crop.height.isFinite() || crop.width <= 0 || crop.height <= 0) {
+                throw DocumentException(DocumentProblem.NOT_A_PDF)
             }
             PageSpec(crop.lowerLeftX, crop.lowerLeftY, crop.width, crop.height, page.rotation)
         }
     }
 
-    fun render(source: File, pageIndex: Int): Bitmap {
+    fun render(source: File, pageIndex: Int): Bitmap = rendererFor(source).openPage(pageIndex).use { page ->
+        val scale = PREVIEW_LONG_EDGE.toFloat() / max(page.width, page.height)
+        val bitmap = Bitmap.createBitmap(
+            (page.width * scale).roundToInt().coerceAtLeast(1),
+            (page.height * scale).roundToInt().coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888,
+        )
+        try {
+            bitmap.eraseColor(Color.WHITE)
+            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            // Fit zoom on a phone shrinks the preview; mipmaps keep thin text from shimmering.
+            bitmap.setHasMipMap(true)
+            bitmap
+        } catch (error: Exception) {
+            bitmap.recycle()
+            throw error
+        }
+    }
+
+    /** Releases the open renderer; the next render reopens it. */
+    fun close() {
+        renderer?.close()
+        renderer = null
+    }
+
+    // Opening a PdfRenderer parses the whole cross-reference table, so keep one
+    // per document instead of reopening it for every page.
+    private fun rendererFor(source: File): PdfRenderer {
+        renderer?.let { if (it.source == source) return it.pdf }
+        close()
         val descriptor = ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY)
-        val renderer = try {
+        val pdf = try {
             PdfRenderer(descriptor)
         } catch (error: Exception) {
             descriptor.close()
             throw error
         }
-        return renderer.use {
-            it.openPage(pageIndex).use { page ->
-                val scale = PREVIEW_LONG_EDGE.toFloat() / max(page.width, page.height)
-                val bitmap = Bitmap.createBitmap(
-                    (page.width * scale).roundToInt().coerceAtLeast(1),
-                    (page.height * scale).roundToInt().coerceAtLeast(1),
-                    Bitmap.Config.ARGB_8888,
-                )
-                try {
-                    bitmap.eraseColor(Color.WHITE)
-                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    bitmap
-                } catch (error: Exception) {
-                    bitmap.recycle()
-                    throw error
-                }
-            }
-        }
+        renderer = OpenRenderer(source, pdf)
+        return pdf
+    }
+
+    private class OpenRenderer(val source: File, val pdf: PdfRenderer) {
+        // PdfRenderer.close() also closes the descriptor it was given.
+        fun close() = pdf.close()
     }
 
     fun export(source: File, destination: File, ink: Map<Int, List<InkStroke>>) {
@@ -84,9 +113,15 @@ internal class PdfEngine(private val scratchDirectory: File) {
                     stream.clip()
                     stream.setLineCapStyle(ROUND_CAP)
                     stream.setLineJoinStyle(ROUND_CAP)
-                    for (stroke in strokes) {
+                    // Highlights go under all pen ink, as on screen, where multiply must
+                    // blend with the page rather than with the cached pen layer.
+                    for (stroke in strokes.sortedBy { it.kind != InkKind.HIGHLIGHTER }) {
                         stream.setStrokingColor(Color.red(stroke.color), Color.green(stroke.color), Color.blue(stroke.color))
                         stream.setNonStrokingColor(Color.red(stroke.color), Color.green(stroke.color), Color.blue(stroke.color))
+                        if (stroke.kind == InkKind.HIGHLIGHTER) {
+                            highlight(stream, stroke)
+                            continue
+                        }
                         for (segment in InkGeometry.segments(stroke)) {
                             val start = segment.start
                             val end = segment.end
@@ -103,13 +138,48 @@ internal class PdfEngine(private val scratchDirectory: File) {
                     stream.restoreGraphicsState()
                 }
             }
+            if (document.isEncrypted) keepProtection(document)
             document.save(destination)
         }
     }
 
-    private fun load(source: File): PDDocument = PDDocument.load(
-        source, MemoryUsageSetting.setupMixed(PDF_MEMORY_BYTES).setTempDir(scratchDirectory),
-    )
+    private fun load(source: File): PDDocument = try {
+        PDDocument.load(source, MemoryUsageSetting.setupMixed(PDF_MEMORY_BYTES).setTempDir(scratchDirectory))
+    } catch (error: InvalidPasswordException) {
+        throw DocumentException(DocumentProblem.PASSWORD_PROTECTED, error)
+    }
+
+    // PDFBox refuses to save a decrypted document under its old encryption
+    // dictionary. Re-encrypt the copy with the source's permissions and an empty
+    // user password (the source opened without one), so owner restrictions such
+    // as "no printing" carry over instead of being silently stripped. The owner
+    // password is random: the original one is unknown to the app. 128-bit copies
+    // use AES (PDFBox 2 would pick RC4), so an AES source is never downgraded.
+    private fun keepProtection(document: PDDocument) {
+        val permissions = AccessPermission(document.currentAccessPermission.permissionBytes)
+        val policy = StandardProtectionPolicy(UUID.randomUUID().toString(), "", permissions)
+        policy.encryptionKeyLength = supportedKeyLength(document.encryption.length)
+        policy.isPreferAES = true
+        document.protect(policy)
+    }
+
+    private fun supportedKeyLength(bits: Int): Int = SUPPORTED_KEY_LENGTHS.firstOrNull { bits <= it } ?: SUPPORTED_KEY_LENGTHS.last()
+
+    // One constant-width path multiplied onto the page, as on screen: text under it
+    // stays dark, and the stroke never darkens where its own segments overlap.
+    private fun highlight(stream: PDPageContentStream, stroke: InkStroke) {
+        val line = InkGeometry.centerline(stroke)
+        if (line.isEmpty()) return
+        stream.saveGraphicsState()
+        stream.setGraphicsStateParameters(PDExtendedGraphicsState().apply { blendMode = BlendMode.MULTIPLY })
+        stream.setLineWidth(stroke.width)
+        stream.moveTo(line.first().x, line.first().y)
+        // A tap still leaves a round mark: a zero-length line with round caps.
+        if (line.size == 1) stream.lineTo(line.first().x, line.first().y)
+        for (point in line.drop(1)) stream.lineTo(point.x, point.y)
+        stream.stroke()
+        stream.restoreGraphicsState()
+    }
 
     private fun drawDot(stream: PDPageContentStream, x: Float, y: Float, radius: Float) {
         val handle = radius * CIRCLE_BEZIER
@@ -126,5 +196,6 @@ internal class PdfEngine(private val scratchDirectory: File) {
         const val PDF_MEMORY_BYTES = 32L * 1024 * 1024
         const val ROUND_CAP = 1
         const val CIRCLE_BEZIER = 0.55228475f
+        val SUPPORTED_KEY_LENGTHS = intArrayOf(40, 128, 256)
     }
 }
