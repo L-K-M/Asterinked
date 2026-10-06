@@ -73,6 +73,12 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   `InkGeometry.strokeWidth`-sanitized width for highlighters. Raw samples,
   nominal pen widths and sampled probes are not equivalent. Cache and hit
   results retain stroke identity; `InkEraser.reset()` releases the gesture cache.
+- `InkPageView` supplies `InkGeometryCache.cachedSegments` to reuse immutable
+  renderer geometry on first erase contact. The lookup never computes or
+  readmits absent strokes; `update()` drops removed/off-page entries. Eraser
+  reset releases gesture metadata and segment references, leaving renderer
+  entries intact. Highlighter widths override bounds/contact calculations
+  without copying or mutating shared segments; standalone erasers still smooth.
 
 ## UI conventions
 

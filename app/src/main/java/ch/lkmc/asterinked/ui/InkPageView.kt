@@ -69,7 +69,7 @@ internal class InkPageView(context: Context) : View(context) {
     private val inkLayer = RenderNode("committedInkLayer").apply { setUseCompositingLayer(true, null) }
     private val recordedLayerRect = RectF()
     private var inkNodeStale = true
-    private val eraser = InkEraser()
+    private val eraser = InkEraser(geometryCache::cachedSegments)
     private val erasing: MutableSet<InkStroke> = Collections.newSetFromMap(IdentityHashMap())
     private val eraserRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = Color.argb(160, 60, 70, 80) }
     private var eraserAt: InkPoint? = null

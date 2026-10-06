@@ -1,6 +1,7 @@
 package ch.lkmc.asterinked.ink
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -172,6 +173,32 @@ class InkEraserTest {
         eraser.reset()
         assertSame(stroke, eraser.hits(listOf(stroke), start, end, radius = 2f).single())
         assertTrue("Reset releases cached geometry", reads > 0)
+    }
+
+    @Test fun sharedAndSeededGeometrySurvivesResetWithoutChangingHighlightWidths() {
+        val computed = mutableListOf<InkStroke>()
+        val cache = InkGeometryCache { computed.add(it); InkGeometry.segments(it) }
+        val penSegments = cache.update(listOf(line)).single()
+        val highlight = line.copy(points = line.points.map { it.copy(pressure = 0f) }, width = 12f, kind = InkKind.HIGHLIGHTER)
+        val highlightSegments = InkGeometry.segments(highlight)
+        cache.seed(highlight, highlightSegments)
+        val eraser = InkEraser(cache::cachedSegments)
+
+        repeat(2) {
+            assertEquals(listOf(highlight), eraser.hits(listOf(line, highlight), null, InkPoint(50f, 6f, 1f), radius = 1f))
+            assertSame(penSegments, cache.cachedSegments(line))
+            assertSame(highlightSegments, cache.cachedSegments(highlight))
+            assertTrue("Constant marker width must not overwrite shared pressure widths", highlightSegments.all { it.width == 0.4f })
+            eraser.reset()
+        }
+        assertEquals(listOf(line), computed)
+    }
+
+    @Test fun aProviderMissUsesStandaloneGeometryWithoutRepopulatingTheRendererCache() {
+        val cache = InkGeometryCache { error("A read-only lookup must not compute") }
+        val eraser = InkEraser(cache::cachedSegments)
+        assertSame(line, eraser.hits(listOf(line), null, InkPoint(50f, 0f, 1f), radius = 1f).single())
+        assertNull(cache.cachedSegments(line))
     }
 
     private fun corner() = InkStroke(listOf(InkPoint(0f, 0f, 1f), InkPoint(100f, 0f, 1f), InkPoint(100f, 100f, 1f)), 0, 2f)
