@@ -166,8 +166,10 @@ internal class MainActivity : ComponentActivity() {
             KeyEvent.KEYCODE_O -> open
             else -> return super.onKeyShortcut(keyCode, event)
         }
-        if (target.isShown && target.isEnabled) target.performClick()
-        return true
+        // A key that did nothing must stay available to whoever else would take
+        // it — a focused text field's own Ctrl+Z, for one.
+        if (!target.isShown || !target.isEnabled) return super.onKeyShortcut(keyCode, event)
+        return target.performClick()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -176,8 +178,8 @@ internal class MainActivity : ComponentActivity() {
             KeyEvent.KEYCODE_PAGE_DOWN -> next
             else -> return super.onKeyDown(keyCode, event)
         }
-        if (target.isShown && target.isEnabled) target.performClick()
-        return true
+        if (!target.isShown || !target.isEnabled) return super.onKeyDown(keyCode, event)
+        return target.performClick()
     }
 
     override fun onProvideKeyboardShortcuts(data: MutableList<KeyboardShortcutGroup>, menu: Menu?, deviceId: Int) {
@@ -304,8 +306,8 @@ internal class MainActivity : ComponentActivity() {
     // Measured controls and available width choose the rows, so narrow windows
     // and system insets never squeeze or clip the touch targets.
     private fun buildToolBar(): View {
-        undo = ui.iconButton(R.drawable.ic_undo, R.string.undo) { model.undo() }
-        redo = ui.iconButton(R.drawable.ic_redo, R.string.redo) { model.redo() }
+        undo = ui.iconButton(R.drawable.ic_undo, R.string.undo) { model.undo(); tick() }
+        redo = ui.iconButton(R.drawable.ic_redo, R.string.redo) { model.redo(); tick() }
         tools = SegmentedControl(this)
         for (choice in ToolChoice.entries) {
             tools.addView(ui.segment(choice.icon, choice.chosenIcon, choice.label, choice.ordinal) { selectTool(choice) }, square())
@@ -532,6 +534,13 @@ internal class MainActivity : ComponentActivity() {
 
     private fun hint(message: Int) = notice.show(getString(message), Tone.INFO)
 
+    // Gestures do the navigating; tell a new user once, then get out of the way.
+    private fun maybeHintGestures() {
+        if (settings.getBoolean(GESTURE_HINT_KEY, false)) return
+        settings.edit { putBoolean(GESTURE_HINT_KEY, true) }
+        hint(if (mode == InputMode.PEN) R.string.input_hint else R.string.touch_hint)
+    }
+
     private fun show(state: EditorState) {
         val draft = state.draft
         val ready = draft != null && !state.busy
@@ -540,6 +549,7 @@ internal class MainActivity : ComponentActivity() {
             state.busy -> Screen.LOADING
             else -> Screen.WELCOME
         })
+        if (ready) maybeHintGestures()
         title.text = draft?.name.orEmpty()
         showStatus(state.statusText())
         progress.visibility = if (draft != null && state.busy) View.VISIBLE else View.GONE
@@ -655,7 +665,14 @@ internal class MainActivity : ComponentActivity() {
     }
 
     private fun turnPage(delta: Int) {
-        model.state.value?.draft?.let { model.goToPage(it.page + delta) }
+        val state = model.state.value ?: return
+        val draft = state.draft ?: return
+        val next = draft.page + delta
+        // Only a turn that will happen earns the tick; the pill buttons are
+        // disabled at the ends, but swipes and hardware keys come through here.
+        if (state.busy || next !in state.pages.indices) return
+        tick()
+        model.goToPage(next)
     }
 
     private fun askForPage() {
@@ -729,6 +746,7 @@ internal class MainActivity : ComponentActivity() {
         const val WIDTH_KEY = "penWidth"
         const val MODE_KEY = "inputMode"
         const val KIND_KEY = "inkKind"
+        const val GESTURE_HINT_KEY = "hintedGestures"
         const val TOOL_KEY = "inkTool"
         const val INCOMING_KEY = "incomingPdf"
         // Matches android:authorities="${'$'}{applicationId}.files" in the manifest.
