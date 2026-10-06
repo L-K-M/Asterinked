@@ -400,8 +400,9 @@ horizontal swipe. Cosmetic.
   A side rail for the tools, keyed on height below ~480dp, or fit-width (V9)
   would give writing room back. See also N34 for the cheaper half.
 - **U8. Notice actions *(in flight: #34).*** `NoticeBar` gains one action
-  slot held ~10 s. Still open: apply it to "Your latest notes couldn't be
-  stored" (offer Save copy) and failed saves (Try again).
+  slot held ~10 s, used for Open on save and — via `MessageAction.SAVE_COPY`
+  on draft-write failures — Save copy when notes could not be stored.
+  Still open: Try again on failed saves.
 - **N32. Page-aware TalkBack description.** `InkPageView`'s content
   description never says which page is showing. Set
   `contentDescription = "Page N of M"` in `show()`; the string must move to
