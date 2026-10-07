@@ -1,6 +1,12 @@
 package ch.lkmc.asterinked.document
 
 import android.net.Uri
+import java.io.ByteArrayOutputStream
+import org.junit.Assert.assertSame
+import com.tom_roush.pdfbox.pdmodel.PDPage
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import android.util.LruCache
+import android.graphics.Bitmap
 import android.provider.OpenableColumns
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
@@ -62,6 +68,27 @@ class ReopenSamePdfTest {
         assertEquals(OpenResult.AlreadyOpen(current), DocumentService(app).open(uri, current))
     }
 
+    // Opening another PDF keeps the current pages cached until it is adopted:
+    // a "keep editing" answer must not cost re-rendering what was on screen.
+    @Test fun openingAnotherPdfKeepsTheCurrentPreviewsCached() {
+        val store = DocumentStore(app)
+        val current = savedDraft(store)
+        val service = DocumentService(app)
+        @Suppress("UNCHECKED_CAST")
+        val previews = DocumentService::class.java.getDeclaredField("previews").apply { isAccessible = true }.get(service) as LruCache<String, Bitmap>
+        val preview = Bitmap.createBitmap(4, 6, Bitmap.Config.ARGB_8888)
+        previews.put("${current.source.name}:${current.page}", preview)
+        val other = ByteArrayOutputStream().also { bytes ->
+            PDDocument().use { document -> document.addPage(PDPage()); document.save(bytes) }
+        }.toByteArray()
+        shadowOf(app.contentResolver).registerInputStream(uri, ByteArrayInputStream(other))
+
+        // PdfRenderer does not run here, so the import stops at its preview.
+        runCatching { service.open(uri, current) }
+
+        assertSame(preview, service.cachedPreview(current))
+    }
+
     @Test fun differentBytesAreOpenedAsAnotherPdf() {
         val store = DocumentStore(app)
         val current = savedDraft(store)
@@ -85,6 +112,21 @@ class ReopenSamePdfTest {
 
         assertEquals(opened.draft, store.restore())
         assertEquals("The replaced PDF is pruned", listOf("other.pdf"), pdfNames())
+    }
+
+    // A failed write leaves the current draft in place and no stray copy behind.
+    @Test fun aFailedAdoptionDropsTheNewCopyAndKeepsTheDraft() {
+        val store = DocumentStore(app)
+        val current = savedDraft(store)
+        val opened = OpenDocument(Draft(file("other.pdf", OTHER), "Other.pdf"), listOf(PageSpec(0f, 0f, 400f, 600f, 0)), null)
+        // The staging file for the next draft cannot be written.
+        File(directory, "draft.json.new").mkdir()
+
+        val error = assertThrows(DocumentException::class.java) { DocumentService(app).adopt(opened) }
+
+        assertEquals(DocumentProblem.DRAFT_NOT_SAVED, error.problem)
+        assertFalse("The new copy is gone", opened.draft.source.exists())
+        assertEquals(current, store.restore())
     }
 
     @Test fun discardingAnOpenedPdfDropsOnlyItsCopy() {

@@ -86,7 +86,6 @@ internal class DocumentService(context: Context) : DocumentOperations {
             }
             val document = during(DocumentProblem.NOT_A_PDF) {
                 val pages = engine.inspect(draft.source)
-                previews.evictAll()
                 OpenDocument(draft, pages, renderPage(draft))
             }
             // Not yet the draft: adopt() makes it so, once nothing would be lost.
@@ -105,6 +104,9 @@ internal class DocumentService(context: Context) : DocumentOperations {
             document.draft.source.delete()
             throw error
         }
+        // The replaced document's pages are no longer needed; its own stay.
+        val own = "${document.draft.source.name}:"
+        previews.snapshot().keys.filterNot { it.startsWith(own) }.forEach(previews::remove)
     }
 
     override fun discard(document: OpenDocument) {
