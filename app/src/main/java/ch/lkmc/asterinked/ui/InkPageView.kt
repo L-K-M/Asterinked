@@ -364,7 +364,8 @@ internal class InkPageView(context: Context) : View(context) {
         val page = spec ?: return
         val px = pageRect.width() / page.displayWidth
         val reach = (if (hoverEraseMode()) eraserRadius() else maxOf(inkWidth / 2f, hoverMinRadius())) * px + density + 1
-        // Floor/ceil, not truncation: a sliver under a pixel still leaves a trail.
+        // Round outward: Rect right/bottom are exclusive, so ceil retains the
+        // boundary pixel; floor covers the leading edge on left/top.
         hoverDirty.set(floor(hoverX - reach).toInt(), floor(hoverY - reach).toInt(),
             ceil(hoverX + reach).toInt(), ceil(hoverY + reach).toInt())
         invalidate(hoverDirty)
