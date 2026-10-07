@@ -61,6 +61,7 @@ dependencies {
     implementation(libs.activity)
     implementation(libs.lifecycle)
     implementation(libs.livedata)
+    implementation(libs.savedstate)
     implementation(libs.pdfbox)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

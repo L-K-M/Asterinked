@@ -49,6 +49,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.core.view.updatePaddingRelative
 import ch.lkmc.asterinked.R
+import ch.lkmc.asterinked.document.OpenDocument
 import ch.lkmc.asterinked.ink.InkKind
 import java.io.File
 import java.util.EnumMap
@@ -128,6 +129,8 @@ internal class MainActivity : ComponentActivity() {
     // is compared with the restored draft.
     private var incoming: Uri? = null
     private var confirming: AlertDialog? = null
+    // The waiting PDF the question on screen is about.
+    private var confirmingFor: OpenDocument? = null
     private var pageDialog: AlertDialog? = null
     private var lastDestination: Uri? = null
 
@@ -780,10 +783,15 @@ internal class MainActivity : ComponentActivity() {
         }
         // Only into an empty notice bar, so no message replaces it unseen; a
         // dismissed notice renders again and offers it then.
-        if (ready && notice.shown == null) maybeHintGestures()
+        if (ready && notice.shown == null && state.replacing == null) maybeHintGestures()
         // The model holds a replacement until the user decides, so a rotation
         // during the question asks again.
-        if (state.replacing != null && !state.busy && confirming == null) confirmReplacing()
+        // A question about a PDF that no longer waits goes; a newer one asks afresh.
+        if (confirming != null && confirmingFor !== state.replacing) {
+            confirming?.dismiss()
+            confirming = null
+        }
+        state.replacing?.takeIf { !state.busy && confirming == null }?.let(::confirmReplacing)
         // A PDF from another app opens once the editor is idle; one that arrives
         // while a replacement waits for its answer opens after it.
         val uri = incoming
@@ -991,14 +999,16 @@ internal class MainActivity : ComponentActivity() {
         launchPicker { openPdf.launch(arrayOf(PDF_MIME)) }
     }
 
-    private fun confirmReplacing() {
+    private fun confirmReplacing(document: OpenDocument) {
+        confirmingFor = document
         // Opening another PDF discards the unexported notes, so the confirm is red.
         confirming = AlertDialog.Builder(this, R.style.AlertDialogTheme_Destructive)
             .setTitle(R.string.open_another).setMessage(R.string.unsaved_prompt)
             .setNegativeButton(R.string.keep_editing) { _, _ -> model.keepDraft() }
             .setPositiveButton(R.string.open_anyway) { _, _ -> model.replaceDraft() }
             .setOnCancelListener { model.keepDraft() }
-            .setOnDismissListener { confirming = null }
+            // Delivered later: a question replaced meanwhile must not clear its successor.
+            .setOnDismissListener { if (confirming === it) confirming = null }
             .show()
     }
 

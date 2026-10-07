@@ -164,7 +164,9 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   shows again.
 - Opening never replaces a draft by itself: `DocumentOperations.open` leaves a
   different PDF for `adopt` or `discard`, and the model asks first when the
-  draft has unexported notes.
+  draft has unexported notes. A newer open replaces the PDF waiting for that
+  answer; the waiting PDF's address survives process death in the model's
+  `SavedStateHandle`, and clearing the model discards its copy.
 - The page-number button opens page and note navigation. Note destinations
   come from current draft ink, skip empty pages and do not wrap at the ends.
   Reopen the dialog to refresh destinations; document replacement dismisses it.

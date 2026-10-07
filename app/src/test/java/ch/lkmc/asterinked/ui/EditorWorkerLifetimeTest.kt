@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Looper
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import ch.lkmc.asterinked.document.DocumentService
 import ch.lkmc.asterinked.document.DocumentStore
@@ -147,7 +148,7 @@ class EditorWorkerLifetimeTest {
     private fun editor(name: String, prefetch: Prefetch = Prefetch.NORMAL, closing: Closing = Closing.NORMAL): Session {
         val documents = StoredDocuments(app, directory, name, events, prefetch, closing)
         ShadowDocuments.next.add(documents)
-        val model = EditorViewModel(app)
+        val model = EditorViewModel(app, SavedStateHandle())
         val owner = ViewModelStore().apply { put("editor", model) }
         return Session(model, owner, documents).also { sessions += it }
     }
@@ -198,6 +199,7 @@ class EditorWorkerLifetimeTest {
         @Implementation fun restore() = documents.restore()
         @Implementation fun open(uri: Uri, current: Draft?): OpenResult = OpenResult.Opened(documents.open())
         @Implementation fun adopt(document: OpenDocument) = documents.adopt(document)
+        @Implementation fun discard(document: OpenDocument) = documents.discard(document)
         @Implementation fun render(draft: Draft) = documents.render(draft)
         @Implementation fun cachedPreview(draft: Draft) = documents.cachedPreview(draft)
         @Implementation fun saveDraft(draft: Draft) = documents.saveDraft(draft)
@@ -248,6 +250,11 @@ class EditorWorkerLifetimeTest {
         fun adopt(document: OpenDocument) {
             check(closed.count != 0L)
             store.saveDraft(document.draft)
+        }
+
+        fun discard(document: OpenDocument) {
+            check(closed.count != 0L)
+            document.draft.source.delete()
         }
 
         fun render(draft: Draft): Bitmap {

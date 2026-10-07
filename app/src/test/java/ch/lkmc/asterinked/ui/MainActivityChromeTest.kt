@@ -370,6 +370,8 @@ class MainActivityChromeTest {
             settle(activity)
 
             assertNull("Only a different PDF asks, once it is known", ShadowDialog.getLatestDialog()?.takeIf { it.isShowing })
+            // No provider serves the address here, so the attempted open reports it.
+            assertEquals(app.getString(R.string.error_source_unreadable), notice(activity.window.decorView).shown?.toString())
         }
     }
 
@@ -386,6 +388,37 @@ class MainActivityChromeTest {
             settle(activity)
 
             assertNull(ViewModelProvider(activity)[EditorViewModel::class.java].state.value!!.replacing)
+        }
+    }
+
+    // The one-time gesture hint is not spent under the question's dialog.
+    @Test fun theGestureHintWaitsForTheReplaceQuestion() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            val other = OpenDocument(Draft(File("other.pdf"), "Other.pdf"), emptyList(), null)
+            EditorScreens.publish(activity, EditorScreens.editing().copy(replacing = other))
+            assertNull(notice(root).shown)
+
+            (ShadowDialog.getLatestDialog() as AlertDialog).getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+            settle(activity)
+
+            assertEquals(app.getString(R.string.touch_hint), notice(root).shown?.toString())
+        }
+    }
+
+    // A question about a PDF that is no longer waiting must not stay up.
+    @Test fun aNewReplacementReplacesTheQuestion() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing().copy(replacing = OpenDocument(Draft(File("a.pdf"), "A.pdf"), emptyList(), null)))
+            val first = ShadowDialog.getLatestDialog()
+
+            EditorScreens.publish(activity, EditorScreens.editing().copy(replacing = OpenDocument(Draft(File("b.pdf"), "B.pdf"), emptyList(), null)))
+
+            assertFalse(first.isShowing)
+            assertTrue(ShadowDialog.getLatestDialog().isShowing)
         }
     }
 

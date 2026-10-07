@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.SavedStateHandle
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.document.DocumentProblem
 import ch.lkmc.asterinked.document.DocumentOperations
@@ -55,11 +56,13 @@ internal data class EditorMessage(val text: String, val tone: Tone, val action: 
 internal class EditorViewModel private constructor(
     application: Application,
     private val session: DocumentSession,
+    // Survives the process: the address of a PDF waiting for the replace question.
+    private val saved: SavedStateHandle,
 ) : AndroidViewModel(application) {
-    constructor(application: Application) : this(application, DocumentSession.process(application))
+    constructor(application: Application, saved: SavedStateHandle) : this(application, DocumentSession.process(application), saved)
 
-    internal constructor(application: Application, service: DocumentOperations, worker: ExecutorService) :
-        this(application, DocumentSession.owned(service, worker))
+    internal constructor(application: Application, service: DocumentOperations, worker: ExecutorService, saved: SavedStateHandle = SavedStateHandle()) :
+        this(application, DocumentSession.owned(service, worker), saved)
 
     private val service = session.operations
     private val worker = session.worker
@@ -80,7 +83,10 @@ internal class EditorViewModel private constructor(
             restoring = false
             val pending = pendingPickerResult
             pendingPickerResult = null
-            pending?.invoke()
+            // A PDF that waited for the replace question when the process ended
+            // is opened again, unless the user has since picked something else.
+            val waiting = saved.remove<Uri>(WAITING_KEY)
+            (pending ?: waiting?.let { { open(it) } })?.invoke()
         }) { document ->
             if (document == null) publish(EditorState(busy = false)) else show(document)
         }
@@ -92,6 +98,8 @@ internal class EditorViewModel private constructor(
             return
         }
         if (current.busy) return
+        // The newer request wins over a PDF still waiting for an answer.
+        dropReplacement()
         // Read on the main thread; the worker only gets this snapshot.
         val shown = current.draft
         // Unexported notes give way only to a different PDF, and only once the
@@ -101,7 +109,7 @@ internal class EditorViewModel private constructor(
             service.open(uri, shown).also { if (it is OpenResult.Opened && !ask) service.adopt(it.document) }
         }) { result ->
             when (result) {
-                is OpenResult.Opened -> if (ask) publish(current.copy(busy = false, replacing = result.document)) else replaceWith(result.document)
+                is OpenResult.Opened -> if (ask) ask(uri, result.document) else replaceWith(result.document)
                 is OpenResult.AlreadyOpen -> keep(result.draft)
             }
         }
@@ -113,13 +121,22 @@ internal class EditorViewModel private constructor(
         if (current.busy) return
         // Answered: the question goes now, not after the write, so a failure
         // reports its error without asking again.
+        saved.remove<Uri>(WAITING_KEY)
         publish(current.copy(replacing = null))
         perform({ service.adopt(pending) }) { replaceWith(pending) }
     }
 
     /** Keeps the draft and drops the PDF that was waiting to replace it. */
-    fun keepDraft() {
+    fun keepDraft() = dropReplacement()
+
+    private fun ask(uri: Uri, document: OpenDocument) {
+        saved[WAITING_KEY] = uri
+        publish(current.copy(busy = false, replacing = document))
+    }
+
+    private fun dropReplacement() {
         val pending = current.replacing ?: return
+        saved.remove<Uri>(WAITING_KEY)
         publish(current.copy(replacing = null))
         worker.execute { service.discard(pending) }
     }
@@ -358,12 +375,15 @@ internal class EditorViewModel private constructor(
     override fun onCleared() {
         cleared = true
         visiblePage.set(NO_PAGE)
+        // Leaving without an answer: the imported copy goes before the close.
+        current.replacing?.let { pending -> worker.execute { service.discard(pending) } }
         session.close()
     }
 
     private companion object {
         const val TAG = "Asterinked"
         const val NO_PAGE = -1
+        const val WAITING_KEY = "waitingPdf"
     }
 }
 
