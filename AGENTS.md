@@ -59,6 +59,9 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   marker. It only works after `testDebugUnitTest` ran in the same checkout.
 - The debug build carries `applicationIdSuffix ".debug"` (and `-debug` on
   versionName) so it can sit next to a release install on the same device.
+- `allowBackup=false` disables cloud backup; device transfer varies by OEM.
+  `data_extraction_rules.xml` allows only `files/documents` and `pen.xml`
+  for devices that transfer anyway. Do not promise universal migration.
 - `InkPageView` replays committed ink from cached `RenderNode`s only on
   hardware canvases. Robolectric draws in software, so JVM tests exercise the
   direct-draw fallback, and pixel assertions need `@GraphicsMode(NATIVE)`

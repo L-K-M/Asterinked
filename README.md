@@ -32,7 +32,8 @@ choose it as an export destination through a document provider.
 
 The current PDF and completed strokes are stored privately on the device and
 restored after reopening. Opening another PDF replaces that draft; export notes
-you want to keep first. Drafts are not cloud-synced or included in Android backups.
+you want to keep first. Cloud backups are disabled. Some Android devices may
+transfer the draft and pen settings to a new phone.
 
 ## Build
 
