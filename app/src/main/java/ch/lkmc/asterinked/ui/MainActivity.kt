@@ -132,7 +132,8 @@ internal class MainActivity : ComponentActivity() {
     private var lastDestination: Uri? = null
 
     // A grant taken for a file whose export then failed is not tracked by
-    // lastDestination; hold it until the outcome is known so it can be given back.
+    // lastDestination; hold it until the outcome is known so it can be given
+    // back. It survives recreation, since the export may end after a rotation.
     private var unclaimedGrant: Uri? = null
     private var pillHidden = false
     private var shownPageKey: String? = null
@@ -182,6 +183,7 @@ internal class MainActivity : ComponentActivity() {
         tool = savedInstanceState?.getString(TOOL_KEY)?.let { InkTool.valueOf(it) } ?: InkTool.PEN
         fingerHintShown = savedInstanceState?.getBoolean(FINGER_HINT_KEY) ?: false
         incoming = savedInstanceState?.let { BundleCompat.getParcelable(it, INCOMING_KEY, Uri::class.java) }
+        unclaimedGrant = savedInstanceState?.let { BundleCompat.getParcelable(it, UNCLAIMED_GRANT_KEY, Uri::class.java) }
         buildLayout()
         configurePen()
         if (savedInstanceState == null) receive(intent)
@@ -214,6 +216,7 @@ internal class MainActivity : ComponentActivity() {
         outState.putString(TOOL_KEY, tool.name)
         outState.putBoolean(FINGER_HINT_KEY, fingerHintShown)
         incoming?.let { outState.putParcelable(INCOMING_KEY, it) }
+        unclaimedGrant?.let { outState.putParcelable(UNCLAIMED_GRANT_KEY, it) }
         super.onSaveInstanceState(outState)
     }
 
@@ -1047,6 +1050,7 @@ internal class MainActivity : ComponentActivity() {
         const val HINT_SHOWN_KEY_PREFIX = "hintShown_"
         const val TOOL_HINT_SHOWINGS = 2
         const val INCOMING_KEY = "incomingPdf"
+        const val UNCLAIMED_GRANT_KEY = "unclaimedGrant"
         // Matches android:authorities="${'$'}{applicationId}.files" in the manifest.
         const val FILE_AUTHORITY_SUFFIX = ".files"
         const val DEFAULT_EXPORT_NAME = "Document-annotated.pdf"

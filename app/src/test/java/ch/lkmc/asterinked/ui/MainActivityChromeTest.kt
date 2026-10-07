@@ -1,10 +1,13 @@
 package ch.lkmc.asterinked.ui
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.graphics.Canvas
 import android.hardware.input.InputManager
+import android.os.Bundle
 import android.os.Looper
 import android.os.SystemClock
 import android.view.InputDevice
@@ -335,6 +338,32 @@ class MainActivityChromeTest {
 
     // Fading out takes a moment; a tap meanwhile must not reach the pill's
     // buttons, as it would not once the pill is gone.
+    // A save picked just before a rotation that then fails must still give
+    // back the grant taken for the picked file; grants are finite.
+    @Test fun aGrantPickedBeforeARotationIsGivenBackWhenTheSaveFails() {
+        val picked = Uri.parse("content://test/picked.pdf")
+        val state = Bundle()
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing())
+            descendants(root).filterIsInstance<Button>().single { it.text == app.getString(R.string.save_copy) }.performClick()
+            val request = shadowOf(activity).nextStartedActivityForResult
+            // The save is still running when the activity is recreated.
+            EditorScreens.publish(activity, EditorScreens.editing().copy(busy = true))
+            shadowOf(activity).receiveResult(request.intent, Activity.RESULT_OK, Intent().setData(picked))
+            assertTrue(app.contentResolver.persistedUriPermissions.any { it.uri == picked })
+            controller.saveInstanceState(state)
+        }
+
+        Robolectric.buildActivity(MainActivity::class.java).setup(state).use { controller ->
+            // The save failed: the draft has no destination.
+            EditorScreens.publish(controller.get(), EditorScreens.editing())
+
+            assertTrue("The grant is given back", app.contentResolver.persistedUriPermissions.none { it.uri == picked })
+        }
+    }
+
     @Test fun aFadingPillLetsANewTouchThrough() {
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
             val activity = controller.get()
