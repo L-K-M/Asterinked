@@ -6,8 +6,10 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -74,6 +76,37 @@ class DocumentServiceRestoreTest {
         assertNull("The page renders later, over a blank page", restored!!.preview)
         assertEquals("The ink survives", 1, restored.draft.ink.getValue(0).size)
         assertEquals("Nothing was set aside", 0, directory.listFiles().orEmpty().count { it.name.startsWith("draft.broken-") })
+    }
+
+    @Test
+    fun aFailedPdfReadDoesNotQuarantineTheDraft() {
+        val source = File(directory, "temporarily-unreadable.pdf")
+        PDDocument().use { document ->
+            document.addPage(PDPage(PDRectangle.LETTER))
+            document.save(source)
+        }
+        val ink = mapOf(0 to listOf(InkStroke(listOf(InkPoint(1f, 1f, 1f)), 1, 2f)))
+        DocumentStore(app).saveDraft(Draft(source, "Unreadable.pdf", ink = ink))
+        assertTrue(source.setReadable(false, false))
+
+        try {
+            assertFalse(source.canRead())
+            assertEquals(DocumentProblem.DRAFT_UNREADABLE, restoreProblem())
+            assertTrue("A read failure must retain the draft", File(directory, "draft.json").isFile)
+            assertEquals(0, directory.listFiles().orEmpty().count { it.name.startsWith("draft.broken-") })
+        } finally {
+            source.setReadable(true, true)
+        }
+
+        assertEquals(ink, DocumentStore(app).restore()!!.ink)
+    }
+
+    @Test
+    fun aFailedDraftReadDoesNotQuarantineTheDraft() {
+        val draft = File(directory, "draft.json").apply { mkdir() }
+        assertEquals(DocumentProblem.DRAFT_UNREADABLE, restoreProblem())
+        assertTrue("An I/O failure leaves the draft path in place", draft.isDirectory)
+        assertEquals(0, directory.listFiles().orEmpty().count { it.name.startsWith("draft.broken-") })
     }
 
     private fun restoreProblem(): DocumentProblem = try {

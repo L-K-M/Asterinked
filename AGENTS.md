@@ -35,6 +35,8 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   Model tests inject a fake and a queue-backed executor
   (`EditorViewModelPagingTest`) to decide exactly when worker tasks and
   main-thread posts run; `PdfRenderer` itself only runs on devices.
+- Restore quarantines malformed draft metadata or a missing source once.
+  Read/inspection failures keep the draft; failed previews retry in the editor.
 
 ## Toolchain quirks — don't "fix" these
 

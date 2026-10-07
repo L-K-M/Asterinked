@@ -98,7 +98,7 @@ internal class DocumentStore(context: Context) {
         val json = JSONObject(draftFile.openRead().bufferedReader().use { it.readText() })
         val source = File(directory, json.getString("source"))
         require(source.canonicalFile.parentFile == directory.canonicalFile && source.isFile) { "The saved PDF is missing." }
-        // savedInk postdates the first draft format; old drafts are simply all-dirty.
+        // A missing export baseline leaves all restored notes unexported.
         val savedInk = json.optJSONObject("savedInk")?.let(::decodeInk).orEmpty()
         return Draft(source, json.getString("name"), json.getInt("page"), decodeInk(json.getJSONObject("ink")), savedInk)
     }

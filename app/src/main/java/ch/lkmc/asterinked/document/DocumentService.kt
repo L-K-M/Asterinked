@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.util.LruCache
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import org.json.JSONException
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -63,10 +64,8 @@ internal class DocumentService(context: Context) : DocumentOperations {
     }
 
     /**
-     * A draft that can never open again (corrupt JSON, missing or unparseable
-     * PDF) is set aside once, so the next launch starts clean. Out of memory or
-     * storage can be transient, and a page that fails to render must not lose
-     * its ink: both keep the draft, and a missing preview is retried live.
+     * Invalid draft metadata is set aside once. Read and PDF inspection
+     * failures retain the draft; a failed preview is retried in the editor.
      */
     override fun restore(): OpenDocument? {
         val draft = try {
@@ -74,19 +73,19 @@ internal class DocumentService(context: Context) : DocumentOperations {
         } catch (error: IOException) {
             // A failed read is usually environmental (storage briefly not
             // ready); keep the draft and retry next launch.
-            throw DocumentException(DocumentProblem.DRAFT_UNREADABLE, error)
+            throw DocumentException(error.toProblem(DocumentProblem.DRAFT_UNREADABLE), error)
         } catch (error: OutOfMemoryError) {
             throw DocumentException(DocumentProblem.OUT_OF_MEMORY, error)
-        } catch (error: Exception) {
-            // Corrupt JSON or a missing source never heals: set it aside once.
+        } catch (error: JSONException) {
+            throw brokenDraft(error)
+        } catch (error: IllegalArgumentException) {
+            // Invalid page keys or a missing source cannot restore.
             throw brokenDraft(error)
         } ?: return null
-        val pages = try {
-            during(DocumentProblem.DRAFT_UNREADABLE) { engine.inspect(draft.source) }
-        } catch (error: DocumentException) {
-            if (error.problem == DocumentProblem.OUT_OF_MEMORY || error.problem == DocumentProblem.OUT_OF_SPACE) throw error
-            throw brokenDraft(error)
-        }
+
+        // Inspection can fail because the PDF is temporarily unreadable.
+        // Keep its ink rather than classifying every parser failure as corruption.
+        val pages = during(DocumentProblem.DRAFT_UNREADABLE) { engine.inspect(draft.source) }
         if (draft.page !in pages.indices) {
             throw brokenDraft(IllegalStateException("Saved page ${draft.page} is outside 0..${pages.lastIndex}"))
         }
