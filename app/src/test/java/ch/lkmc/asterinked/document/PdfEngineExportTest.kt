@@ -231,6 +231,33 @@ class PdfEngineExportTest {
     }
 
     @Test
+    fun export_highlightsShareOneMultiplyState() {
+        val source = sourcePdf()
+        val dest = tmp("highlights")
+        val markers = List(3) { line ->
+            InkStroke(listOf(InkPoint(80f, 90f + line * 20f, 1f), InkPoint(300f, 90f + line * 20f, 1f)), 0xFFFFE45C.toInt(), 12f, InkKind.HIGHLIGHTER)
+        }
+        engine.export(source, dest, mapOf(0 to markers))
+
+        assertEquals("Three highlights are stroked", 3, countOf(contentsOf(dest, 0), " gs"))
+        PDDocument.load(dest).use { doc ->
+            assertEquals("One graphics state serves every highlight", 1, doc.getPage(0).resources.extGStateNames.count())
+        }
+    }
+
+    @Test
+    fun export_penOnlyPageAddsNoGraphicsState() {
+        val source = sourcePdf()
+        val dest = tmp("pen-only")
+        engine.export(source, dest, mapOf(0 to listOf(stroke(80f, 90f, 300f, 90f))))
+
+        assertEquals("Pen ink needs no graphics state", 0, countOf(contentsOf(dest, 0), " gs"))
+        PDDocument.load(dest).use { doc ->
+            assertEquals(0, doc.getPage(0).resources.extGStateNames.count())
+        }
+    }
+
+    @Test
     fun export_highlightsSitUnderPenInkWhateverTheirOrder() {
         val source = sourcePdf()
         val dest = tmp("highlight-order")
