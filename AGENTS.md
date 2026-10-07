@@ -71,6 +71,12 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   to the v0.1.0 algorithm, and the live `InkStrokeBuilder` must produce the
   same segments for every prefix. Changing stroke geometry changes every
   exported PDF, so do it deliberately and update that reference.
+- `AtomicFile.finishWrite` is not a checked commit: Android 29 ignores sync
+  errors and logs close errors; Android 35 also logs rename errors. Draft
+  writes use a separate `.new`, throwing `FileDescriptor.sync`, checked
+  close and same-directory rename before pruning PDFs. Keep AtomicFile's
+  `.bak` recovery and legacy JSON compatibility. `DocumentStoreCommitTest`
+  injects write, sync, close and rename failures on APIs 29 and 35.
 
 ## UI conventions
 
