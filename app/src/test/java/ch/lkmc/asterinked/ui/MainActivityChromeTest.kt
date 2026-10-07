@@ -19,6 +19,7 @@ import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -242,7 +243,7 @@ class MainActivityChromeTest {
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
             val root = editor(controller.get())
             drag(page(root), MotionEvent.TOOL_TYPE_FINGER)
-            assertNull("They know the button, also after a restart", notice(root).shown)
+            assertNotEquals("They know the button, also after a restart", fingerHint, notice(root).shown?.toString())
         }
     }
 
@@ -253,12 +254,12 @@ class MainActivityChromeTest {
             // Beside the page, so the pen leaves no stroke for the stand-in draft to store.
             drag(page(root), MotionEvent.TOOL_TYPE_STYLUS, x = 1f, y = 1f, distance = 0f)
             drag(page(root), MotionEvent.TOOL_TYPE_FINGER)
-            assertNull(notice(root).shown)
+            assertNotEquals(fingerHint, notice(root).shown?.toString())
         }
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
             val root = editor(controller.get())
             drag(page(root), MotionEvent.TOOL_TYPE_FINGER)
-            assertNull("The pen is remembered across launches", notice(root).shown)
+            assertNotEquals("The pen is remembered across launches", fingerHint, notice(root).shown?.toString())
         }
     }
 
@@ -388,6 +389,9 @@ class MainActivityChromeTest {
     }
 
     private fun notice(root: View): NoticeBar = descendants(root).filterIsInstance<NoticeBar>().single()
+
+    // The editor's one-time gesture hint may be on screen; these tests are about this one.
+    private val fingerHint get() = app.getString(R.string.finger_drag_hint)
 
     private fun control(root: View, label: Int): View =
         descendants(root).single { it.contentDescription == app.getString(label) }

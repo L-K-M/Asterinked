@@ -22,6 +22,9 @@ internal enum class Tone(@param:DrawableRes val icon: Int, @param:ColorRes val t
     ERROR(R.drawable.ic_error, R.color.notice_error, 7_000),
 }
 
+/** An action offered on a notice, like a snackbar's. */
+internal class NoticeAction(val label: CharSequence, val run: () -> Unit)
+
 /**
  * A short message floating above the tools, in place of toasts: Android 12+
  * cuts toasts to two lines, and the error messages here are longer. It slides
@@ -29,9 +32,6 @@ internal enum class Tone(@param:DrawableRes val icon: Int, @param:ColorRes val t
  * accessibility settings) and hides at once when tapped. TalkBack reads it as
  * a polite live region.
  */
-/** An action offered on a notice, like a snackbar's. */
-internal class NoticeAction(val label: CharSequence, val run: () -> Unit)
-
 internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
     private val ui = Components(context)
     private val icon = ImageView(context)

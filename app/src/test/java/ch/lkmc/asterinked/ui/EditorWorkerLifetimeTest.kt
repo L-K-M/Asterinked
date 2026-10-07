@@ -9,6 +9,7 @@ import ch.lkmc.asterinked.document.DocumentService
 import ch.lkmc.asterinked.document.DocumentStore
 import ch.lkmc.asterinked.document.Draft
 import ch.lkmc.asterinked.document.OpenDocument
+import ch.lkmc.asterinked.document.OpenResult
 import ch.lkmc.asterinked.document.PageSpec
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
@@ -192,7 +193,7 @@ class EditorWorkerLifetimeTest {
         }
 
         @Implementation fun restore() = documents.restore()
-        @Implementation fun open(uri: Uri) = documents.open()
+        @Implementation fun open(uri: Uri, current: Draft?): OpenResult = OpenResult.Opened(documents.open())
         @Implementation fun render(draft: Draft) = documents.render(draft)
         @Implementation fun cachedPreview(draft: Draft) = documents.cachedPreview(draft)
         @Implementation fun saveDraft(draft: Draft) = documents.saveDraft(draft)
