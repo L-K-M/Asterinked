@@ -70,6 +70,20 @@ class UiScreenshotTest {
     @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
     fun editorPhoneDark() = shoot("editor-phone-dark") { publish(it, editing()) }
 
+    @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
+    fun editorWriting() = shoot("editor-writing", settleMillis = 400) {
+        publish(it, editing())
+        descendants(it.window.decorView).filterIsInstance<InkPageView>().single()
+            .onWritingChanged(WritingState.ACTIVE)
+    }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
+    fun editorWritingDark() = shoot("editor-writing-dark", settleMillis = 400) {
+        publish(it, editing())
+        descendants(it.window.decorView).filterIsInstance<InkPageView>().single()
+            .onWritingChanged(WritingState.ACTIVE)
+    }
+
     @Test @Config(qualifiers = "w891dp-h411dp-land-notnight-xhdpi")
     fun editorPhoneLandscape() = shoot("editor-phone-landscape") { publish(it, editing()) }
 
