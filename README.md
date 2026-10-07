@@ -24,7 +24,8 @@ Pen-based PDF annotation for Android 10 and newer.
    Undo and redo sit at the left of the tool bar; undo reaches your last edit on
    any page and turns back to it. A two-finger tap on the page undoes, a
    three-finger tap redoes.
-4. Change pages with the arrows on the page pill (tap the page number to jump),
+4. Change pages with the arrows on the page pill (tap the page number to jump
+   to a page or the previous/next page with notes),
    which steps aside while you write and returns after a short pause,
    then **Save copy** to export the whole document, or tap the share icon to send
    an annotated copy straight to another app. Sharing does not mark notes as

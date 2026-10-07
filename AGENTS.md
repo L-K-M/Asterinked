@@ -143,6 +143,9 @@ The adaptive icon's foreground webp files are generated; regenerate them from
 - Messages to the user go through `NoticeBar`, not toasts: Android 12+ cuts
   toasts to two lines. A notice can carry one action (`NoticeAction`), which
   keeps it up for ten seconds instead of the tone's usual timeout.
+- The page-number button opens page and note navigation. Note destinations
+  come from current draft ink, skip empty pages and do not wrap at the ends.
+  Reopen the dialog to refresh destinations; document replacement dismisses it.
 
 ## CI/CD
 

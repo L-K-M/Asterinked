@@ -137,6 +137,7 @@ internal class MainActivity : ComponentActivity() {
     private var pillHidden = false
     private var shownPageKey: String? = null
     private val showPill = Runnable { showPagePill() }
+    private var pageDialogSource: File? = null
 
     private val openPdf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(model::open)
@@ -366,13 +367,11 @@ internal class MainActivity : ComponentActivity() {
         }
         previous = ui.iconButton(R.drawable.ic_previous, R.string.previous) { turnPage(-1) }
         pill.addView(previous, square())
-        counter = ui.text(TextStyle.COUNTER).apply {
+        counter = ui.textButton(R.string.go_to_page, TextStyle.COUNTER) { askForPage() }.apply {
             gravity = Gravity.CENTER
             minWidth = ui.dp(COUNTER_MIN_WIDTH_DP)
             setPadding(ui.dp(Space.XS), 0, ui.dp(Space.XS), 0)
-            background = ui.ripple(content = null, mask = ui.rounded(Color.WHITE, Radius.SMALL))
             tooltipText = getString(R.string.go_to_page)
-            setOnClickListener { askForPage() }
         }
         pill.addView(counter, LinearLayout.LayoutParams(WRAP, ui.dp(Size.TOUCH)))
         next = ui.iconButton(R.drawable.ic_next, R.string.next) { turnPage(1) }
@@ -701,6 +700,7 @@ internal class MainActivity : ComponentActivity() {
     private fun show(state: EditorState) {
         val draft = state.draft
         val ready = draft != null && !state.busy
+        if (pageDialogSource != draft?.source || state.busy) pageDialog?.dismiss()
         showScreen(when {
             draft != null -> Screen.EDITOR
             state.busy -> Screen.LOADING
@@ -743,7 +743,7 @@ internal class MainActivity : ComponentActivity() {
         (listOf(fingerDrawing) + swatches + widths).forEach { it.isEnabled = ready }
         if (draft != null) {
             counter.text = getString(R.string.page_position, draft.page + 1, state.pages.size)
-            counter.contentDescription = getString(R.string.page_count, draft.page + 1, state.pages.size)
+            counter.contentDescription = getString(R.string.page_navigation_description, draft.page + 1, state.pages.size)
             counter.isEnabled = ready && state.pages.size > 1
             val pageKey = "${draft.source.name}:${draft.page}"
             if (shownPageKey != pageKey) {
@@ -912,7 +912,21 @@ internal class MainActivity : ComponentActivity() {
     private fun askForPage() {
         val state = model.state.value ?: return
         val draft = state.draft ?: return
-        pageDialog = showPageDialog(this, ui, draft.page, state.pages.size, model::goToPage)
+        if (state.busy || pageDialog?.isShowing == true) return
+
+        // Read current draft ink only; navigation never needs PDF parsing or thumbnails.
+        val annotated = state.pages.indices.filter { draft.ink[it].orEmpty().isNotEmpty() }
+        pageDialogSource = draft.source
+        pageDialog = showPageDialog(this, ui, draft.page, state.pages.size, annotated) { destination ->
+            if (model.state.value?.draft?.source == draft.source) model.goToPage(destination)
+        }.apply {
+            setOnDismissListener { dismissed ->
+                if (pageDialog !== dismissed) return@setOnDismissListener
+
+                pageDialog = null
+                pageDialogSource = null
+            }
+        }
     }
 
     private fun requestOpen() {
