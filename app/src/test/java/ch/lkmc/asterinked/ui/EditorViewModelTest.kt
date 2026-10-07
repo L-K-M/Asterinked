@@ -28,16 +28,18 @@ class EditorViewModelTest {
     @Test fun pickerResultDuringRestoreIsHandled() {
         val app = RuntimeEnvironment.getApplication()
         val worker = QueueExecutor()
-        val model = EditorViewModel(app, UnreadableDocuments(), worker)
+        val documents = UnreadableDocuments()
+        val model = EditorViewModel(app, documents, worker)
         assertTrue(model.state.value!!.busy)
 
         model.open(Uri.parse("content://missing-provider/document.pdf"))
         worker.runAll() // restore
-        shadowOf(Looper.getMainLooper()).idle() // restore lands; the queued open runs
+        shadowOf(Looper.getMainLooper()).idle() // restore lands; open is enqueued
         worker.runAll() // open fails
         shadowOf(Looper.getMainLooper()).idle()
 
         val state = model.state.value!!
+        assertEquals("Open follows restoration", listOf("restore", "open"), documents.calls)
         assertEquals("Users see guidance, not the raw exception",
             EditorMessage(app.getString(R.string.error_source_unreadable), Tone.ERROR), state.message)
         assertFalse(state.busy)
@@ -59,7 +61,10 @@ class EditorViewModelTest {
             shutdown = true
         }
 
-        override fun shutdownNow(): MutableList<Runnable> = tasks.toMutableList().also { shutdown = true }
+        override fun shutdownNow(): MutableList<Runnable> = tasks.toMutableList().also {
+            tasks.clear()
+            shutdown = true
+        }
         override fun isShutdown() = shutdown
         override fun isTerminated() = shutdown && tasks.isEmpty()
         override fun awaitTermination(timeout: Long, unit: TimeUnit) = true
@@ -67,8 +72,17 @@ class EditorViewModelTest {
 
     /** No draft to restore; every open fails as an unreadable source. */
     private class UnreadableDocuments : DocumentOperations {
-        override fun restore(): OpenDocument? = null
-        override fun open(uri: Uri): OpenDocument = throw DocumentException(DocumentProblem.SOURCE_UNREADABLE)
+        val calls = mutableListOf<String>()
+
+        override fun restore(): OpenDocument? {
+            calls += "restore"
+            return null
+        }
+
+        override fun open(uri: Uri): OpenDocument {
+            calls += "open"
+            throw DocumentException(DocumentProblem.SOURCE_UNREADABLE)
+        }
         override fun render(draft: Draft): Bitmap = throw UnsupportedOperationException()
         override fun cachedPreview(draft: Draft): Bitmap? = null
         override fun saveDraft(draft: Draft) = Unit
