@@ -25,8 +25,5 @@
     <!-- Lifted off the canvas rather than inverted: a light card would barely
          show against the white page. -->
     <color name="inverse_surface">#33373F</color>
-    <color name="inverse_on_surface">#F2F3F6</color>
-    <color name="notice_success">#7DDA95</color>
-    <color name="notice_error">#FF9298</color>
     <color name="notice_edge">#4A4F59</color>
 </resources>

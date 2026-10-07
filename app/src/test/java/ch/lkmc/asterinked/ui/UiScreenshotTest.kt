@@ -1,5 +1,6 @@
 package ch.lkmc.asterinked.ui
 
+import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.graphics.Bitmap
@@ -18,6 +19,8 @@ import ch.lkmc.asterinked.ui.EditorScreens.descendants
 import ch.lkmc.asterinked.ui.EditorScreens.editing
 import ch.lkmc.asterinked.ui.EditorScreens.publish
 import ch.lkmc.asterinked.ui.EditorScreens.settle
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -120,6 +123,7 @@ class UiScreenshotTest {
     fun dialogReplace() = shoot("dialog-replace") {
         publish(it, editing())
         click(it, R.string.open_pdf)
+        assertEquals("Replacing unexported notes is the one red confirm", app.getColor(R.color.accent), positiveButton().currentTextColor)
     }
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
@@ -132,6 +136,7 @@ class UiScreenshotTest {
     fun dialogGoToPage() = shoot("dialog-page") {
         publish(it, editing())
         openPageDialog(it)
+        assertEquals("Plain navigation stays graphite", app.getColor(R.color.on_surface), positiveButton().currentTextColor)
     }
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
@@ -146,7 +151,10 @@ class UiScreenshotTest {
         publish(it, editing())
         openPageDialog(it)
         descendants(ShadowDialog.getLatestDialog().window!!.decorView).filterIsInstance<EditText>().single().setText("40")
+        assertFalse("Go waits for a page of this document", positiveButton().isEnabled)
     }
+
+    private fun positiveButton() = (ShadowDialog.getLatestDialog() as AlertDialog).getButton(AlertDialog.BUTTON_POSITIVE)
 
     private fun shoot(name: String, settleMillis: Long = 0, arrange: (MainActivity) -> Unit) {
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->

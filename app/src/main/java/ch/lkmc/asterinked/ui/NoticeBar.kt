@@ -41,11 +41,13 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
         maxWidth = ui.dp(Size.NOTICE_MAX)
         orientation = HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        background = ui.rounded(ui.color(R.color.inverse_surface), Radius.MEDIUM).apply {
-            // Only a visible edge: GradientDrawable reports a translucent outline,
-            // and so casts no shadow, when stroke and fill alpha differ.
+        val fill = ui.color(R.color.inverse_surface)
+        background = ui.rounded(fill, Radius.MEDIUM).apply {
+            // GradientDrawable reports a translucent outline, and so casts no
+            // shadow, when stroke and fill alpha differ: stroke only an edge
+            // as opaque as the card (none by day).
             val edge = ui.color(R.color.notice_edge)
-            if (Color.alpha(edge) != 0) setStroke(ui.dp(Size.HAIRLINE), edge)
+            if (Color.alpha(edge) == Color.alpha(fill)) setStroke(ui.dp(Size.HAIRLINE), edge)
         }
         elevation = ui.dp(Elevation.NOTICE).toFloat()
         setPadding(ui.dp(Space.L), ui.dp(Space.M), ui.dp(Space.L), ui.dp(Space.M))
