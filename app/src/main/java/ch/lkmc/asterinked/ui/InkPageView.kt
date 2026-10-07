@@ -51,6 +51,7 @@ internal class InkPageView(context: Context) : View(context) {
         setShadowLayer(SHADOW_RADIUS_DP * density, 0f, SHADOW_OFFSET_DP * density, SHADOW_COLOR)
     }
     private val pageRect = RectF()
+    private var pageScale = 0f
     private var preview: Bitmap? = null
     private var spec: PageSpec? = null
     private var strokes = emptyList<InkStroke>()
@@ -182,6 +183,7 @@ internal class InkPageView(context: Context) : View(context) {
         isEnabled = !state.busy && draft != null
         preview = state.preview
         spec = draft?.let { state.pages[it.page] }
+        updatePageTransform()
         val nextStrokes = draft?.ink?.get(draft.page).orEmpty()
         if (nextStrokes !== strokes) {
             strokes = nextStrokes
@@ -198,20 +200,17 @@ internal class InkPageView(context: Context) : View(context) {
         animateZoom(1f, width / 2f, height / 2f)
     }
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        updatePageTransform()
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val page = spec ?: return
-        val fit = fitScale(page)
-        if (fit <= 0f) return
-        val scale = fit * zoom
-        val pageWidth = page.displayWidth * scale
-        val pageHeight = page.displayHeight * scale
-        if (alignTopPending) {
-            panY = maxPan(pageHeight, height)
-            alignTopPending = false
-        }
-        clampPan()
-        pageRect.set((width - pageWidth) / 2f + panX, (height - pageHeight) / 2f + panY, (width + pageWidth) / 2f + panX, (height + pageHeight) / 2f + panY)
+        val scale = pageScale
+        if (scale <= 0f) return
+
         // A page still rendering is drawn blank so its ink and the pen work at once.
         canvas.drawRect(pageRect, pageShadow)
         preview?.let { canvas.drawBitmap(it, null, pageRect, bitmapPaint) }
@@ -303,7 +302,7 @@ internal class InkPageView(context: Context) : View(context) {
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (!isEnabled || spec == null) return false
+        // Cancellation releases ownership even when layout cannot accept input.
         val action = event.actionMasked
         if (action == MotionEvent.ACTION_CANCEL) {
             cancelStroke()
@@ -311,6 +310,7 @@ internal class InkPageView(context: Context) : View(context) {
             gestureDetector.onTouchEvent(event)
             return true
         }
+        if (!isEnabled || spec == null || pageRect.isEmpty) return false
         if (action == MotionEvent.ACTION_DOWN) penGesture = false
 
         // Track the pen by pointer ID: a palm may become pointer index zero.
@@ -391,7 +391,7 @@ internal class InkPageView(context: Context) : View(context) {
         if (event.actionMasked == MotionEvent.ACTION_MOVE) {
             panX += focusX - lastFocusX
             panY += focusY - lastFocusY
-            clampPan()
+            updatePageTransform()
             invalidate()
         }
         lastFocusX = focusX
@@ -404,23 +404,38 @@ internal class InkPageView(context: Context) : View(context) {
         val ratio = zoom / previous
         panX = (panX - focusX + width / 2f) * ratio + focusX - width / 2f
         panY = (panY - focusY + height / 2f) * ratio + focusY - height / 2f
-        clampPan()
+        updatePageTransform()
         invalidate()
     }
 
     private fun fitScale(page: PageSpec): Float =
         min((width - pageMargin * 2) / page.displayWidth, (height - pageMargin * 2) / page.displayHeight)
 
-    // Clamp as soon as pan or zoom changes, not only when a frame is drawn, so
-    // gestures never build on an out-of-range pan between frames.
-    private fun clampPan() {
-        val page = spec ?: return
-        val scale = fitScale(page) * zoom
-        if (scale <= 0f) return
+    // Publish one transform after every page, size, pan or zoom change, so input
+    // before the next frame uses the same placement and scale as drawing.
+    private fun updatePageTransform() {
+        pageRect.setEmpty()
+        pageScale = 0f
+        val page = spec
+        val fit = page?.let { fitScale(it) } ?: 0f
+        if (page == null || fit <= 0f) {
+            // A contact cannot survive losing its page coordinate space.
+            cancelStroke()
+            return
+        }
+
+        val scale = fit * zoom
         val pageWidth = page.displayWidth * scale
         val pageHeight = page.displayHeight * scale
+        if (alignTopPending) {
+            panY = maxPan(pageHeight, height)
+            alignTopPending = false
+        }
         panX = panX.coerceIn(-maxPan(pageWidth, width), maxPan(pageWidth, width))
         panY = panY.coerceIn(-maxPan(pageHeight, height), maxPan(pageHeight, height))
+
+        pageScale = scale
+        pageRect.set((width - pageWidth) / 2f + panX, (height - pageHeight) / 2f + panY, (width + pageWidth) / 2f + panX, (height + pageHeight) / 2f + panY)
     }
 
     private fun animateZoom(target: Float, focusX: Float, focusY: Float) {
@@ -445,10 +460,8 @@ internal class InkPageView(context: Context) : View(context) {
     }
 
     private fun eraseAlong(event: MotionEvent, index: Int) {
-        val page = spec ?: return
         fun erase(x: Float, y: Float) {
-            val point = InkPoint((x - pageRect.left) / pageRect.width() * page.displayWidth,
-                (y - pageRect.top) / pageRect.height() * page.displayHeight, 1f)
+            val point = InkPoint((x - pageRect.left) / pageScale, (y - pageRect.top) / pageScale, 1f)
             if (!point.x.isFinite() || !point.y.isFinite()) return
             val candidates = strokes.filter { it !in erasing }
             // The cached ink must be re-recorded without the newly hidden strokes.
@@ -468,15 +481,13 @@ internal class InkPageView(context: Context) : View(context) {
 
     // A constant size on screen: zooming in makes the eraser more precise on the page.
     private fun eraserRadius(): Float {
-        val page = spec ?: return 0f
-        return ERASER_RADIUS_DP * resources.displayMetrics.density * page.displayWidth / pageRect.width()
+        if (pageScale <= 0f) return 0f
+        return ERASER_RADIUS_DP * density / pageScale
     }
 
     private fun addSamples(event: MotionEvent, index: Int) {
-        val page = spec ?: return
         fun add(x: Float, y: Float, pressure: Float) {
-            val point = InkPoint((x - pageRect.left) / pageRect.width() * page.displayWidth,
-                (y - pageRect.top) / pageRect.height() * page.displayHeight,
+            val point = InkPoint((x - pageRect.left) / pageScale, (y - pageRect.top) / pageScale,
                 if (event.getToolType(index) == MotionEvent.TOOL_TYPE_STYLUS) pressure else TOUCH_PRESSURE)
             if (point.x.isFinite() && point.y.isFinite()) {
                 points.add(point)
