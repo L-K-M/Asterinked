@@ -6,14 +6,88 @@ why it matters, where the code is, a concrete approach and how to prove it.
 Read `AGENTS.md` first for build, CI and repo conventions.
 
 Full-review baseline: `d48a41d`, 2026-10-06, consolidated from `tmp.md`.
-Main has since advanced to `d9a9bef`; its ANALYSIS delta and verified source
-facts are folded in below. Other PRs and their reviews were not inspected.
+Main has since advanced to `d6649ac`; its ANALYSIS delta and verified source
+facts are folded in below. Other agents' PRs and reviews were not inspected.
 This is not a full code/device re-review of that main revision. Earlier baseline:
 v0.2.0 (`333fa4b`), reviewed file by file on 2026-09-26 with green
 tests/lint/debug/PDFium checks. Section 1 retains the 2026-09-27 history;
 branch implementations remain distinct from main.
 
+Continuation: 2026-10-07. The six PRs below are this pass's implementations,
+left open for human review and merging. Upstream records remain intact;
+implementation on a branch is not completion on main.
+
+## This pass: six implementations awaiting human merge
+
+| PR | Branch/head | Coverage | Verification/review boundary |
+|---|---|---|---|
+| [#24](https://github.com/L-K-M/Asterinked/pull/24) | `fix/broken-draft-recovery` / `8fff63c` | B8/N25 | CI pass; 2 earlier completed reviews, findings fixed; 2 latest HTTP-429 failures leave a review gap |
+| [#27](https://github.com/L-K-M/Asterinked/pull/27) | `fix/review-cleanups` / `d0712d7` | B19, B15, B20, N2 | CI pass; 3 completed rounds, no applicable important findings; latest review has zero suggestions; steady |
+| [#28](https://github.com/L-K-M/Asterinked/pull/28) | `fix/data-extraction-rules` / `0deb816` | G5 | CI pass; 2 completed rounds, backup blocker refuted, remaining feedback outside scope; steady |
+| [#32](https://github.com/L-K-M/Asterinked/pull/32) | `feature/gesture-undo-redo` / `4f15e45` | U3; gesture haptics | CI pass; no completed GLM review, repeated integration failures; review gap |
+| [#36](https://github.com/L-K-M/Asterinked/pull/36) | `feature/pill-autohide` / `ad4ffcb` | V10 (writing only) | CI pass; 3 completed reviews, lifecycle finding fixed; 2 subsequent rounds without applicable important findings; steady |
+| [#37](https://github.com/L-K-M/Asterinked/pull/37) | `test/viewmodel-queue-executor` / `a712b4b` | T5 | CI pass; 2 completed rounds without applicable important findings; steady |
+
+- **#24:** Quarantine malformed metadata, invalid page metadata or missing
+  sources once; retain drafts for read, PDF inspection and memory failures.
+  Restore valid ink without its failed preview and retry it live. Missing
+  `savedInk` means unexported notes. Inspection preservation has regression
+  proof; do not classify all parser failures as permanent corruption.
+- **#27:** Sanitize decoded/displayed/exported widths; keep valid widths and
+  smoothing unchanged. Name the round join, cancel detached zoom animation,
+  clarify second-finger cancellation and use locale-neutral xref offsets.
+  Shortcut targets decline keys when hidden/disabled. PgUp/PgDn and full
+  modifier/focus coverage remain T-keyboard.
+- **#28:** Keep `allowBackup=false`, exclude cloud-storage domains, and include
+  only `files/documents` and `pen.xml` for permitted D2D transfer. Availability
+  is manufacturer-dependent, not universal migration support.
+  [Android documents the OEM exception and missing-section defaults](https://developer.android.com/identity/data/autobackup).
+- **#32:** Validate every fingertip's ID, history, release coordinates and
+  cancellation before two-/three-finger taps change history. Centroid/span
+  alone miss opposite motion and reject natural lift jitter. Both input modes
+  retain navigation; haptics fire only when history is available.
+- **#36:** Hide the pill during accepted pen/erase contact, return after 1.5s
+  or page change. Cancel timers/animations outside the editor; screen-transition
+  cancellation cannot reschedule it. Hidden means INVISIBLE, not transparent.
+  Idle hiding/edge summoning remain optional follow-ups.
+  Review's display-name collision claim does not apply: `draft.source.name`
+  is a generated private UUID filename. Writing callbacks follow accepted
+  pointer assignment and balance cancellation; rejected contacts do not hide it.
+- **#37:** Drive restore and pending open through an injected queue executor,
+  record their ordering, and drain cancelled work; no real-service polling.
+
+All six branches include main `d6649ac`. An isolated integration in the order
+#24 → #27 → #28 → #32 → #36 → #37 merges without conflicts and passes
+`testDebugUnitTest lintDebug assembleDebug assembleRelease` plus all six
+PDFium fixtures. Callback/test placement was adjusted to prevent two textual
+conflicts. This proves that combination locally, not physical stylus latency
+or future main integrations. Preserve every callback, finite-width handling
+and preview retry, and recheck after integrating into changed main.
+
+The latest #24 and #32 revisions have a GLM review gap after repeated HTTP 429
+integration failures; retries stopped under the outage rule. Earlier findings
+were addressed. Failed attempts are not approval. Other completed rounds
+reported inherited notice-action defects outside these PRs; those remain
+B-storage-recovery-effect, U8 and T-notice-ui, not unrelated fixes in each branch.
+No feature PR is merged by this task.
+
+Final verification snapshot: 2026-10-07 06:52 UTC. All six exact heads pass CI
+and are open/mergeable against the reviewed main baseline. #27/#28/#36/#37
+meet the review stopping rule. #24/#32 retain the explicit outage gaps above.
+Deferred minor #36 feedback: use scheduler-backed event times in the stylus
+test helper if it gains gesture-timing assertions; keep one downTime per
+gesture rather than resetting it for every event. Current pill tests depend
+on looper timers, not MotionEvent timestamps. See T-instant-input.
+
 ### Evidence and limits
+
+This pass additionally reproduced read-preservation, pill-lifecycle and gesture
+edge cases before fixes, and verified the six-branch integration above. Inspected
+light/dark writing-mode screenshots show unchanged page placement while the
+pill is hidden; landscape and 200% text screens retain the V16 writing-space
+limitations. Original UI tests committed ink to a nonexistent stand-in PDF;
+they now cancel contact to avoid queued writes contaminating another test.
+The earlier consolidated review's evidence is retained below as its snapshot.
 
 - Reviewed document reliability, ink/input/rendering and UI/accessibility
   sources at `d48a41d`. Baseline JVM tests, lint, debug APK and R8 release APK
@@ -46,7 +120,7 @@ instead of deleting them silently.
 
 ---
 
-## Current main delta: `d9a9bef`
+## Recorded main delta: `d9a9bef`
 
 - **Build repaired on main:** `829fca1`/`920e4e5` did not compile because
   `NoticeBar.WRAP` was undefined. #55 (`aa36354`) supplied a verified one-line
@@ -60,12 +134,15 @@ instead of deleting them silently.
 - **Locale/effect fragility:** MainActivity identifies storage failure with
   English `contains("couldn’t be stored")`. This source fact belongs to
   B-storage-recovery-effect/G7, not to an unverified external review claim.
-- All nine implementation PRs remain open. Application changes use those
-  branches; only this consolidated backlog is published directly to main.
+- The preceding analysis recorded nine open implementation PRs. Its snapshot
+  is preserved below without re-inspecting those PRs. Application changes
+  stay on branches; only this consolidated backlog goes directly to main.
 
-## Current status: eight implementations awaiting human merge
+## Retained upstream status: eight implementations awaiting human merge
 
-All eight implementations exist on separate branches. PRs remain open for
+The preceding main analysis records eight implementations on separate branches.
+This is its 2026-10-06 snapshot, not a new check of other agents' PRs.
+PRs were recorded open for
 human review and merging; none is merged or main-done. Do not duplicate this
 work. Every listed head passes local full tests, lint, debug/release builds,
 PDFium and CI. Completed reviews have no unresolved applicable important
@@ -297,13 +374,12 @@ with only a risk/hypothesis require proof before a behavior change.
 
 | Rank | Work | Canonical detail |
 |---|---|---|
-| 0 | Build unblock: B-notice-wrap | Awaiting #55 above; main `829fca1` cannot compile, no duplicate fix |
-| 1 | Draft/export protection: B8/N25, B-share-lifetime, N23; B19 partial branch awaiting #45 | Section 2; separate landed export N1 (awaiting #34), failed draft and live ink |
+| 1 | Draft/export protection: B-share-lifetime, N23; integrate B8/N25 and B19 | Section 2; #24/#27 implement recovery/width fixes; N1 remains the separate landed-export contract |
 | 2 | Input/state: B-pen-takeover/N21, B-canceled-navigation, B-multitouch-swipe, B-quick-scale, B-stylus-secondary, B-pending-pdf/N22, B-page-dialog, B12/N32, B-storage-recovery-effect | Section 2; tests first, no geometry redesign; N2 awaits #46 |
-| 3 | Release/privacy obligations: T8, G5, G1; helper errors G10 and B-rc4-import compatibility | Sections 2, 3 and 8; RC4 failure occurs before export |
+| 3 | Release/privacy obligations: T8, G1; integrate G5; helper errors G10 and B-rc4-import compatibility | Sections 2, 3 and 8; G5 implemented in #28; RC4 failure occurs before export |
 | 4 | Performance: P-prefetch, P-page-tree, P-live-chunks/P10, P5/G6, P6, P8 | Section 4; P9 needs a device baseline |
-| 5 | Writing space/product/accessibility: V16/F3/V9, V17, V10/N34, U5/U8/U4 (remaining), F-presets/N38, F16/N36/N37, F-accessible-text; N24/N26/N39 and remaining features/UX | Sections 2, 5–7; respect awaiting F6/hover/focus/night/loader/flip/haptic branches |
-| 6 | Exploratory risks and remaining verification, including N28 | Sections 4, 8–9; R-* and T-keyboard are not confirmed bugs |
+| 5 | Writing space/product/accessibility: V16/F3/V9, V17, V10/N34, U5/U8/U4 (remaining), F-presets/N38, F16/N36/N37, F-accessible-text; N24/N39 and remaining features/UX | Sections 2, 5–7; respect awaiting F6/hover/focus/night/loader/flip/haptic branches |
+| 6 | Exploratory risks and remaining verification, including N26/N28 | Sections 4, 8–9; R-* and T-keyboard are not confirmed bugs |
 
 ## 1. Historical status: merged pull requests
 
@@ -381,14 +457,15 @@ that no single PR shows on its own:
 
 ## 2. Backlog: bugs
 
-### B8 / N25. Recover invalid drafts separately from failed previews
+### B8 / N25. Recover invalid drafts separately from failed previews (awaiting #24)
 - **Evidence:** Corrupt `draft.json` or a missing private PDF repeats the
   same restore error every launch. `document/DocumentService.kt:64-68` also
   requires rendering before publishing valid ink: a transient failure leaves
   welcome with no exportable draft; reopening the original replaces it with
   an empty import. Blind deletion would lose recoverable ink.
-  N25: `restore` requires `getJSONObject("savedInk")`; valid older drafts
-  written before that field existed also enter the broken-draft path.
+  N25: `restore` requires `getJSONObject("savedInk")`; an absent baseline fails
+  decoding. The earlier report claimed a historical schema without this field;
+  the tested fact is compatibility with missing metadata, not that history.
 - **Where:** `document/DocumentStore.kt` (`restore`),
   `document/DocumentService.kt` (`restore`), `ui/EditorViewModel.kt` (`init`).
 - **Scope:** Invalid JSON/metadata or missing source → quarantine as
@@ -401,6 +478,9 @@ that no single PR shows on its own:
 - **Proof:** Corrupt JSON yields empty editor, one notice, none next launch;
   fake failing renderer retains exportable ink and survives relaunch; old
   drafts without `savedInk` restore their notes and correct dirty state.
+  #24 provides this pass's implementation and regression tests. Read and PDF
+  inspection failures retain JSON/ink; a failing preview retries live. Earlier
+  quarantine of inspection failures was reproduced and corrected.
 
 ### N1. Report a landed export separately from failed draft storage (awaiting #34)
 - **Evidence:** Documented `EditorViewModel.export` runs `service.export` and
@@ -423,21 +503,26 @@ that no single PR shows on its own:
 - **Proof:** Share A, successful B, failed C; A remains FileProvider-readable
   with unchanged bytes. Expired files are eventually reclaimed.
 
-### B19. Sanitize highlighter width at every boundary (partial work awaiting #45)
+### B19. Sanitize highlighter width at every boundary (awaiting #27; recorded overlap #45)
 - **Evidence:** Pen uses finite-positive `InkGeometry.strokeWidth`; highlights
   use raw width in `InkPageView.drawHighlight`/`PdfEngine.highlight`.
   `DocumentStore.kt:127` converts to Float; `PdfEngine.kt:175` rejects
-  negatives. Valid JSON `1e300` overflows to infinity; `org.json` also parses
-  unquoted `NaN`/`Infinity` via `Double.valueOf` though it refuses to write them.
+  negatives. Valid JSON `1e300` overflows to infinity when converted to Float.
+  This pass observed JSONObject rejecting unquoted `NaN`/`Infinity` during
+  object insertion; the earlier universal parser-acceptance claim was incorrect.
   UI constants in `HIGHLIGHT_WIDTHS` do not protect restored or edited drafts.
 - **Scope:** Shared finite-positive policy at decode, draw and export, with
   explicit highlighter fallback. Coordinate with the awaiting eraser branch.
   Main's analysis records #45 decode/export use of `InkGeometry.strokeWidth()`;
   reconcile its fallback and display coverage with #43 instead of recreating
   the same fix. Keep `InkGeometry` algorithm compatibility while integrating.
-- **Proof:** `DocumentStore` decode/round-trip tests with zero, negative,
-  overflowing, NaN and Infinity widths; restore/draw/export succeed, normal
-  widths and Multiply blending are unchanged.
+  #27 includes decode, on-screen highlighting and export sanitation, a valid
+  width control, detached-animation cleanup and locale-neutral xref fixtures.
+- **Proof:** Zero, negative and overflowing decoded widths normalize; valid
+  widths remain unchanged. Direct in-memory nonfinite highlighting must draw
+  and export safely. Unquoted nonfinite object literals may fail parsing and
+  require B8 recovery, not a promise of successful restore. Preserve Multiply
+  blending and the existing finite-positive fallback; there is no upper clamp.
 
 ### B-storage-recovery-effect. Route storage recovery by typed effect
 - **Evidence:** Current-main `829fca1` handler routes Save copy by English
@@ -547,18 +632,21 @@ that no single PR shows on its own:
   `show()`, test fallbacks/long translations. Actual PDF text remains the
   separate F-accessible-text boundary.
 
-### N2. Let hidden/disabled shortcut targets decline keys (awaiting #46)
+### N2. Let hidden/disabled shortcut targets decline keys (awaiting #27; recorded overlap #46)
 - **Evidence:** Documented Ctrl+S on welcome returned true despite no action;
   disabled/hidden targets swallowed `onKeyShortcut` events.
 - **Scope/status:** #46 returns `super` when no action occurs; verify equivalent
   PgUp/PgDn `onKeyDown` behavior. F8 core already exists; do not add it again.
 - **Proof:** Hidden/disabled actions neither execute nor consume the key,
   enabled actions execute once; reuse T-keyboard and the branch's tests.
+  #27 independently supplies `onKeyShortcut` refusal. Do not add this fix a
+  third time; `onKeyDown` page keys remain separate verification.
 
 ### B15. Naming slip in export
 - `stream.setLineJoinStyle(ROUND_CAP)` in `PdfEngine.export` works because
   both constants are `1`. Explicit `ROUND_JOIN` is recorded on awaiting #45;
   preserve it and verify unchanged PDF geometry/PDFium, not another fix.
+  #27 also names the join without changing its numeric value.
 
 ### B20. Small cleanups found in review
 - Cancel `zoomAnimator` in `InkPageView.onDetachedFromWindow` (#11's
@@ -569,14 +657,17 @@ that no single PR shows on its own:
   default locale; use `Locale.ROOT`. Check under a non-Latin-digit locale.
 - Second-finger cancellation is already implemented/tested (Done); detach
   cleanup is distinct from B-pen-takeover's active-input cancellation.
+  #27 includes detach cancellation, the touch comment and `Locale.ROOT`.
 
-### N26. Suppress fit-page wiggle before a page-turn fling
-- **Evidence:** Recorded fit-zoom clamp allows the 12dp page margin, so a
-  horizontal swipe first drags paper a few dp before turning. Cosmetic.
-- **Scope/proof:** Clamp horizontal fit-page pan to zero or suppress it for a
-  recognized one-finger turn; choose one policy after reproducing. Horizontal
-  swipe does not wiggle, zoomed pan/pinch and multi-pointer suppression survive.
-  Depends on B14, B-multitouch-swipe and real gesture/screenshot comparison.
+### N26. Verify near-fit motion before changing page-turn clamps
+- **Correction:** The earlier 12dp wiggle claim is unproved. At exact fit the
+  fitted dimension is `viewSize - 2 * margin`; the current `maxPan` expression
+  gives zero, and the shorter dimension also clamps to zero. The margin itself
+  does not permit dragging fitted paper.
+- **Scope/proof:** Reproduce unwanted motion near `FIT_ZOOM_TOLERANCE` (1.01)
+  with real gestures before changing clamps. If confirmed, preserve zoomed
+  pan/pinch and multi-pointer suppression. Depends on B14 and B-multitouch-swipe.
+  Keep N26 as a risk, not a confirmed cosmetic defect.
 
 ### B-rc4-import. Load valid RC4-128 sources without top-level `/Length`
 - **Evidence:** Supplied fixture is valid/readable in PDFium, but pinned PDFBox
@@ -628,6 +719,9 @@ that no single PR shows on its own:
   `res/xml/data_extraction_rules.xml`, align README. Earlier proposal:
   exclude `files/documents`/`pen` from cloud, allow D2D; not an adopted policy.
   Proof: manifest/resource checks plus real backup/transfer verification.
+  #28 implements cloud exclusion and document/pen-only D2D includes while
+  retaining `allowBackup=false`. OEM-dependent transfer is documented; actual
+  migration remains device verification, not an unimplemented rules task.
 - **G6. Cache page boxes in the draft.** `DocumentService.restore` reloads
   the whole PDF with PDFBox only to recompute `PageSpec`s on every cold
   start. Store them in `draft.json` (with a schema version) and fall back to
@@ -870,6 +964,11 @@ P-eraser and P-history are implemented on awaiting branches, not open work.
   continuous stroke and fresh tap work; keyboard/accessible navigation and
   rotation recovery remain usable. Depends on writing start/end callbacks
   and B14; share chrome transitions with D-focus.
+  #36 implements writing/erasing auto-hide with a 1.5s return and page-change
+  reset; no viewport relayout. Two lifecycle regressions fail before the fix
+  and pass after it, with light/dark writing screenshots inspected. Fresh
+  contact while the pill is initially visible can still hit its controls;
+  a reserved gutter or idle/summon policy remains a separate optional slice.
 - **N34. Temporarily hide chrome while writing.** V16/V10 motivate the
   original all-chrome-on-contact proposal. Scope an opt-in fade while a stroke
   is active, restore on lift/cancel, using the writing-start/end callback.
@@ -922,6 +1021,10 @@ P-eraser and P-history are implemented on awaiting branches, not open work.
   during pinch/pan, canceled contacts or palm suppression; intentional taps
   make one history change. Depends on canceled/multi-pointer navigation fixes
   and U1, plus physical-device gesture evaluation.
+  #32 implements the recognizer in both modes with per-pointer movement,
+  history/release and cancellation checks. Lift jitter, opposite movement,
+  release-only movement and cancelled contact regressions pass. Gesture
+  haptics exist there; U7's toolbar/page feedback remains distinct.
 - **U4. Export feedback (Open awaiting #34; Share remains open).** After saving,
   "Open" and "Share" actions on the "PDF saved" notice use the existing U8 slot.
   Scope a compact follow-up
@@ -1192,6 +1295,8 @@ combined-main or hardware coverage.
 - **T5.** `EditorViewModelTest` busy-waits with `Thread.sleep`; move it to
   #13's queue executor. Proof: explicitly drain worker/main posts, no sleeps
   or polling, preserving the same behavioral checks.
+  Implemented in #37 with an invocation-order assertion. Await merge; no new
+  polling-removal implementation is needed for this test.
 - **T6.** An end-to-end test through `DocumentService`: import a fixture,
   add ink, export, re-open the export as a new document, export again, and
   assert the second export carries exactly one layer of ink (only
@@ -1208,6 +1313,10 @@ combined-main or hardware coverage.
   preserve real event times and test sub-minimum pinch spans intentionally.
   `ScaleGestureDetector` ordinarily ignores spans below about 27mm/~170px
   at mdpi. Existing helpers are not timing-correctness proof.
+  #36's MainActivityChromeTest stylus helper uses fixed timestamps while its
+  looper advances. This does not affect current pill-timer assertions; before
+  reusing it for velocity/gesture timing, take eventTime from SystemClock and
+  preserve downTime for the contact sequence. Deferred minor review follow-up.
 - **T-keyboard. Verify implemented shortcuts and page-dialog keys.**
   `MainActivity.kt:161-181`, `PageDialog.kt:67-95`: F8 is done, not a feature
   to add again. Test exact modifier combinations, unintended extra modifiers,
@@ -1220,12 +1329,19 @@ combined-main or hardware coverage.
   N2's hidden/disabled shortcut fix awaits #46; preserve its refusal/consumption
   regressions instead of implementing core shortcuts or that fix again.
 - **T-notice-ui. Verify the existing action control.** Current-main U8 now has
-  a slot; after #55 unblocks compilation, measure action/text at 320dp,
+  a slot and the build repair; measure action/text at 320dp,
   200% text, RTL and both themes. Verify 48dp target/no overlap, contrast and
   theme-token use, with focused screenshots and real TalkBack focus. This is
   validation of existing controls, not another action-slot implementation.
 
 ### Unverified concerns: reproduce before implementation
+
+- **R-share-recreation (scratch N14).** The claim that acknowledging `shared`
+  loses an Android chooser on rotation was not reproduced. The chooser owns
+  its activity lifecycle; retaining the editor effect risks duplicate launch.
+  Verify chooser rotation, cancel/resume and activity recreation on a device,
+  plus exactly-once delivery under G7, before implementing recovery behavior.
+  Keep B-share-lifetime separate.
 
 - **R-notice-action-reentry. A callback may replace its own notice.** With
   current-main U8's slot, callback A can show B before A's click handler finishes.
@@ -1327,7 +1443,7 @@ was established by the October review or by branch JVM/structural benchmarks:
 | F4, F5 | Open with / share to Asterinked; share annotated copy | #15 |
 | F8 (core) | Ctrl+Z, Ctrl+Shift+Z/Ctrl+Y, Ctrl+S, Ctrl+O and PgUp/PgDn are implemented; modifier verification and proposed arrow keys remain T-keyboard | October baseline `d48a41d`, `MainActivity.kt:161-192` |
 | F10 | Remember pen settings | #16 |
-| U8 (slot/storage callback, source only) | Optional action slot and storage-error Save copy handler exist; locale, lifecycle, UI and provider checks remain open | Main `829fca1`; build repair awaits #55 |
+| U8 (slot/storage callback, source only) | Optional action slot and storage-error Save copy handler exist; locale, lifecycle, UI and provider checks remain open | Main `d9a9bef`, including build repair |
 | B16 | Export drew highlights over earlier pen ink while the screen drew them under | #18 |
 | B17 | The highlight being drawn sat above pen ink until the pen lifted | #18 |
 | B18 | Deeply nested PDFs crashed the app with `StackOverflowError` and left the imported copy | #12 |
@@ -1349,13 +1465,13 @@ work remains an audit of existing chrome, separate from page-display inversion.
 | Retained IDs | Canonical entry/status |
 |---|---|
 | N1 | Export outcome versus draft failure; implementation awaiting #34 |
-| N2 | Hidden/disabled key consumption; implementation awaiting #46, verify via T-keyboard |
+| N2 | Hidden/disabled key consumption; #27 and recorded #46 overlap; T-keyboard remains |
 | N21 | B-pen-takeover: margin contact must not falsely latch writing ownership |
 | N22 | B-pending-pdf: confirmation must resolve latest incoming URI, plus dismissal processing |
 | N23 | Live-stroke handoff at export/share, alongside U5 revision semantics |
 | N24 | Persist viewport across rotation with document/page identity |
-| N25 | B8: absent legacy savedInk is not corruption |
-| N26 | Fit-page fling wiggle; cosmetic, reproduce before changing clamp |
+| N25 | B8/#24: missing savedInk preserves notes as unexported; historical-schema claim unproved |
+| N26 | Near-fit motion risk; exact-fit 12dp wiggle claim refuted by clamp math |
 | N27 | P-eraser/B-eraser-geometry/B-eraser-sweep; implementation awaiting #43 |
 | N28 | Hardware ink-layer raster tradeoff; physical proof before caching changes |
 | N29 | P-live-chunks/P10: sample-tail allocation, profile before optimization |
@@ -1382,5 +1498,23 @@ work remains an audit of existing chrome, separate from page-display inversion.
 | D-night-full, V-night | Theme/launcher/shadow audit; existing dark theme retained |
 | D-focus-deep | D-focus's optional immersive status-bar/edge-navigation extension |
 
-Legacy source notes suggesting discarding `tmp.md` are superseded by this
-task's preservation requirement; `ANALYSIS.md` is the consolidated backlog.
+## 12. This scratch pass: preserved aliases and remaining proposal
+
+Scratch-only labels are namespaced here to avoid colliding with main's N IDs:
+N1→N1; N2→N2; N4→B8/N25; N6→P-eraser/N27;
+N14→R-share-recreation; N17→P-live-chunks/N29; N20→N26;
+N25→U7; N26→V6; D-zen→D-focus. Their ideas and evidence are consolidated
+above rather than duplicated as another implementation queue.
+
+### D-restored / scratch D-recent. Acknowledge a recovered document
+- **Proposal:** One quiet notice names the draft after a successful cold
+  restore, making persistence discoverable before F9's recent-document card.
+- **Where/scope:** EditorViewModel's restore completion through G7 effects;
+  no message for empty/failed restore, no repeat on rotation, and storage
+  recovery errors take priority. Reuse NoticeBar, not another permanent row.
+- **Proof:** Successful restore emits once; recreation, empty restore and
+  failure emit no duplicate acknowledgement. Lower priority than recovery
+  correctness and F9; validate whether it helps rather than adding noise.
+
+`tmp.md` is removed after its facts are consolidated here. Awaiting branches
+stay separate from main-done work; upstream history and proposal details remain.
