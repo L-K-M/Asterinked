@@ -100,6 +100,7 @@ internal class EditorViewModel private constructor(
         if (current.busy) return
         // The newer request wins over a PDF still waiting for an answer.
         current.replacing?.let(::forget)
+        endQuestionForWork()
         // Read on the main thread; the worker only gets this snapshot.
         val shown = current.draft
         // Unexported notes give way only to a different PDF, and only once the
@@ -119,9 +120,10 @@ internal class EditorViewModel private constructor(
     fun replaceDraft() {
         val pending = current.replacing ?: return
         if (current.busy) return
-        // Answered: perform() drops the question as the write starts, so a
-        // failure reports its error without asking again.
+        // Answered: the question goes as the write starts, so a failure
+        // reports its error without asking again.
         saved.remove<Uri>(WAITING_KEY)
+        endQuestionForWork()
         perform({ service.adopt(pending) }) { replaceWith(pending) }
     }
 
@@ -136,6 +138,10 @@ internal class EditorViewModel private constructor(
         saved[WAITING_KEY] = uri
         publish(current.copy(busy = false, replacing = document))
     }
+
+    // Busy and without a question in one step: idle without a question is
+    // when the activity opens a PDF it holds from another app.
+    private fun endQuestionForWork() = publish(current.copy(busy = true, replacing = null))
 
     private fun forget(pending: OpenDocument) {
         saved.remove<Uri>(WAITING_KEY)
@@ -343,9 +349,7 @@ internal class EditorViewModel private constructor(
     }
 
     private fun <T> perform(work: () -> T, completed: () -> Unit = {}, failed: (Throwable) -> Unit = {}, success: (T) -> Unit) {
-        // Work also ends a pending replace question, in the same step: idle
-        // without a question is when the activity opens a PDF it holds.
-        publish(current.copy(busy = true, message = null, replacing = null))
+        publish(current.copy(busy = true, message = null))
         worker.execute {
             val result = runCatching(work)
             main.post {
