@@ -86,6 +86,16 @@ class DocumentStorePersistenceTest {
     }
 
     @Test
+    fun saveAndRestore_cleanDraftStaysClean() {
+        val store = DocumentStore(app)
+        val dir = File(app.filesDir, "documents").apply { mkdirs() }
+        val source = File(dir, "clean.pdf").apply { writeBytes(byteArrayOf(9)) }
+        val ink = mapOf(0 to listOf(InkStroke(listOf(InkPoint(1f, 1f, 1f)), 1, 1f)))
+        store.saveDraft(Draft(source, "c.pdf", ink = ink, savedInk = ink))
+        assertEquals(false, store.restore()!!.dirty)
+    }
+
+    @Test
     fun restore_sanitizesCorruptStrokeWidths() {
         val store = DocumentStore(app)
         val dir = File(app.filesDir, "documents").apply { mkdirs() }
@@ -103,15 +113,5 @@ class DocumentStorePersistenceTest {
         )
         val widths = DocumentStore(app).restore()!!.ink.getValue(0).map { it.width }
         assertEquals(listOf(2.2f, 2.2f, 5f), widths)
-    }
-
-    @Test
-    fun saveAndRestore_cleanDraftStaysClean() {
-        val store = DocumentStore(app)
-        val dir = File(app.filesDir, "documents").apply { mkdirs() }
-        val source = File(dir, "clean.pdf").apply { writeBytes(byteArrayOf(9)) }
-        val ink = mapOf(0 to listOf(InkStroke(listOf(InkPoint(1f, 1f, 1f)), 1, 1f)))
-        store.saveDraft(Draft(source, "c.pdf", ink = ink, savedInk = ink))
-        assertEquals(false, store.restore()!!.dirty)
     }
 }
