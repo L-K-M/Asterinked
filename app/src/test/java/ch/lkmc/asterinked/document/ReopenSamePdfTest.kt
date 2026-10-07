@@ -12,6 +12,7 @@ import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -74,8 +75,7 @@ class ReopenSamePdfTest {
         val store = DocumentStore(app)
         val current = savedDraft(store)
         val service = DocumentService(app)
-        @Suppress("UNCHECKED_CAST")
-        val previews = DocumentService::class.java.getDeclaredField("previews").apply { isAccessible = true }.get(service) as LruCache<String, Bitmap>
+        val previews = cache(service)
         val preview = Bitmap.createBitmap(4, 6, Bitmap.Config.ARGB_8888)
         previews.put("${current.source.name}:${current.page}", preview)
         val other = ByteArrayOutputStream().also { bytes ->
@@ -129,6 +129,30 @@ class ReopenSamePdfTest {
         assertEquals(current, store.restore())
     }
 
+    // A dropped PDF leaves nothing behind, not even its preview, which would
+    // otherwise push the current document's pages out of the cache.
+    @Test fun discardingAnOpenedPdfDropsItsPreview() {
+        val service = DocumentService(app)
+        val opened = OpenDocument(Draft(file("other.pdf", OTHER), "Other.pdf"), listOf(PageSpec(0f, 0f, 400f, 600f, 0)), null)
+        cache(service).put("${opened.draft.source.name}:0", Bitmap.createBitmap(4, 6, Bitmap.Config.ARGB_8888))
+
+        service.discard(opened)
+
+        assertNull(service.cachedPreview(opened.draft))
+    }
+
+    @Test fun aFailedAdoptionDropsItsPreview() {
+        val service = DocumentService(app)
+        savedDraft(DocumentStore(app))
+        val opened = OpenDocument(Draft(file("other.pdf", OTHER), "Other.pdf"), listOf(PageSpec(0f, 0f, 400f, 600f, 0)), null)
+        cache(service).put("${opened.draft.source.name}:0", Bitmap.createBitmap(4, 6, Bitmap.Config.ARGB_8888))
+        File(directory, "draft.json.new").mkdir()
+
+        runCatching { service.adopt(opened) }
+
+        assertNull(service.cachedPreview(opened.draft))
+    }
+
     @Test fun discardingAnOpenedPdfDropsOnlyItsCopy() {
         val store = DocumentStore(app)
         val current = savedDraft(store)
@@ -151,6 +175,11 @@ class ReopenSamePdfTest {
         assertFalse(store.sameBytes(imported, file("longer.pdf", CURRENT + 0)))
         assertFalse("A missing source matches nothing", store.sameBytes(imported, File(directory, "gone.pdf")))
     }
+
+    // The service's preview cache, which only a device can fill by rendering.
+    @Suppress("UNCHECKED_CAST")
+    private fun cache(service: DocumentService) =
+        DocumentService::class.java.getDeclaredField("previews").apply { isAccessible = true }.get(service) as LruCache<String, Bitmap>
 
     private fun savedDraft(store: DocumentStore): Draft {
         val stroke = InkStroke(listOf(InkPoint(10f, 20f, 0.5f), InkPoint(30f, 40f, 0.75f)), 1, 2f)

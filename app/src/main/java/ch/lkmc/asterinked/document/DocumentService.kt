@@ -101,17 +101,25 @@ internal class DocumentService(context: Context) : DocumentOperations {
         try {
             during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(document.draft) }
         } catch (error: Exception) {
-            document.draft.source.delete()
+            discard(document)
             throw error
         }
         // The replaced document's pages are no longer needed; its own stay.
-        val own = "${document.draft.source.name}:"
-        previews.snapshot().keys.filterNot { it.startsWith(own) }.forEach(previews::remove)
+        dropPreviews { !it.startsWith(previewPrefix(document.draft)) }
     }
 
+    // Nothing of a dropped PDF stays behind: a stale preview would push the
+    // current document's pages out of the cache.
     override fun discard(document: OpenDocument) {
         document.draft.source.delete()
+        dropPreviews { it.startsWith(previewPrefix(document.draft)) }
     }
+
+    private fun dropPreviews(matching: (String) -> Boolean) {
+        previews.snapshot().keys.filter(matching).forEach(previews::remove)
+    }
+
+    private fun previewPrefix(draft: Draft) = "${draft.source.name}:"
 
     override fun restore(): OpenDocument? = during(DocumentProblem.DRAFT_UNREADABLE) {
         val saved = store.restore() ?: return@during null
@@ -177,7 +185,7 @@ internal class DocumentService(context: Context) : DocumentOperations {
     private fun renderPage(draft: Draft): Bitmap =
         cachedPreview(draft) ?: engine.render(draft.source, draft.page).also { previews.put(key(draft), it) }
 
-    private fun key(draft: Draft) = "${draft.source.name}:${draft.page}"
+    private fun key(draft: Draft) = "${previewPrefix(draft)}${draft.page}"
 
     // Tags failures with the step that was running. Two errors are recoverable
     // here too: OutOfMemoryError from a single oversized page or bitmap, and
