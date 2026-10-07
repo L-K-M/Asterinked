@@ -48,7 +48,8 @@ class UiScreenshotTest {
     @Before
     fun startClean() {
         File(app.filesDir, "documents").deleteRecursively()
-        app.getSharedPreferences("pen", Context.MODE_PRIVATE).edit().clear().commit()
+        // The one-time gesture hint would cover every editor screen; editorFirstUse shows it.
+        app.getSharedPreferences("pen", Context.MODE_PRIVATE).edit().clear().putBoolean(GESTURE_HINT_KEY, true).commit()
     }
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
@@ -62,6 +63,12 @@ class UiScreenshotTest {
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun editorPhone() = shoot("editor-phone") { publish(it, editing()) }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
+    fun editorFirstUse() = shoot("editor-first-use") {
+        app.getSharedPreferences("pen", Context.MODE_PRIVATE).edit().remove(GESTURE_HINT_KEY).commit()
+        publish(it, editing())
+    }
 
     @Test @Config(qualifiers = "w360dp-h640dp-port-notnight-xhdpi")
     fun editorSmallPhone() = shoot("editor-small-phone") { publish(it, editing()) }
@@ -279,6 +286,8 @@ class UiScreenshotTest {
     }
 
     private companion object {
+        // MainActivity's preference for the gesture hint it shows once.
+        const val GESTURE_HINT_KEY = "hintedGestures"
         const val STATUS_DP = 24
         const val NAV_DP = 24
         const val DIALOG_MARGIN_DP = 40
