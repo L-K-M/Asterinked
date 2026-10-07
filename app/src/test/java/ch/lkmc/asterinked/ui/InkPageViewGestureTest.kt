@@ -198,7 +198,12 @@ class InkPageViewGestureTest {
 
         // The return value comes from super and differs between device and
         // Robolectric; the contract under test is that the cursor stays hidden.
-        view.onHoverEvent(hoverEvent(MotionEvent.ACTION_HOVER_MOVE, MotionEvent.TOOL_TYPE_FINGER, 300f, 400f))
+        val fingerHover = hoverEvent(MotionEvent.ACTION_HOVER_MOVE, MotionEvent.TOOL_TYPE_FINGER, 300f, 400f)
+        try {
+            view.onHoverEvent(fingerHover)
+        } finally {
+            fingerHover.recycle()
+        }
         assertNull("A finger hovering shows nothing", view.hoverAt)
     }
 
