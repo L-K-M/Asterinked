@@ -137,8 +137,8 @@ internal class MainActivity : ComponentActivity() {
         val sharedColor = settings.getInt(COLOR_KEY, DEFAULT_COLOR)
         val sharedWidth = settings.getInt(WIDTH_KEY, DEFAULT_WIDTH)
         for (kind in InkKind.entries) {
-            colorIndices[kind] = settings.getInt(colorKey(kind), sharedColor).coerceIn(COLORS.indices)
-            widthIndices[kind] = settings.getInt(widthKey(kind), sharedWidth).coerceIn(WIDTHS.indices)
+            colorIndices[kind] = settings.getInt(colorKey(kind), sharedColor).coerceIn(colorsOf(kind).indices)
+            widthIndices[kind] = settings.getInt(widthKey(kind), sharedWidth).coerceIn(widthsOf(kind).indices)
         }
         mode = InputMode.entries.firstOrNull { it.name == settings.getString(MODE_KEY, null) } ?: InputMode.PEN
         kind = InkKind.entries.firstOrNull { it.name == settings.getString(KIND_KEY, null) } ?: InkKind.PEN
@@ -494,6 +494,16 @@ internal class MainActivity : ComponentActivity() {
             putString(MODE_KEY, mode.name)
             putString(KIND_KEY, kind.name)
         }
+    }
+
+    private fun colorsOf(kind: InkKind) = when (kind) {
+        InkKind.PEN -> COLORS
+        InkKind.HIGHLIGHTER -> HIGHLIGHT_COLORS
+    }
+
+    private fun widthsOf(kind: InkKind) = when (kind) {
+        InkKind.PEN -> WIDTHS
+        InkKind.HIGHLIGHTER -> HIGHLIGHT_WIDTHS
     }
 
     // The pen keeps the keys both tools used before.
