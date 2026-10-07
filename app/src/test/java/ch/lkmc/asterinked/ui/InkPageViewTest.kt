@@ -242,6 +242,82 @@ class InkPageViewTest {
         assertFalse("Live stroke is not a straight line", darkPixelsNear(view, 250, 300))
     }
 
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun aHoveringStylusShowsWhereTheNibWillLand() {
+        val blue = Color.rgb(32, 85, 184)
+        val view = pageView(InputMode.PEN, mutableListOf()).apply { configure(InputMode.PEN, blue, 2f) {} }
+
+        hover(view, MotionEvent.ACTION_HOVER_MOVE, 300f, 400f)
+        assertTrue("A ring in the ink colour", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+
+        hover(view, MotionEvent.ACTION_HOVER_EXIT, 300f, 400f)
+        assertFalse("Gone once the pen leaves", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun hoveringWithTheEraserShowsTheEraserInstead() {
+        val view = pageView(InputMode.PEN, mutableListOf()).apply { configure(InputMode.PEN, Color.rgb(32, 85, 184), 2f) {} }
+        view.tool = InkTool.ERASER
+
+        hover(view, MotionEvent.ACTION_HOVER_MOVE, 300f, 400f)
+
+        assertFalse("No ink ring", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+        assertTrue("The eraser ring, 10dp out", pixelsNear(view, 310, 400, reach = 2) { Color.red(it) < 200 })
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun noHoverRingWhileTheEditorIsBusyOrOffThePage() {
+        val view = pageView(InputMode.PEN, mutableListOf()).apply { configure(InputMode.PEN, Color.rgb(32, 85, 184), 2f) {} }
+        hover(view, MotionEvent.ACTION_HOVER_MOVE, 30f, 30f)
+        assertFalse("Outside the page", pixelsNear(view, 30, 30) { Color.blue(it) > 150 && Color.red(it) < 100 })
+
+        view.show(EditorState(Draft(File("test.pdf"), "test.pdf"), listOf(PageSpec(0f, 0f, 400f, 600f, 0)), page, busy = true))
+        hover(view, MotionEvent.ACTION_HOVER_MOVE, 300f, 400f)
+        assertFalse("While busy", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun aPenHeldStillLosesItsRingWhenThePageChanges() {
+        val blue = Color.rgb(32, 85, 184)
+        val view = pageView(InputMode.PEN, mutableListOf()).apply { configure(InputMode.PEN, blue, 2f) {} }
+        hover(view, MotionEvent.ACTION_HOVER_MOVE, 300f, 400f)
+
+        view.show(EditorState(Draft(File("test.pdf"), "test.pdf", page = 1), List(2) { PageSpec(0f, 0f, 400f, 600f, 0) }, page, busy = false))
+
+        assertFalse("The old spot means nothing on the new page", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun theSideButtonSwitchesTheRingWhileThePenHovers() {
+        val view = pageView(InputMode.PEN, mutableListOf()).apply { configure(InputMode.PEN, Color.rgb(32, 85, 184), 2f) {} }
+        hover(view, MotionEvent.ACTION_HOVER_MOVE, 300f, 400f)
+
+        hover(view, MotionEvent.ACTION_BUTTON_PRESS, 300f, 400f, MotionEvent.BUTTON_STYLUS_PRIMARY)
+
+        assertFalse("No ink ring while the button erases", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+        assertTrue("The eraser ring instead", pixelsNear(view, 310, 400, reach = 2) { Color.red(it) < 200 })
+    }
+
+    // Hover events go to onHoverEvent; button presses while hovering are other
+    // generic motion events, as the framework dispatches them.
+    private fun hover(view: InkPageView, action: Int, x: Float, y: Float, buttons: Int = 0) {
+        val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_STYLUS })
+        val coordinates = arrayOf(MotionEvent.PointerCoords().apply { this.x = x; this.y = y })
+        val event = MotionEvent.obtain(0, 10, action, 1, properties, coordinates, 0, buttons, 1f, 1f, 0, 0, InputDevice.SOURCE_STYLUS, 0)
+        try {
+            if (action == MotionEvent.ACTION_BUTTON_PRESS || action == MotionEvent.ACTION_BUTTON_RELEASE) view.onGenericMotionEvent(event)
+            else view.onHoverEvent(event)
+        } finally {
+            event.recycle()
+        }
+    }
+
+    private fun pixelsNear(view: InkPageView, x: Int, y: Int, reach: Int = 6, matches: (Int) -> Boolean): Boolean {
+        val image = Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(image))
+        return (-reach..reach).any { dy -> (-reach..reach).any { dx -> matches(image.getPixel(x + dx, y + dy)) } }
+    }
+
     private val page: Bitmap = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
 
     private fun darkPixelsNear(view: InkPageView, x: Int, y: Int): Boolean {
