@@ -296,11 +296,10 @@ internal class MainActivity : ComponentActivity() {
         loading = buildLoading()
         workspace.addView(loading, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
         notice = NoticeBar(this)
-        // Dismissal reads the report on screen and lets the next notice show.
-        notice.onDismissed = {
-            reading?.let(::acknowledge)
-            model.state.value?.let(::show)
-        }
+        // A dismissal starting reads the report on screen, so a new one arriving
+        // during the fade-out is not mistaken for it; the end lets it show.
+        notice.onDismissing = { reading?.let(::acknowledge) }
+        notice.onDismissed = { model.state.value?.let(::show) }
         workspace.addView(notice, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
             setMargins(ui.dp(Space.L), 0, ui.dp(Space.L), ui.dp(Space.L))
         })

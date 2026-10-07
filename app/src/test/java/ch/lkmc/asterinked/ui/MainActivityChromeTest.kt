@@ -437,6 +437,41 @@ class MainActivityChromeTest {
         }
     }
 
+    // Dismissing reads a report at once, so a second save to the same file that
+    // lands during the fade-out gets its own notice instead of being swallowed.
+    @Test fun aSecondSaveDuringTheFadeOutIsShownToo() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            val model = ViewModelProvider(activity)[EditorViewModel::class.java]
+            val saved = Uri.parse("content://test/saved.pdf")
+            EditorScreens.publish(activity, EditorScreens.editing().copy(exported = saved))
+
+            notice(root).dismiss()
+            EditorScreens.publish(activity, model.state.value!!.copy(exported = saved))
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(NOTICE_ANIMATION_MS.toLong()))
+
+            assertEquals(app.getString(R.string.pdf_saved), notice(root).shown?.toString())
+        }
+    }
+
+    // A report already dismissed must not come back after a notice covers its fade-out.
+    @Test fun aDismissedReportStaysReadWhenCoveredWhileFading() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            val model = ViewModelProvider(activity)[EditorViewModel::class.java]
+            EditorScreens.publish(activity, EditorScreens.editing().copy(exported = Uri.parse("content://test/saved.pdf")))
+
+            notice(root).dismiss()
+            val error = app.getString(R.string.error_out_of_memory)
+            EditorScreens.publish(activity, model.state.value!!.copy(message = EditorMessage(error, Tone.ERROR)))
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis((Tone.ERROR.millis + NOTICE_ANIMATION_MS).toLong()))
+
+            assertNotEquals(app.getString(R.string.pdf_saved), notice(root).shown?.toString())
+        }
+    }
+
     @Test fun aGrantPickedBeforeARotationIsGivenBackWhenTheSaveFails() {
         val picked = Uri.parse("content://test/picked.pdf")
         val state = Bundle()
