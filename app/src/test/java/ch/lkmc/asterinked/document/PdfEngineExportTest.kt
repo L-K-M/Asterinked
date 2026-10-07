@@ -241,6 +241,8 @@ class PdfEngineExportTest {
         val contents = contentsOf(dest, 0)
         assertEquals(1, countOf(contents, " m\n"))
         assertEquals("One lineTo, not a repeated point", 1, countOf(contents, " l\n"))
+        val ends = Regex("(\\S+) (\\S+) [ml]\n").findAll(contents).map { it.groupValues[1] to it.groupValues[2] }.toList()
+        assertEquals("The line returns to its start", ends[0], ends[1])
     }
 
     @Test
