@@ -1,6 +1,7 @@
 package ch.lkmc.asterinked.document
 
 import android.net.Uri
+import android.provider.OpenableColumns
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import org.junit.Assert.assertEquals
@@ -14,6 +15,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.fakes.RoboCursor
 import java.io.ByteArrayInputStream
 import java.io.File
 
@@ -45,6 +47,19 @@ class ReopenSamePdfTest {
         assertEquals(OpenResult.AlreadyOpen(current), result)
         assertEquals("Only the current PDF is left", listOf(current.source.name), pdfNames())
         assertEquals("The stored draft is untouched", current, store.restore())
+    }
+
+    // Some providers name a file with blanks; the draft keeps the name it has.
+    @Test fun aBlankDisplayNameKeepsTheDraftsName() {
+        val store = DocumentStore(app)
+        val current = savedDraft(store)
+        serve(CURRENT)
+        shadowOf(app.contentResolver).setCursor(uri, RoboCursor().apply {
+            setColumnNames(listOf(OpenableColumns.DISPLAY_NAME))
+            setResults(arrayOf(arrayOf<Any>("  ")))
+        })
+
+        assertEquals(OpenResult.AlreadyOpen(current), DocumentService(app).open(uri, current))
     }
 
     @Test fun differentBytesAreOpenedAsAnotherPdf() {

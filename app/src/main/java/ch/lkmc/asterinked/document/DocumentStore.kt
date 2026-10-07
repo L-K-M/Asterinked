@@ -68,9 +68,10 @@ internal class DocumentStore(context: Context, private val draftIo: DraftFileIo 
     private val brokenFile = File(directory, "draft.broken.json")
 
     fun import(uri: Uri): ImportedPdf {
+        // A blank name counts as none, so it cannot replace a kept draft's name.
         val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) cursor.getString(0) else null
-        }
+        }?.takeIf { it.isNotBlank() }
         val file = File(directory, "${UUID.randomUUID()}.pdf")
         try {
             val digest = MessageDigest.getInstance(DIGEST_ALGORITHM)
