@@ -21,6 +21,7 @@ import android.view.KeyEvent
 import android.view.KeyboardShortcutGroup
 import android.view.KeyboardShortcutInfo
 import android.view.Menu
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -71,6 +72,7 @@ internal class MainActivity : ComponentActivity() {
     private val model: EditorViewModel by viewModels()
     private val settings by lazy { getSharedPreferences(SETTINGS, MODE_PRIVATE) }
     private val ui by lazy { Components(this) }
+    private val palmGuard = PalmGuard()
     private lateinit var root: ViewGroup
     private lateinit var topBar: View
     private lateinit var title: TextView
@@ -135,6 +137,13 @@ internal class MainActivity : ComponentActivity() {
         configurePen()
         if (savedInstanceState == null) receive(intent)
         model.state.observe(this, ::show)
+    }
+
+    // The activity sees every pointer before the framework splits them between
+    // the page and the bars, which is what tells a resting palm from a tap.
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        palmGuard.track(event)
+        return super.dispatchTouchEvent(event)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -228,6 +237,8 @@ internal class MainActivity : ComponentActivity() {
 
         toolBar = buildToolBar()
         column.addView(toolBar, LinearLayout.LayoutParams(MATCH, WRAP))
+        // A hand resting on the bars while the pen writes must not press them.
+        for (bar in listOf(topBar, toolBar, pagePill)) controls(bar).forEach(palmGuard::protect)
         root = column
         ViewCompat.setOnApplyWindowInsetsListener(column) { _, insets ->
             systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
@@ -702,6 +713,12 @@ internal class MainActivity : ComponentActivity() {
         try { action() } catch (_: ActivityNotFoundException) {
             notice.show(getString(R.string.no_picker), Tone.ERROR)
         }
+    }
+
+    private fun controls(view: View): List<View> = when {
+        view.isClickable -> listOf(view)
+        view is ViewGroup -> (0 until view.childCount).flatMap { controls(view.getChildAt(it)) }
+        else -> emptyList()
     }
 
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
