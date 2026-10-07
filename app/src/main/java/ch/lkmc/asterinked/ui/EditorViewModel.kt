@@ -111,7 +111,10 @@ internal class EditorViewModel private constructor(
     fun replaceDraft() {
         val pending = current.replacing ?: return
         if (current.busy) return
-        perform({ service.adopt(pending) }, failed = { publish(current.copy(replacing = null)) }) { replaceWith(pending) }
+        // Answered: the question goes now, not after the write, so a failure
+        // reports its error without asking again.
+        publish(current.copy(replacing = null))
+        perform({ service.adopt(pending) }) { replaceWith(pending) }
     }
 
     /** Keeps the draft and drops the PDF that was waiting to replace it. */
