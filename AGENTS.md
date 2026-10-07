@@ -90,6 +90,17 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   to the v0.1.0 algorithm, and the live `InkStrokeBuilder` must produce the
   same segments for every prefix. Changing stroke geometry changes every
   exported PDF, so do it deliberately and update that reference.
+- Eraser contact uses continuous swept capsules against those rendered
+  segments, with local pressure widths for pens and a constant
+  `InkGeometry.strokeWidth`-sanitized width for highlighters. Raw samples,
+  nominal pen widths and sampled probes are not equivalent. Cache and hit
+  results retain stroke identity; `InkEraser.reset()` releases the gesture cache.
+- `InkPageView` supplies `InkGeometryCache.cachedSegments` to reuse immutable
+  renderer geometry on first erase contact. The lookup never computes or
+  readmits absent strokes; `update()` drops removed/off-page entries. Eraser
+  reset releases gesture metadata and segment references, leaving renderer
+  entries intact. Highlighter widths override bounds/contact calculations
+  without copying or mutating shared segments; standalone erasers still smooth.
 - `AtomicFile.finishWrite` is not a checked commit: Android 29 ignores sync
   errors and logs close errors; Android 35 also logs rename errors. Draft
   writes use a separate `.new`, throwing `FileDescriptor.sync`, checked

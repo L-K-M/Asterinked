@@ -1,6 +1,7 @@
 package ch.lkmc.asterinked.ink
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
 import kotlin.math.ceil
@@ -61,6 +62,29 @@ class InkIncrementalTest {
         val stroke = randomStroke(Random(4))
         cache.update(listOf(stroke, stroke.copy()))
         assertEquals(2, computed.size)
+    }
+
+    @Test fun cachedLookupPreservesIdentityAndNeverReadmitsRemovedStrokes() {
+        var computes = 0
+        val cache = InkGeometryCache { computes++; InkGeometry.segments(it) }
+        val first = randomStroke(Random(4))
+        val second = first.copy()
+        val geometry = cache.update(listOf(first, second))
+        assertSame(geometry[0], cache.cachedSegments(first))
+        assertSame(geometry[1], cache.cachedSegments(second))
+        assertNull(cache.cachedSegments(first.copy()))
+
+        cache.update(listOf(second))
+        assertNull(cache.cachedSegments(first))
+        assertSame(geometry[1], cache.cachedSegments(second))
+        assertEquals(2, computes)
+
+        cache.seed(first, geometry[0])
+        assertSame(geometry[0], cache.cachedSegments(first))
+        cache.update(emptyList())
+        assertNull(cache.cachedSegments(first))
+        assertNull(cache.cachedSegments(second))
+        assertEquals("Lookups neither compute nor retain absent strokes", 2, computes)
     }
 
     private fun randomStroke(random: Random): InkStroke {

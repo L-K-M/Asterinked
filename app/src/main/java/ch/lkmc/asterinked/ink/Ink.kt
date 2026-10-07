@@ -149,6 +149,9 @@ internal class InkStrokeBuilder(width: Float) {
 internal class InkGeometryCache(private val compute: (InkStroke) -> List<InkSegment> = InkGeometry::segments) {
     private var entries = IdentityHashMap<InkStroke, List<InkSegment>>()
 
+    /** Read-only lookup: shared segment lists must not be modified. Missing strokes stay absent. */
+    fun cachedSegments(stroke: InkStroke): List<InkSegment>? = entries[stroke]
+
     /** Offers geometry that is already known, such as a live stroke's builder output. */
     fun seed(stroke: InkStroke, segments: List<InkSegment>) {
         entries[stroke] = segments

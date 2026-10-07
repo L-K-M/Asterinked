@@ -164,6 +164,47 @@ class InkPageViewTest {
         assertTrue(erased.isEmpty())
     }
 
+    @Test fun firstEraseReusesDisplayedGeometryAcrossCancelledGestures() {
+        var reads = 0
+        fun countedStroke(y: Float, kind: InkKind = InkKind.PEN): InkStroke {
+            val pressure = if (kind == InkKind.HIGHLIGHTER) 0f else 1f
+            val samples = listOf(InkPoint(100f, y, pressure), InkPoint(300f, y, pressure))
+            val counted = object : AbstractList<InkPoint>() {
+                override val size get() = samples.size
+                override fun get(index: Int): InkPoint { reads++; return samples[index] }
+            }
+            return InkStroke(counted, Color.BLACK, if (kind == InkKind.HIGHLIGHTER) 12f else 2f, kind)
+        }
+        val pen = countedStroke(300f)
+        val equalPen = pen.copy()
+        val highlight = countedStroke(300f, InkKind.HIGHLIGHTER)
+        val displayed = listOf(pen, equalPen, highlight) + List(61) { countedStroke(100f + it) }
+        val erased = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, mutableListOf()).apply {
+            onErase = { erased.addAll(it) }
+            tool = InkTool.ERASER
+            show(EditorState(Draft(File("test.pdf"), "test.pdf", ink = mapOf(0 to displayed)),
+                listOf(PageSpec(0f, 0f, 400f, 600f, 0)), page, busy = false))
+            // Establish pageRect before input, independently of the stale-transform bug.
+            draw(Canvas(Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888)))
+        }
+        assertTrue("Displayed geometry was computed before contact", reads > 0)
+        reads = 0
+
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 400f)))
+        assertEquals("First contact must reuse all displayed geometry, including bounds rejects", 0, reads)
+        send(view, MotionEvent.ACTION_CANCEL, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 400f)))
+        assertTrue(erased.isEmpty())
+
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 400f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 400f)))
+        assertEquals("Reset must release gesture metadata without discarding renderer geometry", 0, reads)
+        assertEquals(3, erased.size)
+        assertSame(pen, erased[0])
+        assertSame(equalPen, erased[1])
+        assertSame(highlight, erased[2])
+    }
+
     private val strokes = mutableListOf<InkStroke>()
 
     /** Two horizontal strokes, drawn across screen y = 300 and y = 400. */
