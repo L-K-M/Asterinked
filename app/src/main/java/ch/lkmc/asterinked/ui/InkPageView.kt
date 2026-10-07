@@ -89,6 +89,7 @@ internal class InkPageView(context: Context) : View(context) {
     private val straighten = Runnable { straightenLine() }
     private var holdAnchor: InkPoint? = null
     private var linePressure: Float? = null
+    private var lineEnd: InkPoint? = null
     private var activePointer = NO_POINTER
     private var activeColor = Color.BLACK
     private var activeWidth = DEFAULT_WIDTH
@@ -490,8 +491,10 @@ internal class InkPageView(context: Context) : View(context) {
     private fun reshapeLine(end: InkPoint) {
         val pressure = linePressure ?: return
         // Dragged back onto its start, the line would shrink to a dot: keep the last one.
-        if (distance(points.first(), end) <= dpOnPage(HOLD_SLOP_DP)) return
-        points = mutableListOf(points.first().copy(pressure = pressure), end.copy(pressure = pressure))
+        val start = points.first()
+        val target = if (distance(start, end) > dpOnPage(HOLD_SLOP_DP)) end else lineEnd ?: return
+        lineEnd = target
+        points = mutableListOf(start.copy(pressure = pressure), target.copy(pressure = pressure))
         liveStroke = InkStrokeBuilder(activeWidth).also { builder -> points.forEach(builder::add) }
         invalidate()
     }
@@ -564,6 +567,7 @@ internal class InkPageView(context: Context) : View(context) {
         hold.removeCallbacks(straighten)
         holdAnchor = null
         linePressure = null
+        lineEnd = null
         points = mutableListOf()
         liveStroke = null
         // Strokes hidden by a cancelled erase must be drawn again.
