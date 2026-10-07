@@ -566,9 +566,9 @@ internal class MainActivity : ComponentActivity() {
                 MessageAction.SAVE_COPY -> NoticeAction(getString(R.string.save_copy)) { launchPicker { savePdf.launch(exportName()) } }
                 null -> null
             }
-            // A suppressed notice stays pending: a later render retries once the
-            // error has cleared instead of dropping the message unseen.
-            if (notice.show(it.text, it.tone, action)) model.acknowledgeMessage()
+            // A suppressed notice stays pending: retry once the blocking error
+            // has had its run instead of dropping the message unseen.
+            if (notice.show(it.text, it.tone, action)) model.acknowledgeMessage() else retrySuppressed()
         }
         state.shared?.let {
             model.acknowledgeShare()
@@ -576,10 +576,12 @@ internal class MainActivity : ComponentActivity() {
         }
         state.exported?.let {
             // Same rule: if an unread error suppressed the flash, exported stays
-            // set and the next render offers Open again once the error clears.
+            // set and a retry offers Open again once the error clears.
             if (notice.show(getString(R.string.pdf_saved), Tone.SUCCESS,
                     NoticeAction(getString(R.string.open)) { openExported(it) })) {
                 model.acknowledgeExport()
+            } else {
+                retrySuppressed()
             }
         }
         // Cleared only once the user decides, so a rotation during the prompt asks
@@ -736,6 +738,12 @@ internal class MainActivity : ComponentActivity() {
         try { action() } catch (_: ActivityNotFoundException) {
             notice.show(getString(failure), Tone.ERROR)
         }
+    }
+
+    // A notice an unread error suppressed stays pending in the state; re-render
+    // once the error has had its run. Still suppressed? The next show() re-arms.
+    private fun retrySuppressed() {
+        notice.postDelayed({ model.state.value?.let(::show) }, Tone.ERROR.millis.toLong())
     }
 
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }

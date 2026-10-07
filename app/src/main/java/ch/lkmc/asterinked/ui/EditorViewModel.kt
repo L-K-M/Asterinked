@@ -219,8 +219,11 @@ internal class EditorViewModel internal constructor(
                     // A different open document is untouched — never blank it.
                     val restored = current.draft?.takeIf { it.source == latest.source }
                         ?.let { if (restoreSavedInk != null) it.copy(savedInk = restoreSavedInk) else it }
+                    // Offer Save copy only when the failed draft is still on
+                    // screen — otherwise the action would export the wrong file.
+                    val action = if (restored != null) MessageAction.SAVE_COPY else null
                     publish(current.copy(draft = restored ?: current.draft,
-                        message = EditorMessage(text(R.string.notes_not_saved), Tone.ERROR, MessageAction.SAVE_COPY)))
+                        message = EditorMessage(text(R.string.notes_not_saved), Tone.ERROR, action)))
                 }
             }
         }
