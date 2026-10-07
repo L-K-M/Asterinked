@@ -113,7 +113,8 @@ The adaptive icon's foreground webp files are generated; regenerate them from
 - Tests cannot open a real PDF (no PdfRenderer); `EditorScreens.publish`
   puts the activity into an editor state with a drawn stand-in page.
 - Messages to the user go through `NoticeBar`, not toasts: Android 12+ cuts
-  toasts to two lines.
+  toasts to two lines. A notice can carry one action (`NoticeAction`), which
+  keeps it up for ten seconds instead of the tone's usual timeout.
 
 ## CI/CD
 

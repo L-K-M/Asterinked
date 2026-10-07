@@ -241,6 +241,9 @@ internal class MainActivity : ComponentActivity() {
         loading = buildLoading()
         workspace.addView(loading, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
         notice = NoticeBar(this)
+        // A notice an unread error suppressed stays pending in the state; the
+        // error's own dismissal re-renders and surfaces it — no polling needed.
+        notice.onDismissed = { model.state.value?.let(::show) }
         workspace.addView(notice, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
             setMargins(ui.dp(Space.L), 0, ui.dp(Space.L), ui.dp(Space.L))
         })
@@ -623,16 +626,25 @@ internal class MainActivity : ComponentActivity() {
 
         page.show(state)
         state.message?.let {
-            val actionLabel = if (it.text.contains("couldn\u2019t be stored")) getString(R.string.save_copy) else null
-            val action = if (actionLabel != null) {
-                { launchPicker { savePdf.launch(exportName()) } }
-            } else null
-            notice.show(it.text, it.tone, actionLabel, action)
-            model.acknowledgeMessage()
+            val action = when (it.action) {
+                MessageAction.SAVE_COPY -> NoticeAction(getString(R.string.save_copy)) { launchPicker { savePdf.launch(exportName()) } }
+                null -> null
+            }
+            // A suppressed notice stays pending: the blocking error's dismissal
+            // re-renders and surfaces it instead of dropping it unseen.
+            if (notice.show(it.text, it.tone, action)) model.acknowledgeMessage()
         }
         state.shared?.let {
             model.acknowledgeShare()
             sendToShareSheet(it)
+        }
+        state.exported?.let {
+            // Same rule: if an unread error suppressed the flash, exported stays
+            // set and the error's dismissal offers Open the moment it clears.
+            if (notice.show(getString(R.string.pdf_saved), Tone.SUCCESS,
+                    NoticeAction(getString(R.string.open)) { openExported(it) })) {
+                model.acknowledgeExport()
+            }
         }
         // Cleared only once the user decides, so a rotation during the prompt asks
         // again; a newer PDF that arrived meanwhile stays pending.
@@ -748,6 +760,27 @@ internal class MainActivity : ComponentActivity() {
             .show()
     }
 
+    // The flag (with the ClipData copy as belt-and-braces) grants the chosen
+    // viewer read access; EXTRA_EXCLUDE_COMPONENTS keeps Asterinked out of the
+    // sheet so the copy cannot be mistaken for a document to annotate.
+    private fun openExported(uri: Uri) {
+        val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, PDF_MIME)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        // A chooser always resolves, so it never throws for a missing viewer:
+        // ask the package manager first, excluding ourselves.
+        @Suppress("DEPRECATION") // ResolveInfoFlags only exists on API 33+.
+        val viewers = packageManager.queryIntentActivities(view, 0)
+            .filterNot { it.activityInfo.packageName == packageName }
+        if (viewers.isEmpty()) {
+            notice.show(getString(R.string.no_viewer), Tone.ERROR)
+            return
+        }
+        view.clipData = ClipData.newRawUri(uri.lastPathSegment ?: exportName(), uri)
+        val chooser = Intent.createChooser(view, getString(R.string.open_title))
+            .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(ComponentName(this, MainActivity::class.java)))
+        launchPicker(R.string.no_viewer) { startActivity(chooser) }
+    }
+
     private fun sendToShareSheet(file: File) {
         val uri = FileProvider.getUriForFile(this, "$packageName$FILE_AUTHORITY_SUFFIX", file)
         val send = Intent(Intent.ACTION_SEND)
@@ -763,11 +796,12 @@ internal class MainActivity : ComponentActivity() {
 
     private fun exportName(): String = model.state.value?.draft?.exportName ?: DEFAULT_EXPORT_NAME
 
-    private fun launchPicker(action: () -> Unit) {
+    private fun launchPicker(failure: Int = R.string.no_picker, action: () -> Unit) {
         try { action() } catch (_: ActivityNotFoundException) {
-            notice.show(getString(R.string.no_picker), Tone.ERROR)
+            notice.show(getString(failure), Tone.ERROR)
         }
     }
+
 
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }

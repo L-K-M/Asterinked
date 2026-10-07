@@ -32,4 +32,6 @@
     <color name="inverse_on_surface">#F2F3F6</color>
     <color name="notice_success">#7DDA95</color>
     <color name="notice_error">#FF9298</color>
+    <!-- A notice action keeps the brand red, softened to read on the dark bar. -->
+    <color name="notice_action">#FFB8BB</color>
 </resources>

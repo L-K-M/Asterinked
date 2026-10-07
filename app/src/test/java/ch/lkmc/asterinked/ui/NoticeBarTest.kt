@@ -2,9 +2,12 @@ package ch.lkmc.asterinked.ui
 
 import android.app.Activity
 import android.os.Looper
+import android.widget.Button
 import android.widget.FrameLayout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -63,6 +66,81 @@ class NoticeBarTest {
         notice.show("Drag across strokes to erase them", Tone.INFO)
         assertEquals("Drag across strokes to erase them", notice.shown)
     }
+
+    @Test fun aSuccessDoesNotHideAnUnreadError() {
+        notice.show("Couldn’t save", Tone.ERROR)
+        assertFalse(notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") {}))
+        assertEquals("Couldn’t save", notice.shown)
+        assertNull(notice.actionLabel)
+        advance(Tone.ERROR.millis + ANIMATION_MS)
+        assertTrue(notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") {}))
+        assertEquals("PDF saved.", notice.shown)
+    }
+
+    // The callback fires after dismiss starts, so a notice it raises survives.
+    @Test fun anActionCanRaiseItsOwnNotice() {
+        notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") {
+            notice.show("Opening…", Tone.INFO)
+        })
+
+        actionButton()!!.performClick()
+
+        advance(ANIMATION_MS)
+        assertEquals("Opening…", notice.shown)
+    }
+
+    @Test fun anActionRunsItsCallbackAndHidesTheNotice() {
+        var ran = false
+        notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") { ran = true })
+        assertEquals("Open", notice.actionLabel)
+
+        actionButton()!!.performClick()
+
+        assertTrue(ran)
+        advance(ANIMATION_MS)
+        assertNull(notice.shown)
+    }
+
+    @Test fun dismissalReportsItselfSoSuppressedNoticesCanSurface() {
+        var dismissed = 0
+        notice.onDismissed = { dismissed++ }
+        notice.show("Couldn’t save", Tone.ERROR)
+        assertFalse(notice.show("PDF saved.", Tone.SUCCESS))
+
+        notice.dismiss()
+        advance(ANIMATION_MS)
+
+        assertEquals(1, dismissed)
+    }
+
+    // A second tap during the fade-out finds the tag already cleared.
+    @Test fun anActionCannotFireTwiceWhileDismissing() {
+        var count = 0
+        notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") { count++ })
+
+        actionButton()!!.performClick()
+        actionButton()!!.performClick()
+
+        assertEquals(1, count)
+    }
+
+    @Test fun anActionNoticeStaysLongEnoughToReachIt() {
+        notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") {})
+        advance(Tone.SUCCESS.millis + ANIMATION_MS)
+        assertEquals("PDF saved.", notice.shown)
+    }
+
+    @Test fun aNoticeWithoutAnActionDropsTheOldOne() {
+        notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") {})
+        notice.show("Drag across strokes to erase them", Tone.INFO)
+        assertEquals("Drag across strokes to erase them", notice.shown)
+        assertNull(notice.actionLabel)
+    }
+
+    private fun actionButton(): Button? = (0 until notice.childCount)
+        .map { notice.getChildAt(it) }
+        .filterIsInstance<Button>()
+        .singleOrNull()
 
     private fun advance(millis: Int) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(millis.toLong()))
 
