@@ -9,6 +9,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,7 +61,8 @@ class DocumentServiceRestoreTest {
         assertTrue(source.setReadable(false, false))
 
         try {
-            assertFalse(source.canRead())
+            // Root ignores file permissions; the case cannot be staged there.
+            assumeFalse("File permissions are not enforced here", source.canRead())
             assertEquals(DocumentProblem.DRAFT_UNREADABLE, restoreProblem())
             assertTrue("A read failure must retain the draft", File(directory, "draft.json").isFile)
             assertFalse(brokenFile.exists())

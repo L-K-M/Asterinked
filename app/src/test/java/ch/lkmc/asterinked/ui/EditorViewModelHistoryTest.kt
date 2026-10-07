@@ -94,6 +94,7 @@ class EditorViewModelHistoryTest {
         model.goToPage(1)
         model.redo()
         assertTrue("Nothing to redo on page 1 either", strokes.isEmpty())
+        assertFalse(state.canRedo)
 
         model.undo()
         assertEquals("Undo turns back to the newest edit", 0, state.draft!!.page)

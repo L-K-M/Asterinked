@@ -195,6 +195,15 @@ class InkPageViewGestureTest {
 
     // A finger that lifts and lands again while another rests is not a clean
     // two-finger tap, and must not count as a third finger.
+    @Test fun aCancelledGestureIsNotATap() {
+        val view = pageView(InputMode.PEN)
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 260f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_CANCEL, listOf(finger(0, 260f), finger(1, 340f)))
+
+        assertTrue(taps.isEmpty())
+    }
+
     @Test fun aFingerThatLandsAgainIsNotATap() {
         val view = pageView(InputMode.PEN)
         send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 260f)))

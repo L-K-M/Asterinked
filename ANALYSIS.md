@@ -75,7 +75,12 @@ a pending message and a pending "PDF saved" in one render show back to back,
 so the first can vanish unseen (#34; needs a notice queue); a save-picker
 grant taken just before a rotation and a failed export is never released
 (#38; keep `unclaimedGrant` in the saved state); the page pill still takes
-taps during its 150 ms fade-out (#36; it was always tappable before).
+taps during its 150 ms fade-out (#36; it was always tappable before). These
+are listed in the Open queue below.
+
+#59 makes notices a dark card in both themes, so #34's night `notice_action`
+(#A00C15, 1.45:1 on #33373F) is dropped; the shared #FFB8BB measures
+7.3:1 against the night card and 8.8:1 against the day one.
 
 ## Continuation pass: six implementations (resolved; see Integration pass)
 
@@ -192,9 +197,9 @@ carry an Effort size: S, M or L.
 
 ## Review pass: fourteen implementations (resolved; see Integration pass)
 
-Implementations of 2026-10-06 review items, each on its own branch and open
-against main. None is merged, so none is in Done; each covered
-entry is marked "(awaiting #N)". "Steady state" means the GLM review rounds
+Snapshot of 2026-10-06: implementations of that review's items, each then
+on its own branch and open against main; each covered entry was marked
+"(awaiting #N)". The Integration pass above records their outcome. "Steady state" means the GLM review rounds
 met the stopping rule (two rounds without important findings); "in review"
 means rounds were still running on 2026-10-07.
 
@@ -630,11 +635,11 @@ with only a risk/hypothesis require proof before a behavior change.
 
 | Rank | Work | Canonical detail |
 |---|---|---|
-| 1 | Draft/export protection: B-share-lifetime, N23, B23, B25, B37, B34 (rest), B35 | Section 2; B8/N25, B19, B22, B26 and N1 landed (#25, #27, #57, #60, #34) |
+| 1 | Draft/export protection: B-share-lifetime, N23, B23, B25, B37, B34 (rest), B35; integration follow-ups: notice queue (#34), `unclaimedGrant` across rotation (#38), B22 prompt before the bytes are known | Section 2; B8/N25, B19, B22, B26 and N1 landed (#25, #27, #57, #60, #34) |
 | 2 | Input/state: B-pen-takeover/N21, B30, B32, B29, B-canceled-navigation, B-multitouch-swipe, B-quick-scale, B-stylus-secondary, B-pending-pdf/N22, B-page-dialog, B12/N32, B39, B38, B42 | Section 2 and 6; tests first, no geometry redesign; N2, B21, B27, U9, U10 and B-storage-recovery-effect landed (#27/#46, #56, #63, #58, #62, #34) |
 | 3 | Release/privacy obligations: T8, T9, T10, G1, B41; helper errors G10, T11 and B-rc4-import compatibility | Sections 2, 3 and 8; G5 landed (#28); RC4 failure occurs before export |
 | 4 | Performance: P-prefetch, P-page-tree, P-live-chunks/P10, N29, P14, P16, P17, P5/G6, P6, P8, P20, P25 | Section 4; P9, N28, P19 and P21 need device baselines; P11 landed (#26) |
-| 5 | Writing space/product/accessibility: V16/F3/V9, V24, V17, V10/N34, V25, U5/U8/U4 (remaining), F-presets/N38, F32, F16/N36/N37, F8 (rest), U11, U12, U14, V26, F-accessible-text; N24/N39 and remaining features/UX | Sections 2, 5–7; F6, hover, loader, haptics, undo, dark theme, per-tool ink and straighten landed; focus, night and flip stay open (#51, #49, #52 closed) |
+| 5 | Writing space/product/accessibility: V16/F3/V9, V24, V17, V10/N34, V25, U5/U8/U4 (remaining), F-presets/N38, F32, F16/N36/N37, F8 (rest), U11, U12, U14, V26, F-accessible-text; N24/N39 and remaining features/UX | Sections 2, 5–7; integration follow-up: pill taps during its fade-out (#36); F6, hover, loader, haptics, undo, dark theme, per-tool ink and straighten landed; focus, night and flip stay open (#51, #49, #52 closed) |
 | 6 | Exploratory risks and remaining verification, including N26/N28, G12-G14 and T12-T14 | Sections 3, 4, 8–9; R-* and T-keyboard are not confirmed bugs |
 
 The 2026-10-06 review's value-for-effort order: B21 (#56), B22 (#57), U9
@@ -1826,8 +1831,9 @@ that no single PR shows on its own:
   state and effects stop mixing. Define unread-message retention before
   choosing transport; rotation must neither duplicate share nor lose unread
   recovery notices. Coordinate with B-pending-pdf and U8. N1's merged #34
-  adds `exported`/`acknowledgeExport`, another manually acknowledged field;
-  current-main B-storage-recovery-effect also couples recovery to English text.
+  adds `exported`/`acknowledgeExport`, another manually acknowledged field.
+  #34 also replaced the English-text match behind B-storage-recovery-effect
+  with a typed `MessageAction`.
 - **G9(b). All-permissions encryption policy.** G9(a) is done (#33).
   For an encrypted source granting every permission, decide whether to strip
   encryption instead of re-locking behind a random unknown owner password.
@@ -4144,15 +4150,14 @@ unless it says measured.
 
 Proposals, not confirmed defects or measured demand. Earlier seeds remain
 below with descriptive stable IDs. D-next is done (#41);
-U2 is the same item as D-preview. Basic hover, loader, night, focus and flip
-implementations are recorded on awaiting branches above; their acceptance
-and remaining slices stay here. Do not start duplicate base implementations.
+U2 is the same item as D-preview. Hover, the loading
+loader and the straight-line slice landed (#35, #53, #64); night, focus and
+flip were closed (#49, #51, #52). Remaining acceptance and slices stay here.
 The 2026-10-06 review's D1 (directional page slide) and D2 (hold to snap)
 are merged into D-flip and D-straight, its F21 (lasso plan) into D-lasso;
-its new ideas are D6-D9 at the end of this section. Hover now also awaits
-#35, and the straight-line slice of D-straight awaits #64.
+its new ideas are D6-D9 at the end of this section.
 
-### D-focus / D-4. Focus mode with a discoverable escape (#51 closed: no escape)
+### D-focus / D-4. Focus mode with a discoverable escape (open; #51 closed without an escape)
 - **Evidence:** V16's measured compact writing space; original hide-chrome seed.
 - **Scope:** Deliberate toggle hides top/bottom chrome; retain one accessible
   48dp escape, stable paper mapping and Back-to-exit. Left/right edge taps
