@@ -3,6 +3,7 @@ package ch.lkmc.asterinked.ui
 import android.content.Context
 import android.content.res.ColorStateList
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.accessibility.AccessibilityManager
 import android.widget.Button
 import android.widget.ImageView
@@ -61,9 +62,10 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
         setOnClickListener { dismiss() }
     }
 
-    fun show(text: CharSequence, tone: Tone, actionLabel: CharSequence? = null, action: (() -> Unit)? = null) {
+    /** Shows [text]; false if it gave way to an error still on screen. */
+    fun show(text: CharSequence, tone: Tone, actionLabel: CharSequence? = null, action: (() -> Unit)? = null): Boolean {
         // A tool hint must not wipe out an error the user has not read yet.
-        if (tone == Tone.INFO && this.tone == Tone.ERROR && isVisible && action == null) return
+        if (tone == Tone.INFO && this.tone == Tone.ERROR && isVisible && action == null) return false
 
         this.tone = tone
         message.text = text
@@ -87,7 +89,27 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
             translationY = ui.dp(Space.L).toFloat()
         }
         animate().alpha(1f).translationY(0f).setDuration(Motion.MEDIUM).setInterpolator(Motion.EASING).start()
+        return true
     }
+
+    // A notice floats over the page, often where the user writes next. A pen
+    // touch outside its action goes to the page underneath (by refusing the
+    // DOWN, the parent offers it to the next view there), and puts a hint away;
+    // errors stay until read. Finger taps still dismiss.
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked != MotionEvent.ACTION_DOWN || !isPen(event) || onAction(event)) return super.dispatchTouchEvent(event)
+
+        if (tone == Tone.INFO) dismiss()
+        return false
+    }
+
+    private fun isPen(event: MotionEvent): Boolean {
+        val tool = event.getToolType(event.actionIndex)
+        return tool == MotionEvent.TOOL_TYPE_STYLUS || tool == MotionEvent.TOOL_TYPE_ERASER
+    }
+
+    private fun onAction(event: MotionEvent): Boolean = actionButton.isShown &&
+        event.x >= actionButton.left && event.x < actionButton.right && event.y >= actionButton.top && event.y < actionButton.bottom
 
     fun dismiss() {
         removeCallbacks(hide)

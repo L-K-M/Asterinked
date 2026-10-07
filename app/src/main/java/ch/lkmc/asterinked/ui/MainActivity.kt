@@ -500,7 +500,17 @@ internal class MainActivity : ComponentActivity() {
         }
         tick()
         configurePen()
-        choice.hint?.let(::hint)
+        choice.hint?.let { toolHint(choice, it) }
+    }
+
+    // A tool hint teaches its gesture; after two showings it only covers the
+    // page. Only showings that happened count. The finger-mode hint always
+    // shows, since it changes what touches do.
+    private fun toolHint(choice: ToolChoice, message: Int) {
+        val key = HINT_SHOWN_KEY_PREFIX + choice.name
+        val shown = settings.getInt(key, 0)
+        if (shown >= TOOL_HINT_SHOWINGS) return
+        if (notice.show(getString(message), Tone.INFO)) settings.edit { putInt(key, shown + 1) }
     }
 
     private fun toggleFingerDrawing() {
@@ -734,6 +744,8 @@ internal class MainActivity : ComponentActivity() {
         const val MODE_KEY = "inputMode"
         const val KIND_KEY = "inkKind"
         const val TOOL_KEY = "inkTool"
+        const val HINT_SHOWN_KEY_PREFIX = "hintShown_"
+        const val TOOL_HINT_SHOWINGS = 2
         const val INCOMING_KEY = "incomingPdf"
         // Matches android:authorities="${'$'}{applicationId}.files" in the manifest.
         const val FILE_AUTHORITY_SUFFIX = ".files"

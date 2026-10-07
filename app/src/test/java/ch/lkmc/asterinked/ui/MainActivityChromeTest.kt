@@ -23,6 +23,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
+import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-mdpi")
@@ -59,6 +60,26 @@ class MainActivityChromeTest {
             assertTrue(dot(root, R.string.blue).isSelected)
             assertFalse(dot(root, R.string.black).isSelected)
             assertTrue(dot(root, R.string.bold).isSelected)
+        }
+    }
+
+    @Test fun aToolHintShowsTwiceThenStaysOutOfTheWay() {
+        val hint = app.getString(R.string.highlight_hint)
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val root = settle(controller.get())
+            val shown = (1..3).map {
+                control(root, R.string.highlighter).performClick()
+                val text = notice(root).shown
+                shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(HINT_GONE_S))
+                control(root, R.string.pen).performClick()
+                text == hint
+            }
+            assertEquals(listOf(true, true, false), shown)
+        }
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val root = settle(controller.get())
+            control(root, R.string.highlighter).performClick()
+            assertNull("Also after a restart", notice(root).shown)
         }
     }
 
@@ -127,6 +148,11 @@ class MainActivityChromeTest {
         assertEquals(R.string.working, status(exported, busy = true))
     }
 
+    private companion object {
+        // Longer than an info notice stays, so the next one starts from hidden.
+        const val HINT_GONE_S = 4L
+    }
+
     private fun settle(activity: MainActivity): View {
         repeat(50) {
             shadowOf(Looper.getMainLooper()).idle()
@@ -137,6 +163,8 @@ class MainActivityChromeTest {
 
     private fun control(root: View, label: Int): View =
         descendants(root).single { it.contentDescription == app.getString(label) }
+
+    private fun notice(root: View): NoticeBar = descendants(root).filterIsInstance<NoticeBar>().single()
 
     private fun page(root: View): InkPageView = descendants(root).filterIsInstance<InkPageView>().single()
 
