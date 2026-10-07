@@ -221,6 +221,9 @@ internal class MainActivity : ComponentActivity() {
         loading = buildLoading()
         workspace.addView(loading, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
         notice = NoticeBar(this)
+        // A notice an unread error suppressed stays pending in the state; the
+        // error's own dismissal re-renders and surfaces it — no polling needed.
+        notice.onDismissed = { model.state.value?.let(::show) }
         workspace.addView(notice, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
             setMargins(ui.dp(Space.L), 0, ui.dp(Space.L), ui.dp(Space.L))
         })
@@ -566,9 +569,9 @@ internal class MainActivity : ComponentActivity() {
                 MessageAction.SAVE_COPY -> NoticeAction(getString(R.string.save_copy)) { launchPicker { savePdf.launch(exportName()) } }
                 null -> null
             }
-            // A suppressed notice stays pending: retry once the blocking error
-            // has had its run instead of dropping the message unseen.
-            if (notice.show(it.text, it.tone, action)) model.acknowledgeMessage() else retrySuppressed()
+            // A suppressed notice stays pending: the blocking error's dismissal
+            // re-renders and surfaces it instead of dropping it unseen.
+            if (notice.show(it.text, it.tone, action)) model.acknowledgeMessage()
         }
         state.shared?.let {
             model.acknowledgeShare()
@@ -576,12 +579,10 @@ internal class MainActivity : ComponentActivity() {
         }
         state.exported?.let {
             // Same rule: if an unread error suppressed the flash, exported stays
-            // set and a retry offers Open again once the error clears.
+            // set and the error's dismissal offers Open the moment it clears.
             if (notice.show(getString(R.string.pdf_saved), Tone.SUCCESS,
                     NoticeAction(getString(R.string.open)) { openExported(it) })) {
                 model.acknowledgeExport()
-            } else {
-                retrySuppressed()
             }
         }
         // Cleared only once the user decides, so a rotation during the prompt asks
@@ -740,15 +741,6 @@ internal class MainActivity : ComponentActivity() {
         }
     }
 
-    // A notice an unread error suppressed stays pending in the state; re-render
-    // once the error has had its run. Still suppressed? The next show() re-arms.
-    private val retry = Runnable { model.state.value?.let(::show) }
-
-    private fun retrySuppressed() {
-        // One retry in flight: re-arming replaces the one already pending.
-        notice.removeCallbacks(retry)
-        notice.postDelayed(retry, Tone.ERROR.millis.toLong())
-    }
 
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }

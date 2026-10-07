@@ -101,6 +101,18 @@ class NoticeBarTest {
         assertNull(notice.shown)
     }
 
+    @Test fun dismissalReportsItselfSoSuppressedNoticesCanSurface() {
+        var dismissed = 0
+        notice.onDismissed = { dismissed++ }
+        notice.show("Couldn’t save", Tone.ERROR)
+        assertFalse(notice.show("PDF saved.", Tone.SUCCESS))
+
+        notice.dismiss()
+        advance(ANIMATION_MS)
+
+        assertEquals(1, dismissed)
+    }
+
     // A second tap during the fade-out finds the tag already cleared.
     @Test fun anActionCannotFireTwiceWhileDismissing() {
         var count = 0

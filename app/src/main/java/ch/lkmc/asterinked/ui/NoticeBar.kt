@@ -110,12 +110,16 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
         return true
     }
 
+    /** Runs after a shown notice has fully dismissed; notices suppressed by it
+     *  can then surface without waiting on another state change. */
+    var onDismissed: (() -> Unit)? = null
+
     fun dismiss() {
         removeCallbacks(hide)
         if (visibility != VISIBLE) return
 
         animate().alpha(0f).translationY(ui.dp(Space.S).toFloat()).setDuration(Motion.SHORT).setInterpolator(Motion.EASING)
-            .withEndAction { visibility = GONE }.start()
+            .withEndAction { visibility = GONE; onDismissed?.invoke() }.start()
     }
 
     override fun onDetachedFromWindow() {
