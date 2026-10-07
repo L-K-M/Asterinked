@@ -334,6 +334,16 @@ internal class InkPageView(context: Context) : View(context) {
         }
     }
 
+    // A disabled page shows no cursor — clear a resting one instead of leaving
+    // it painted until the next hover event happens to arrive.
+    override fun setEnabled(enabled: Boolean) {
+        if (isEnabled && !enabled && hoverVisible) {
+            invalidateHover()
+            hoverVisible = false
+        }
+        super.setEnabled(enabled)
+    }
+
     // Only pens hover; fingers and mice pass through to the default handling.
     override fun onHoverEvent(event: MotionEvent): Boolean {
         val tool = event.getToolType(0)
