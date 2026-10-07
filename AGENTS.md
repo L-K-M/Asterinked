@@ -37,6 +37,10 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   `PdfRenderer` itself only runs on devices. Service tests feed a content
   URI with `ShadowContentResolver.registerInputStream`; its display-name
   query returns no cursor, so the import gets the default name.
+- Restore sets a draft it cannot decode (bad JSON, a missing source PDF)
+  aside once as `draft.broken.json`. Read and PDF inspection failures keep
+  the draft; a saved page past the end opens the last page; a failed
+  preview restores the ink on a blank page and is retried in the editor.
 - Production `DocumentSession`s share one process-owned FIFO worker. Clearing
   an editor suppresses callbacks and skips queued previews, but drains writes
   and closes its service before the next editor restores. Never shut down that

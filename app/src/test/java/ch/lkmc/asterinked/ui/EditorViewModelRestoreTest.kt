@@ -57,11 +57,46 @@ class EditorViewModelRestoreTest {
         assertNull(state.message)
     }
 
+    @Test fun aBrokenDraftIsReportedOnceNotOnEveryLaunch() {
+        val documents = BrokenOnce()
+        val first = EditorViewModel(app, documents, worker)
+        settle()
+        assertEquals(app.getString(R.string.error_draft_unreadable), first.state.value!!.message?.text)
+        assertFalse(first.state.value!!.busy)
+
+        // Next launch: the draft was set aside, so there is nothing to report.
+        val second = EditorViewModel(app, documents, worker)
+        settle()
+        val state = second.state.value!!
+        assertNull(state.message)
+        assertNull(state.draft)
+        assertFalse(state.busy)
+    }
+
     private fun settle() {
         repeat(10) {
             worker.runAll()
             shadowOf(Looper.getMainLooper()).idle()
         }
+    }
+
+    /** Fails the first restore as a set-aside draft would; the next finds nothing. */
+    private class BrokenOnce : DocumentOperations {
+        private var failed = false
+
+        override fun restore(): OpenDocument? {
+            if (failed) return null
+            failed = true
+            throw DocumentException(DocumentProblem.DRAFT_UNREADABLE)
+        }
+
+        override fun open(uri: Uri, current: Draft?): OpenResult = throw UnsupportedOperationException()
+        override fun render(draft: Draft): Bitmap = throw UnsupportedOperationException()
+        override fun cachedPreview(draft: Draft): Bitmap? = null
+        override fun saveDraft(draft: Draft) = Unit
+        override fun export(draft: Draft, destination: Uri) = throw UnsupportedOperationException()
+        override fun share(draft: Draft): File = throw UnsupportedOperationException()
+        override fun close() = Unit
     }
 
     /** Restores a draft without its preview; the first [failures] renders fail. */
