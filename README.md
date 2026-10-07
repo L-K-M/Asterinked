@@ -10,6 +10,9 @@ Pen-based PDF annotation for Android 10 and newer.
 1. **Open PDF** through Android's document picker, or open or share a PDF to
    Asterinked from another app (Files, email, a browser download).
 2. Write with a stylus. Pressure changes line width; fingers pan and pinch to zoom.
+   Rest the pen still at the end of a stroke to straighten it into a line;
+   keep it down and move to place the line's end. Short strokes, and loops that
+   end near where they started, stay as drawn.
    Pick ink colour and pen width in the tool bar at the bottom; they stay as you
    left them.
 3. Switch between pen, highlighter and eraser in the tool bar. Highlights

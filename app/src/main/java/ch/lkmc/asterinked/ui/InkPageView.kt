@@ -10,7 +10,10 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.RenderNode
+import android.os.Handler
+import android.os.Looper
 import android.view.GestureDetector
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
@@ -28,6 +31,7 @@ import ch.lkmc.asterinked.ink.InkStrokeBuilder
 import java.util.Collections
 import java.util.IdentityHashMap
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.min
 
 internal enum class InputMode { PEN, TOUCH }
@@ -75,6 +79,18 @@ internal class InkPageView(context: Context) : View(context) {
     private val eraserRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = Color.argb(160, 60, 70, 80) }
     private var eraserAt: InkPoint? = null
     private var activeErasing = false
+    // Hold to straighten: a pen that rests still for HOLD_MS after drawing at
+    // least MIN_LINE_DP turns its stroke into a straight line from where it
+    // started, with a tick; until it lifts, moving drags the line's end.
+    //
+    //     ~~~~~~~~~~~~~~~~   (rest)   ----------------   (drag)   -----------\
+    //
+    // A loop that ends near its start stays as drawn.
+    private val hold = Handler(Looper.getMainLooper())
+    private val straighten = Runnable { straightenLine() }
+    private var holdAnchor: InkPoint? = null
+    private var linePressure: Float? = null
+    private var lineEnd: InkPoint? = null
     private var activePointer = NO_POINTER
     private var activeColor = Color.BLACK
     private var activeWidth = DEFAULT_WIDTH
@@ -246,6 +262,7 @@ internal class InkPageView(context: Context) : View(context) {
 
     override fun onDetachedFromWindow() {
         cancelZoomAnimation()
+        hold.removeCallbacks(straighten)
         super.onDetachedFromWindow()
         inkNode.discardDisplayList()
         inkLayer.discardDisplayList()
@@ -456,8 +473,55 @@ internal class InkPageView(context: Context) : View(context) {
     override fun performClick(): Boolean { super.performClick(); return true }
 
     private fun track(event: MotionEvent, index: Int) {
-        if (activeErasing) eraseAlong(event, index) else addSamples(event, index)
+        if (activeErasing) {
+            eraseAlong(event, index)
+            return
+        }
+        addSamples(event, index)
+        followHold()
     }
+
+    private fun followHold() {
+        val last = points.lastOrNull() ?: return
+        if (linePressure != null) {
+            reshapeLine(last)
+            return
+        }
+        // Moving past the slop restarts the wait; resting lets it run out.
+        val anchor = holdAnchor
+        if (anchor != null && distance(anchor, last) <= dpOnPage(HOLD_SLOP_DP)) return
+        holdAnchor = last
+        hold.removeCallbacks(straighten)
+        hold.postDelayed(straighten, HOLD_MS)
+    }
+
+    private fun straightenLine() {
+        val first = points.firstOrNull() ?: return
+        if (liveStroke == null || activeErasing || distance(first, points.last()) < dpOnPage(MIN_LINE_DP)) return
+
+        // One even pressure, so the line keeps the stroke's weight without a taper.
+        linePressure = points.map { it.pressure }.average().toFloat()
+        performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        reshapeLine(points.last())
+    }
+
+    private fun reshapeLine(end: InkPoint) {
+        val pressure = linePressure ?: return
+        // Dragged back onto its start, the line would shrink to a dot: keep the last one.
+        val start = points.first()
+        val target = if (distance(start, end) > dpOnPage(HOLD_SLOP_DP)) end else lineEnd ?: return
+        lineEnd = target
+        points = mutableListOf(start.copy(pressure = pressure), target.copy(pressure = pressure))
+        liveStroke = InkStrokeBuilder(activeWidth).also { builder -> points.forEach(builder::add) }
+        invalidate()
+    }
+
+    private fun dpOnPage(dp: Float): Float {
+        if (pageScale <= 0f) return 0f
+        return dp * density / pageScale
+    }
+
+    private fun distance(a: InkPoint, b: InkPoint): Float = hypot(a.x - b.x, a.y - b.y)
 
     private fun eraseAlong(event: MotionEvent, index: Int) {
         fun erase(x: Float, y: Float) {
@@ -513,6 +577,10 @@ internal class InkPageView(context: Context) : View(context) {
     }
 
     private fun cancelStroke() {
+        hold.removeCallbacks(straighten)
+        holdAnchor = null
+        linePressure = null
+        lineEnd = null
         points = mutableListOf()
         liveStroke = null
         // Strokes hidden by a cancelled erase must be drawn again.
@@ -567,6 +635,10 @@ internal class InkPageView(context: Context) : View(context) {
         const val SWIPE_VELOCITY_DP = 600f
         const val SWIPE_DIRECTION_RATIO = 1.5f
         const val ERASER_RADIUS_DP = 10f
+        // Longer than a pause between letters; short enough to feel deliberate.
+        const val HOLD_MS = 600L
+        const val HOLD_SLOP_DP = 3f
+        const val MIN_LINE_DP = 24f
         // Most pens report the side button as primary; older S Pens report secondary.
         const val STYLUS_BUTTONS = MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_SECONDARY
         const val SHADOW_RADIUS_DP = 6f
