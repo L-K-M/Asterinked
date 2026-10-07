@@ -10,7 +10,8 @@ Pen-based PDF annotation for Android 10 and newer.
 1. **Open PDF** through Android's document picker, or open or share a PDF to
    Asterinked from another app (Files, email, a browser download).
 2. Write with a stylus. Pressure changes line width; fingers pan and pinch to zoom.
-   A stylus that hovers shows a ring where the nib will land.
+   A stylus that hovers previews where the nib will land: a ring for the pen
+   and the eraser, a tinted dot for the highlighter.
    Pick ink colour and pen width in the tool bar at the bottom; they stay as you
    left them.
 3. Switch between pen, highlighter and eraser in the tool bar. Highlights

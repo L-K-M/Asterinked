@@ -173,6 +173,8 @@ internal class InkPageView(context: Context) : View(context) {
         if (pageKey != key) {
             cancelStroke()
             cancelZoomAnimation()
+            // A pen held still sends no hover; its old spot means nothing here.
+            hoverAt = null
             if (document != null && document == documentKey) {
                 // Keep the zoom and column across page turns; start at the page top.
                 alignTopPending = true
@@ -246,7 +248,7 @@ internal class InkPageView(context: Context) : View(context) {
             drawInk(canvas, activeColor, live.tail)
         }
         eraserAt?.let { drawEraserRing(canvas, it, scale) }
-        hoverAt?.takeIf { liveStroke == null && eraserAt == null }?.let { drawHover(canvas, it, scale) }
+        hoverAt?.takeIf { isEnabled && liveStroke == null && eraserAt == null }?.let { drawHover(canvas, it, scale) }
         canvas.restore()
     }
 
@@ -287,10 +289,24 @@ internal class InkPageView(context: Context) : View(context) {
         val shown = hoverAt
         val hovering = event.actionMasked == MotionEvent.ACTION_HOVER_ENTER || event.actionMasked == MotionEvent.ACTION_HOVER_MOVE
         hoverAt = if (hovering && isEnabled && pageRect.contains(event.x, event.y)) pagePoint(event.x, event.y, 1f) else null
-        hoverErases = tool == MotionEvent.TOOL_TYPE_ERASER || this.tool == InkTool.ERASER || event.buttonState and STYLUS_BUTTONS != 0
+        hoverErases = erasesWhenHovering(event)
         if (shown != null || hoverAt != null) invalidate()
         return true
     }
+
+    // A side-button press or release while the pen hovers arrives here, not as
+    // a hover event, so the ring would keep the old tool until the pen moved.
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        val button = event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS || event.actionMasked == MotionEvent.ACTION_BUTTON_RELEASE
+        if (!button || hoverAt == null) return super.onGenericMotionEvent(event)
+
+        hoverErases = erasesWhenHovering(event)
+        invalidate()
+        return true
+    }
+
+    private fun erasesWhenHovering(event: MotionEvent): Boolean =
+        event.getToolType(0) == MotionEvent.TOOL_TYPE_ERASER || tool == InkTool.ERASER || event.buttonState and STYLUS_BUTTONS != 0
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
