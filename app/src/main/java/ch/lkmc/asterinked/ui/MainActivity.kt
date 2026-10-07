@@ -136,6 +136,10 @@ internal class MainActivity : ComponentActivity() {
     // back. It survives recreation, since the export may end after a rotation.
     private var unclaimedGrant: Uri? = null
     private var pillHidden = false
+    // The report on the notice bar. It is acknowledged only once read (left to
+    // time out, tapped away or acted on), so another that arrives meanwhile
+    // waits its turn, and one a hint or an error covers shows again after it.
+    private var reading: Report? = null
     private var shownPageKey: String? = null
     private val showPill = Runnable { showPagePill() }
     private var pageDialogSource: File? = null
@@ -292,9 +296,11 @@ internal class MainActivity : ComponentActivity() {
         loading = buildLoading()
         workspace.addView(loading, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
         notice = NoticeBar(this)
-        // A notice an unread error suppressed stays pending in the state; the
-        // error's own dismissal re-renders and surfaces it — no polling needed.
-        notice.onDismissed = { model.state.value?.let(::show) }
+        // Dismissal reads the report on screen and lets the next notice show.
+        notice.onDismissed = {
+            reading?.let(::acknowledge)
+            model.state.value?.let(::show)
+        }
         workspace.addView(notice, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
             setMargins(ui.dp(Space.L), 0, ui.dp(Space.L), ui.dp(Space.L))
         })
@@ -622,7 +628,7 @@ internal class MainActivity : ComponentActivity() {
         val key = HINT_SHOWN_KEY_PREFIX + choice.name
         val shown = settings.getInt(key, 0)
         if (shown >= TOOL_HINT_SHOWINGS) return
-        if (notice.show(getString(message), Tone.INFO)) settings.edit { putInt(key, shown + 1) }
+        if (hint(message)) settings.edit { putInt(key, shown + 1) }
     }
 
     private fun toggleFingerDrawing() {
@@ -671,7 +677,15 @@ internal class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun hint(message: Int) = notice.show(getString(message), Tone.INFO)
+    private fun hint(message: Int) = flash(getString(message), Tone.INFO)
+
+    // A notice of the editor's own, a hint or a failed launch, answers what the
+    // user just did. A report it covers waits and shows again once it is gone.
+    private fun flash(text: String, tone: Tone): Boolean {
+        val shown = notice.show(text, tone)
+        if (shown) reading = null
+        return shown
+    }
 
     // Any device input source that reports a stylus: built-in pens and paired
     // ones alike. Some screens report one without a pen in reach, which is why
@@ -760,26 +774,10 @@ internal class MainActivity : ComponentActivity() {
         }
 
         page.show(state)
-        state.message?.let {
-            val action = when (it.action) {
-                MessageAction.SAVE_COPY -> NoticeAction(getString(R.string.save_copy)) { launchPicker { savePdf.launch(exportName()) } }
-                null -> null
-            }
-            // A suppressed notice stays pending: the blocking error's dismissal
-            // re-renders and surfaces it instead of dropping it unseen.
-            if (notice.show(it.text, it.tone, action)) model.acknowledgeMessage()
-        }
+        showReport(state)
         state.shared?.let {
             model.acknowledgeShare()
             sendToShareSheet(it)
-        }
-        state.exported?.let {
-            // Same rule: if an unread error suppressed the flash, exported stays
-            // set and the error's dismissal offers Open the moment it clears.
-            if (notice.show(getString(R.string.pdf_saved), Tone.SUCCESS,
-                    NoticeAction(getString(R.string.open)) { openExported(it) })) {
-                model.acknowledgeExport()
-            }
         }
         // Only into an empty notice bar, so no message replaces it unseen; a
         // dismissed notice renders again and offers it then.
@@ -792,6 +790,45 @@ internal class MainActivity : ComponentActivity() {
                 if (incoming == uri) incoming = null
                 model.open(uri)
             }
+        }
+    }
+
+    // One report at a time, errors first. An error shows at once, covering
+    // anything else; any other report waits for an empty notice bar.
+    private fun showReport(state: EditorState) {
+        val message = state.message?.let(Report::Message)
+        val next = message?.takeIf { it.message.tone == Tone.ERROR }
+            ?: state.exported?.let(Report::Exported)
+            ?: message
+            ?: return
+        if (next == reading) return
+        if (notice.shown != null && next.tone != Tone.ERROR) return
+
+        val shown = when (next) {
+            is Report.Message -> notice.show(next.message.text, next.tone, saveCopyAction(next))
+            is Report.Exported -> notice.show(getString(R.string.pdf_saved), next.tone, acting(next, R.string.open) { openExported(next.uri) })
+        }
+        if (shown) reading = next
+    }
+
+    // A failed draft write offers the one action that keeps the notes.
+    private fun saveCopyAction(report: Report.Message): NoticeAction? = when (report.message.action) {
+        MessageAction.SAVE_COPY -> acting(report, R.string.save_copy) { launchPicker { savePdf.launch(exportName()) } }
+        null -> null
+    }
+
+    // Acting on a report reads it.
+    private fun acting(report: Report, label: Int, act: () -> Unit) = NoticeAction(getString(label)) {
+        acknowledge(report)
+        act()
+    }
+
+    private fun acknowledge(report: Report) {
+        if (reading == report) reading = null
+        val state = model.state.value ?: return
+        when (report) {
+            is Report.Message -> if (state.message == report.message) model.acknowledgeMessage()
+            is Report.Exported -> if (state.exported == report.uri) model.acknowledgeExport()
         }
     }
 
@@ -979,7 +1016,7 @@ internal class MainActivity : ComponentActivity() {
         val viewers = packageManager.queryIntentActivities(view, 0)
             .filterNot { it.activityInfo.packageName == packageName }
         if (viewers.isEmpty()) {
-            notice.show(getString(R.string.no_viewer), Tone.ERROR)
+            flash(getString(R.string.no_viewer), Tone.ERROR)
             return
         }
         view.clipData = ClipData.newRawUri(uri.lastPathSegment ?: exportName(), uri)
@@ -1005,7 +1042,7 @@ internal class MainActivity : ComponentActivity() {
 
     private fun launchPicker(failure: Int = R.string.no_picker, action: () -> Unit) {
         try { action() } catch (_: ActivityNotFoundException) {
-            notice.show(getString(failure), Tone.ERROR)
+            flash(getString(failure), Tone.ERROR)
         }
     }
 
@@ -1023,6 +1060,19 @@ internal class MainActivity : ComponentActivity() {
     private fun spaced(space: Int) = LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = ui.dp(space) }
 
     private enum class Screen { WELCOME, LOADING, EDITOR }
+
+    /** The outcome of document work on the notice bar: a message, or where an export landed. */
+    private sealed interface Report {
+        val tone: Tone
+
+        data class Message(val message: EditorMessage) : Report {
+            override val tone get() = message.tone
+        }
+
+        data class Exported(val uri: Uri) : Report {
+            override val tone get() = Tone.SUCCESS
+        }
+    }
 
     private enum class ToolBarRows { SINGLE, DOUBLE, TRIPLE }
 

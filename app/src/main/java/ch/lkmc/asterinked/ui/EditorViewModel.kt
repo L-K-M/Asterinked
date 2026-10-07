@@ -40,7 +40,7 @@ internal data class EditorState(
     val message: EditorMessage? = null,
     /** An annotated copy ready for the share sheet; acknowledge once handed over. */
     val shared: File? = null,
-    /** Where the last export landed; acknowledge once the notice is shown. */
+    /** Where the last export landed; acknowledge once its notice is read. */
     val exported: Uri? = null,
 )
 

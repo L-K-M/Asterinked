@@ -340,6 +340,56 @@ class MainActivityChromeTest {
     // buttons, as it would not once the pill is gone.
     // A save picked just before a rotation that then fails must still give
     // back the grant taken for the picked file; grants are finite.
+    // A message and a landed export arriving together are both read, one after
+    // the other, rather than the second hiding the first unseen.
+    @Test fun twoReportsTakeTurns() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            val already = app.getString(R.string.already_open)
+            EditorScreens.publish(activity, EditorScreens.editing().copy(
+                message = EditorMessage(already, Tone.INFO), exported = Uri.parse("content://test/saved.pdf")))
+            assertEquals(app.getString(R.string.pdf_saved), notice(root).shown?.toString())
+
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ACTION_NOTICE_MS + NOTICE_ANIMATION_MS))
+
+            assertEquals("The message waited its turn", already, notice(root).shown?.toString())
+        }
+    }
+
+    // A failed draft write right after a save interrupts "PDF saved", which
+    // comes back once the error has been read.
+    @Test fun anErrorInterruptingASavedNoticeLetsItReturn() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            val model = ViewModelProvider(activity)[EditorViewModel::class.java]
+            EditorScreens.publish(activity, EditorScreens.editing().copy(exported = Uri.parse("content://test/saved.pdf")))
+            val error = app.getString(R.string.notes_not_saved)
+            EditorScreens.publish(activity, model.state.value!!.copy(message = EditorMessage(error, Tone.ERROR)))
+            assertEquals(error, notice(root).shown?.toString())
+
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis((Tone.ERROR.millis + NOTICE_ANIMATION_MS).toLong()))
+
+            assertEquals(app.getString(R.string.pdf_saved), notice(root).shown?.toString())
+        }
+    }
+
+    // A tool hint answers what the user just did; the report it covers returns after it.
+    @Test fun aSavedNoticeReturnsAfterAToolHint() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing().copy(exported = Uri.parse("content://test/saved.pdf")))
+            control(root, R.string.highlighter).performClick()
+            assertEquals(app.getString(R.string.highlight_hint), notice(root).shown?.toString())
+
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis((Tone.INFO.millis + NOTICE_ANIMATION_MS).toLong()))
+
+            assertEquals(app.getString(R.string.pdf_saved), notice(root).shown?.toString())
+        }
+    }
+
     @Test fun aGrantPickedBeforeARotationIsGivenBackWhenTheSaveFails() {
         val picked = Uri.parse("content://test/picked.pdf")
         val state = Bundle()
@@ -496,5 +546,7 @@ class MainActivityChromeTest {
         const val DRAG_STEPS = 6
         const val DRAG_STEP_MS = 50L
         const val NOTICE_ANIMATION_MS = 500
+        // How long NoticeBar keeps a notice that offers an action.
+        const val ACTION_NOTICE_MS = 10_000L
     }
 }
