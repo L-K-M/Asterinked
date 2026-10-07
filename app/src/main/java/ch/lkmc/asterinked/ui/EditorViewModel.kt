@@ -42,6 +42,8 @@ internal data class EditorState(
     val shared: File? = null,
     /** Where the last export landed; acknowledge once its notice is read. */
     val exported: Uri? = null,
+    /** Another PDF opened over unexported notes, waiting for the user to replace or keep them. */
+    val replacing: OpenDocument? = null,
 )
 
 /** What a notice's action button does when the message offers one. */
@@ -92,15 +94,31 @@ internal class EditorViewModel private constructor(
         if (current.busy) return
         // Read on the main thread; the worker only gets this snapshot.
         val shown = current.draft
-        perform({ service.open(uri, shown) }) { result ->
+        // Unexported notes give way only to a different PDF, and only once the
+        // user agrees; asking before the import could not tell the two apart.
+        val ask = shown?.dirty == true
+        perform({
+            service.open(uri, shown).also { if (it is OpenResult.Opened && !ask) service.adopt(it.document) }
+        }) { result ->
             when (result) {
-                is OpenResult.Opened -> {
-                    history.clear()
-                    show(result.document)
-                }
+                is OpenResult.Opened -> if (ask) publish(current.copy(busy = false, replacing = result.document)) else replaceWith(result.document)
                 is OpenResult.AlreadyOpen -> keep(result.draft)
             }
         }
+    }
+
+    /** Replaces the draft, and its unexported notes, with the PDF in [EditorState.replacing]. */
+    fun replaceDraft() {
+        val pending = current.replacing ?: return
+        if (current.busy) return
+        perform({ service.adopt(pending) }, failed = { publish(current.copy(replacing = null)) }) { replaceWith(pending) }
+    }
+
+    /** Keeps the draft and drops the PDF that was waiting to replace it. */
+    fun keepDraft() {
+        val pending = current.replacing ?: return
+        publish(current.copy(replacing = null))
+        worker.execute { service.discard(pending) }
     }
 
     fun goToPage(page: Int) {
@@ -197,6 +215,11 @@ internal class EditorViewModel private constructor(
         // A restored page that failed to render shows blank with its ink; try again.
         if (document.preview == null) renderVisible(document.draft)
         prefetchAround(document.draft)
+    }
+
+    private fun replaceWith(document: OpenDocument) {
+        history.clear()
+        show(document)
     }
 
     // The same PDF again, say tapped once more in Files: ink, page, preview and

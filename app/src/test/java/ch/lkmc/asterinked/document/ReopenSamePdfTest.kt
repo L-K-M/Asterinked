@@ -75,6 +75,29 @@ class ReopenSamePdfTest {
         assertEquals("The stored draft is untouched", current, store.restore())
     }
 
+    // Another PDF becomes the draft only when adopted; its old PDF goes with it.
+    @Test fun adoptingAnOpenedPdfMakesItTheDraft() {
+        val store = DocumentStore(app)
+        savedDraft(store)
+        val opened = OpenDocument(Draft(file("other.pdf", OTHER), "Other.pdf"), listOf(PageSpec(0f, 0f, 400f, 600f, 0)), null)
+
+        DocumentService(app).adopt(opened)
+
+        assertEquals(opened.draft, store.restore())
+        assertEquals("The replaced PDF is pruned", listOf("other.pdf"), pdfNames())
+    }
+
+    @Test fun discardingAnOpenedPdfDropsOnlyItsCopy() {
+        val store = DocumentStore(app)
+        val current = savedDraft(store)
+        val opened = OpenDocument(Draft(file("other.pdf", OTHER), "Other.pdf"), listOf(PageSpec(0f, 0f, 400f, 600f, 0)), null)
+
+        DocumentService(app).discard(opened)
+
+        assertEquals(listOf(current.source.name), pdfNames())
+        assertEquals("The stored draft is untouched", current, store.restore())
+    }
+
     @Test fun onlyIdenticalBytesMatch() {
         val store = DocumentStore(app)
         serve(CURRENT)

@@ -124,8 +124,8 @@ internal class MainActivity : ComponentActivity() {
     private var fingerHintShown = false
     // Someone who ever used the hand button knows it; also kept across launches.
     private var handButtonUsed = false
-    // A PDF handed over by another app, waiting until the editor is idle so the
-    // unsaved-notes check sees the restored draft.
+    // A PDF handed over by another app, waiting until the editor is idle so it
+    // is compared with the restored draft.
     private var incoming: Uri? = null
     private var confirming: AlertDialog? = null
     private var pageDialog: AlertDialog? = null
@@ -782,14 +782,15 @@ internal class MainActivity : ComponentActivity() {
         // Only into an empty notice bar, so no message replaces it unseen; a
         // dismissed notice renders again and offers it then.
         if (ready && notice.shown == null) maybeHintGestures()
-        // Cleared only once the user decides, so a rotation during the prompt asks
-        // again; a newer PDF that arrived meanwhile stays pending.
+        // The model holds a replacement until the user decides, so a rotation
+        // during the question asks again.
+        if (state.replacing != null && !state.busy && confirming == null) confirmReplacing()
+        // A PDF from another app opens once the editor is idle; one that arrives
+        // while a replacement waits for its answer opens after it.
         val uri = incoming
-        if (uri != null && !state.busy && confirming == null) {
-            confirmReplacing(keep = { if (incoming == uri) incoming = null }) {
-                if (incoming == uri) incoming = null
-                model.open(uri)
-            }
+        if (uri != null && !state.busy && state.replacing == null) {
+            incoming = null
+            model.open(uri)
         }
     }
 
@@ -984,22 +985,20 @@ internal class MainActivity : ComponentActivity() {
         }
     }
 
+    // Whether notes would be lost depends on the file picked: the model asks
+    // once it knows, and only for a different PDF.
     private fun requestOpen() {
         if (model.state.value?.busy != false) return
-        confirmReplacing { launchPicker { openPdf.launch(arrayOf(PDF_MIME)) } }
+        launchPicker { openPdf.launch(arrayOf(PDF_MIME)) }
     }
 
-    private fun confirmReplacing(keep: () -> Unit = {}, open: () -> Unit) {
-        if (model.state.value?.draft?.dirty != true) {
-            open()
-            return
-        }
+    private fun confirmReplacing() {
         // Opening another PDF discards the unexported notes, so the confirm is red.
         confirming = AlertDialog.Builder(this, R.style.AlertDialogTheme_Destructive)
             .setTitle(R.string.open_another).setMessage(R.string.unsaved_prompt)
-            .setNegativeButton(R.string.keep_editing) { _, _ -> keep() }
-            .setPositiveButton(R.string.open_anyway) { _, _ -> open() }
-            .setOnCancelListener { keep() }
+            .setNegativeButton(R.string.keep_editing) { _, _ -> model.keepDraft() }
+            .setPositiveButton(R.string.open_anyway) { _, _ -> model.replaceDraft() }
+            .setOnCancelListener { model.keepDraft() }
             .setOnDismissListener { confirming = null }
             .show()
     }

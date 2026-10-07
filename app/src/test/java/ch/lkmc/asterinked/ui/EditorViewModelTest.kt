@@ -89,6 +89,8 @@ class EditorViewModelTest {
         override fun saveDraft(draft: Draft) = Unit
         override fun export(draft: Draft, destination: Uri) = throw UnsupportedOperationException()
         override fun share(draft: Draft): File = throw UnsupportedOperationException()
+        override fun adopt(document: OpenDocument) = throw UnsupportedOperationException()
+        override fun discard(document: OpenDocument) = Unit
         override fun close() = Unit
     }
 }

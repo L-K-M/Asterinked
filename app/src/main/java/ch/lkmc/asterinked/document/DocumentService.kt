@@ -13,7 +13,10 @@ internal data class OpenDocument(val draft: Draft, val pages: List<PageSpec>, va
 
 /** What [DocumentOperations.open] found behind a URI. */
 internal sealed interface OpenResult {
-    /** A different PDF, which is now the draft. */
+    /**
+     * A different PDF, inspected and rendered but not yet the draft:
+     * [DocumentOperations.adopt] makes it the draft, [DocumentOperations.discard] drops it.
+     */
     data class Opened(val document: OpenDocument) : OpenResult
 
     /**
@@ -32,9 +35,17 @@ internal interface DocumentOperations {
     /**
      * Imports [uri] to replace [current]. A file with the same bytes as
      * [current]'s PDF keeps that draft instead, and its new copy is dropped;
-     * the caller then saves the kept draft if its name changed.
+     * the caller then saves the kept draft if its name changed. Any other PDF
+     * waits to be adopted or discarded, so unexported notes are replaced only
+     * once the user agrees.
      */
     fun open(uri: Uri, current: Draft?): OpenResult
+
+    /** Makes an opened document the draft, replacing the current one and its PDF. */
+    fun adopt(document: OpenDocument)
+
+    /** Drops an opened document the user decided not to keep. */
+    fun discard(document: OpenDocument)
     fun restore(): OpenDocument?
     fun render(draft: Draft): Bitmap
 
@@ -78,12 +89,26 @@ internal class DocumentService(context: Context) : DocumentOperations {
                 previews.evictAll()
                 OpenDocument(draft, pages, renderPage(draft))
             }
-            during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(draft) }
+            // Not yet the draft: adopt() makes it so, once nothing would be lost.
             return OpenResult.Opened(document)
         } catch (error: Exception) {
             draft.source.delete()
             throw error
         }
+    }
+
+    // A failed write leaves the current draft in place and drops the new copy.
+    override fun adopt(document: OpenDocument) {
+        try {
+            during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(document.draft) }
+        } catch (error: Exception) {
+            document.draft.source.delete()
+            throw error
+        }
+    }
+
+    override fun discard(document: OpenDocument) {
+        document.draft.source.delete()
     }
 
     override fun restore(): OpenDocument? = during(DocumentProblem.DRAFT_UNREADABLE) {

@@ -61,6 +61,8 @@ internal class FakeDocuments(pageCount: Int) : DocumentOperations {
 
     /** The current draft each [open] was handed. */
     val openedOver = mutableListOf<Draft?>()
+    val adopted = mutableListOf<OpenDocument>()
+    val discarded = mutableListOf<OpenDocument>()
 
     override fun restore(): OpenDocument {
         val draft = Draft(source, "fake.pdf")
@@ -87,6 +89,15 @@ internal class FakeDocuments(pageCount: Int) : DocumentOperations {
     override fun open(uri: Uri, current: Draft?): OpenResult {
         openedOver += current
         return openResult ?: throw UnsupportedOperationException()
+    }
+
+    override fun adopt(document: OpenDocument) {
+        if (failSaves) throw IOException("Save failed")
+        adopted += document
+    }
+
+    override fun discard(document: OpenDocument) {
+        discarded += document
     }
 
     override fun export(draft: Draft, destination: Uri) {

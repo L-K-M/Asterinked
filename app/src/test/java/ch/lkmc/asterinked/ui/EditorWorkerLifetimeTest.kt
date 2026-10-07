@@ -111,6 +111,9 @@ class EditorWorkerLifetimeTest {
         second.model.open(Uri.parse("content://test/replacement.pdf"))
         await(second.documents.opened, "B did not open its replacement")
         awaitReady(second)
+        // B restored A's unexported ink, so the replacement waits for a yes.
+        second.model.replaceDraft()
+        awaitReady(second)
         val replacement = second.model.state.value!!.draft!!.source
         val laterStroke = stroke(30f)
         second.model.addStroke(laterStroke)
@@ -194,6 +197,7 @@ class EditorWorkerLifetimeTest {
 
         @Implementation fun restore() = documents.restore()
         @Implementation fun open(uri: Uri, current: Draft?): OpenResult = OpenResult.Opened(documents.open())
+        @Implementation fun adopt(document: OpenDocument) = documents.adopt(document)
         @Implementation fun render(draft: Draft) = documents.render(draft)
         @Implementation fun cachedPreview(draft: Draft) = documents.cachedPreview(draft)
         @Implementation fun saveDraft(draft: Draft) = documents.saveDraft(draft)
@@ -237,9 +241,13 @@ class EditorWorkerLifetimeTest {
             check(closed.count != 0L)
             val source = File(directory, "replacement.pdf").apply { writeText("replacement source") }
             val draft = Draft(source, source.name)
-            store.saveDraft(draft)
             previews.clear()
             return OpenDocument(draft, pages, render(draft)).also { opened.countDown() }
+        }
+
+        fun adopt(document: OpenDocument) {
+            check(closed.count != 0L)
+            store.saveDraft(document.draft)
         }
 
         fun render(draft: Draft): Bitmap {

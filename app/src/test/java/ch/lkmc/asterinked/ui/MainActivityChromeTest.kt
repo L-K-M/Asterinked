@@ -1,6 +1,7 @@
 package ch.lkmc.asterinked.ui
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -18,6 +19,7 @@ import android.widget.Button
 import androidx.lifecycle.ViewModelProvider
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.document.Draft
+import ch.lkmc.asterinked.document.OpenDocument
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import org.junit.Assert.assertEquals
@@ -34,6 +36,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.InputDeviceBuilder
+import org.robolectric.shadows.ShadowDialog
 import java.io.File
 import java.time.Duration
 
@@ -342,6 +345,50 @@ class MainActivityChromeTest {
     // back the grant taken for the picked file; grants are finite.
     // A message and a landed export arriving together are both read, one after
     // the other, rather than the second hiding the first unseen.
+    // Whether notes would be lost depends on the file picked, so the question
+    // comes after the picker, not before it.
+    @Test fun unexportedNotesGoStraightToThePicker() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing())
+
+            control(root, R.string.open_pdf).performClick()
+
+            assertEquals(Intent.ACTION_OPEN_DOCUMENT, shadowOf(activity).nextStartedActivityForResult?.intent?.action)
+            assertNull("No question yet", ShadowDialog.getLatestDialog()?.takeIf { it.isShowing })
+        }
+    }
+
+    @Test fun aPdfFromAnotherAppOpensBeforeAnyQuestion() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing())
+
+            controller.newIntent(Intent(Intent.ACTION_VIEW, Uri.parse("content://downloads/report.pdf")))
+            settle(activity)
+
+            assertNull("Only a different PDF asks, once it is known", ShadowDialog.getLatestDialog()?.takeIf { it.isShowing })
+        }
+    }
+
+    @Test fun aWaitingReplacementAsksAndKeepingDropsIt() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            settle(activity)
+            val other = OpenDocument(Draft(File("other.pdf"), "Other.pdf"), emptyList(), null)
+            EditorScreens.publish(activity, EditorScreens.editing().copy(replacing = other))
+
+            val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+            assertTrue(dialog.isShowing)
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+            settle(activity)
+
+            assertNull(ViewModelProvider(activity)[EditorViewModel::class.java].state.value!!.replacing)
+        }
+    }
+
     @Test fun twoReportsTakeTurns() {
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
             val activity = controller.get()
