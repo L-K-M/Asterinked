@@ -32,9 +32,11 @@ The adaptive icon's foreground webp files are generated; regenerate them from
 - Versions are pinned ONLY in `gradle/libs.versions.toml`. Never add an ad-hoc
   version to a build file; never restate catalog versions in docs.
 - `EditorViewModel` takes a `DocumentOperations` and an `ExecutorService`.
-  Model tests inject a fake and a queue-backed executor
-  (`EditorViewModelPagingTest`) to decide exactly when worker tasks and
-  main-thread posts run; `PdfRenderer` itself only runs on devices.
+  Model tests inject a fake and a queue-backed executor (`EditorDoubles.kt`)
+  to decide exactly when worker tasks and main-thread posts run;
+  `PdfRenderer` itself only runs on devices. Service tests feed a content
+  URI with `ShadowContentResolver.registerInputStream`; its display-name
+  query returns no cursor, so the import gets the default name.
 
 ## Toolchain quirks — don't "fix" these
 

@@ -34,6 +34,8 @@
     <string name="unsaved_prompt">This PDF has notes you haven’t exported. Opening another PDF replaces the current draft.</string>
     <string name="keep_editing">Keep editing</string>
     <string name="open_anyway">Open another</string>
+    <string name="already_open">This PDF is already open.</string>
+    <string name="already_open_with_notes">This PDF is already open. Your notes are still here.</string>
     <string name="unsaved">Unexported notes</string>
     <string name="saved">All notes exported</string>
     <string name="black">Graphite</string>
