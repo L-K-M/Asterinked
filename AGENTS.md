@@ -94,6 +94,8 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   `animate()` calls run.
 - Tests cannot open a real PDF (no PdfRenderer); `EditorScreens.publish`
   puts the activity into an editor state with a drawn stand-in page.
+- UI gesture tests using that stand-in must cancel their strokes, or replace
+  the stroke callback, to avoid asynchronously persisting a nonexistent PDF.
 - Messages to the user go through `NoticeBar`, not toasts: Android 12+ cuts
   toasts to two lines.
 

@@ -110,7 +110,7 @@ internal class MainActivity : ComponentActivity() {
     private var pageDialog: AlertDialog? = null
     private var pillHidden = false
     private var shownPageKey: String? = null
-    private val showPill = Runnable { setPillHidden(false) }
+    private val showPill = Runnable { showPagePill() }
 
     private val openPdf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(model::open)
@@ -148,6 +148,8 @@ internal class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        pagePill.removeCallbacks(showPill)
+        pagePill.animate().cancel()
         confirming?.dismiss()
         pageDialog?.dismiss()
         super.onDestroy()
@@ -566,7 +568,7 @@ internal class MainActivity : ComponentActivity() {
             if (shownPageKey != pageKey) {
                 shownPageKey = pageKey
                 pagePill.removeCallbacks(showPill)
-                setPillHidden(false)
+                showPagePill()
             }
         }
 
@@ -602,7 +604,14 @@ internal class MainActivity : ComponentActivity() {
         screen = next
         val editing = next == Screen.EDITOR
         listOf(topBar, toolBar, pagePill).forEach { it.visibility = if (editing) View.VISIBLE else View.GONE }
-        if (editing && pillHidden) setPillHidden(false)
+        if (editing) {
+            showPagePill()
+        } else {
+            pagePill.removeCallbacks(showPill)
+            pagePill.animate().cancel()
+            pillHidden = false
+            shownPageKey = null
+        }
         // Invisible rather than gone, so the page keeps its size for the editor.
         page.visibility = if (editing) View.VISIBLE else View.INVISIBLE
         welcome.visibility = if (next == Screen.WELCOME) View.VISIBLE else View.GONE
@@ -672,23 +681,31 @@ internal class MainActivity : ComponentActivity() {
     // The pill covers the bottom of the page, where notes often go: it steps
     // aside while the pen or eraser is down and returns shortly after the
     // stroke ends, or at once when the page changes.
-    private fun writingChanged(writing: Boolean) {
+    private fun writingChanged(state: WritingState) {
         pagePill.removeCallbacks(showPill)
-        if (writing) setPillHidden(true) else pagePill.postDelayed(showPill, PILL_RETURN_MS)
+        // showScreen runs before page.show cancels an active stroke.
+        if (screen != Screen.EDITOR) return
+
+        if (state == WritingState.ACTIVE) hidePagePill() else pagePill.postDelayed(showPill, PILL_RETURN_MS)
     }
 
-    private fun setPillHidden(hidden: Boolean) {
-        if (pillHidden == hidden) return
-        pillHidden = hidden
+    private fun hidePagePill() {
+        if (pillHidden) return
+
+        pillHidden = true
         pagePill.animate().cancel()
-        if (hidden) {
-            pagePill.animate().alpha(0f).setDuration(Motion.SHORT).setInterpolator(Motion.EASING)
-                // Invisible, not just transparent: a see-through pill would still eat touches.
-                .withEndAction { if (pillHidden) pagePill.visibility = View.INVISIBLE }.start()
-        } else {
-            pagePill.visibility = View.VISIBLE
-            pagePill.animate().alpha(1f).setDuration(Motion.SHORT).setInterpolator(Motion.EASING).start()
-        }
+        pagePill.animate().alpha(0f).setDuration(Motion.SHORT).setInterpolator(Motion.EASING)
+            // Invisible, not just transparent: a see-through pill would still eat touches.
+            .withEndAction { if (screen == Screen.EDITOR && pillHidden) pagePill.visibility = View.INVISIBLE }.start()
+    }
+
+    private fun showPagePill() {
+        if (screen != Screen.EDITOR) return
+
+        pillHidden = false
+        pagePill.animate().cancel()
+        pagePill.visibility = View.VISIBLE
+        pagePill.animate().alpha(1f).setDuration(Motion.SHORT).setInterpolator(Motion.EASING).start()
     }
 
     private fun turnPage(delta: Int) {

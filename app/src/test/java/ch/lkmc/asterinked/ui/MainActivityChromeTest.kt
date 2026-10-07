@@ -142,11 +142,48 @@ class MainActivityChromeTest {
             shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(400))
             assertFalse("The pill steps aside while writing", pill.isShown)
 
-            stylus(page, android.view.MotionEvent.ACTION_UP, 320f, 500f)
+            // Cancel avoids committing the stand-in PDF used by this UI test.
+            stylus(page, android.view.MotionEvent.ACTION_CANCEL, 320f, 500f)
             shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(400))
             assertFalse("The pill stays away right after the stroke", pill.isShown)
             shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(1500))
             assertTrue("The pill returns once the pen rests", pill.isShown)
+        }
+    }
+
+    @Test fun aPendingPillReturnDoesNotRevealControlsOnWelcome() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing())
+            val page = page(root)
+            page.draw(android.graphics.Canvas(Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)))
+            val pill = control(root, R.string.previous).parent as View
+
+            stylus(page, android.view.MotionEvent.ACTION_DOWN, 300f, 500f)
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(400))
+            stylus(page, android.view.MotionEvent.ACTION_CANCEL, 300f, 500f)
+            EditorScreens.publish(activity, EditorState(busy = false))
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(2000))
+
+            assertEquals("Navigation stays gone outside the editor", View.GONE, pill.visibility)
+        }
+    }
+
+    @Test fun leavingTheEditorDuringAStrokeDoesNotRescheduleThePill() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing())
+            val page = page(root)
+            page.draw(android.graphics.Canvas(Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)))
+            val pill = control(root, R.string.previous).parent as View
+
+            stylus(page, android.view.MotionEvent.ACTION_DOWN, 300f, 500f)
+            EditorScreens.publish(activity, EditorState(busy = false))
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(2000))
+
+            assertEquals(View.GONE, pill.visibility)
         }
     }
 

@@ -35,6 +35,8 @@ internal enum class InputMode { PEN, TOUCH }
 /** What a writing gesture does. The stylus eraser end and side button always erase. */
 internal enum class InkTool { PEN, ERASER }
 
+internal enum class WritingState { IDLE, ACTIVE }
+
 internal class InkPageView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
     // Multiplying with the page keeps text under a highlight dark, like the export.
@@ -105,8 +107,8 @@ internal class InkPageView(context: Context) : View(context) {
     /** Receives the strokes one erase gesture removed, once the gesture ends. */
     var onErase: (Collection<InkStroke>) -> Unit = {}
 
-    /** True while a pen or eraser gesture is on the page, false when it ends. */
-    var onWritingChanged: (Boolean) -> Unit = {}
+    /** Reports accepted writing/erasing gestures, including cancellation. */
+    var onWritingChanged: (WritingState) -> Unit = {}
 
     var tool = InkTool.PEN
         set(value) {
@@ -350,7 +352,7 @@ internal class InkPageView(context: Context) : View(context) {
                 activeKind = inkKind
                 activeErasing = eraserEnd || tool == InkTool.ERASER || (stylus && event.buttonState and STYLUS_BUTTONS != 0)
                 if (stylus || eraserEnd) requestUnbufferedDispatch(event)
-                onWritingChanged(true)
+                onWritingChanged(WritingState.ACTIVE)
                 track(event, index)
                 parent?.requestDisallowInterceptTouchEvent(true)
                 return true
@@ -514,7 +516,7 @@ internal class InkPageView(context: Context) : View(context) {
         eraserAt = null
         activeErasing = false
         activePointer = NO_POINTER
-        if (wasWriting) onWritingChanged(false)
+        if (wasWriting) onWritingChanged(WritingState.IDLE)
         parent?.requestDisallowInterceptTouchEvent(false)
         invalidate()
     }
