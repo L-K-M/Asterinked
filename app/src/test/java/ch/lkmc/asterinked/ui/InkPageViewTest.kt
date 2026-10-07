@@ -52,6 +52,25 @@ class InkPageViewTest {
         assertTrue(strokes.isEmpty())
     }
 
+    // The other hand may tap a colour, width or tool while the pen is down;
+    // the stroke being written finishes as it started.
+    @Test fun changingSettingsMidStrokeKeepsTheStroke() {
+        val strokes = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, strokes)
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 200f, 300f)))
+
+        view.configure(InputMode.PEN, Color.RED, 4f) { strokes.add(it) }
+        view.tool = InkTool.ERASER
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 300f)))
+
+        val stroke = strokes.single()
+        assertEquals("The colour it started with", Color.BLACK, stroke.color)
+        assertEquals(2f, stroke.width, 0.001f)
+        assertEquals("Every sample, before and after the change", 4, stroke.points.size)
+    }
+
     @Test fun pageStillRenderingTakesInkRightAway() {
         val strokes = mutableListOf<InkStroke>()
         val view = InkPageView(RuntimeEnvironment.getApplication()).apply {

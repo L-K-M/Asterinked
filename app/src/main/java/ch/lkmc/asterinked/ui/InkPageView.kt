@@ -105,12 +105,8 @@ internal class InkPageView(context: Context) : View(context) {
     /** Receives the strokes one erase gesture removed, once the gesture ends. */
     var onErase: (Collection<InkStroke>) -> Unit = {}
 
+    // Like configure(), a new tool applies from the next stroke.
     var tool = InkTool.PEN
-        set(value) {
-            if (field == value) return
-            cancelStroke()
-            field = value
-        }
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
@@ -151,8 +147,10 @@ internal class InkPageView(context: Context) : View(context) {
         isFocusable = true
     }
 
+    // New settings apply from the next stroke. The other hand may tap a
+    // colour, width or tool while the pen is down; the stroke in progress
+    // finishes with the colour, width, kind and eraser state it started with.
     fun configure(mode: InputMode, color: Int, width: Float, kind: InkKind = InkKind.PEN, onStroke: (InkStroke) -> Unit) {
-        cancelStroke()
         inputMode = mode
         inkColor = color
         inkWidth = width
@@ -492,8 +490,8 @@ internal class InkPageView(context: Context) : View(context) {
     private fun finishStroke() {
         val stroke = InkStroke(points.toList(), activeColor, activeWidth, activeKind)
         // The live builder already smoothed these exact samples with this width:
-        // activeWidth is fixed when a stroke starts, and configure() cancels any
-        // live stroke before the pen settings change.
+        // activeWidth is fixed when a stroke starts and outlasts any settings
+        // change during it.
         liveStroke?.let { geometryCache.seed(stroke, it.segments()) }
         cancelStroke()
         onStroke(stroke)
