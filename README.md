@@ -18,6 +18,7 @@ Pen-based PDF annotation for Android 10 and newer.
    Turn on the hand icon to write with a finger. Undo and redo sit at the left
    of the tool bar.
 4. Change pages with the arrows on the page pill (tap the page number to jump),
+   which steps aside while you write and returns after a short pause,
    then **Save copy** to export the whole document, or tap the share icon to send
    an annotated copy straight to another app. Sharing does not mark notes as
    exported. With a keyboard: Ctrl+Z, Ctrl+Shift+Z, Ctrl+S, Ctrl+O, Page Up

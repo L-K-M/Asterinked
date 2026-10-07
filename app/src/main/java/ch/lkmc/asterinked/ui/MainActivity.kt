@@ -204,9 +204,9 @@ internal class MainActivity : ComponentActivity() {
 
         workspace = FrameLayout(this)
         page = InkPageView(this).apply {
+            onWritingChanged = ::writingChanged
             onTurnPage = ::turnPage
             onErase = model::eraseStrokes
-            onWritingChanged = ::writingChanged
         }
         workspace.addView(page, FrameLayout.LayoutParams(MATCH, MATCH))
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {

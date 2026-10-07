@@ -101,14 +101,14 @@ internal class InkPageView(context: Context) : View(context) {
     private val swipeDistance = SWIPE_DISTANCE_DP * density
     private val swipeVelocity = SWIPE_VELOCITY_DP * density
 
+    /** Reports accepted writing/erasing gestures, including cancellation. */
+    var onWritingChanged: (WritingState) -> Unit = {}
+
     /** Called with +1 or -1 when a finger swipes the page at fit zoom in pen mode. */
     var onTurnPage: (Int) -> Unit = {}
 
     /** Receives the strokes one erase gesture removed, once the gesture ends. */
     var onErase: (Collection<InkStroke>) -> Unit = {}
-
-    /** Reports accepted writing/erasing gestures, including cancellation. */
-    var onWritingChanged: (WritingState) -> Unit = {}
 
     var tool = InkTool.PEN
         set(value) {
