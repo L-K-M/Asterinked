@@ -67,16 +67,14 @@ persists only when shown, like #62's tool hints; a blank provider display
 name no longer renames a kept draft (#57 follow-up); screenshot renders start
 with the gesture hint seen.
 
-Still open from these PRs: B22's replace prompt runs before the bytes are
-known; D-focus, D-night and D-flip need new designs; device checks for hover,
-palm guard timing, hold-to-straighten dwell and multi-finger tap timing remain
-in section 9. Found while reviewing the combination and deferred as minor:
-a pending message and a pending "PDF saved" in one render show back to back,
-so the first can vanish unseen (#34; needs a notice queue); a save-picker
-grant taken just before a rotation and a failed export is never released
-(#38; keep `unclaimedGrant` in the saved state); the page pill still takes
-taps during its 150 ms fade-out (#36; it was always tappable before). These
-are listed in the Open queue below.
+Still open from these PRs: D-focus, D-night and D-flip need new designs;
+device checks for hover, palm guard timing, hold-to-straighten dwell and
+multi-finger tap timing remain in section 9. The minor issues found while
+reviewing the combination are fixed: reports on the notice bar take turns
+and are acknowledged once read, so none vanishes unseen (#34); a save-picker
+grant survives recreation until its export's outcome is known (#38); the
+fading page pill lets a new touch through (#36); and "Open another PDF?" is
+asked after the import, only for a different PDF over unexported notes (B22).
 
 #59 makes notices a dark card in both themes, so #34's night `notice_action`
 (#A00C15, 1.45:1 on #33373F) is dropped; the shared #FFB8BB measures
@@ -635,11 +633,11 @@ with only a risk/hypothesis require proof before a behavior change.
 
 | Rank | Work | Canonical detail |
 |---|---|---|
-| 1 | Draft/export protection: B-share-lifetime, N23, B23, B25, B37, B34 (rest), B35; integration follow-ups: notice queue (#34), `unclaimedGrant` across rotation (#38), B22 prompt before the bytes are known | Section 2; B8/N25, B19, B22, B26 and N1 landed (#25, #27, #57, #60, #34) |
+| 1 | Draft/export protection: B-share-lifetime, N23, B23, B25, B37, B34 (rest), B35 | Section 2; B8/N25, B19, B22, B26 and N1 landed (#25, #27, #57, #60, #34) |
 | 2 | Input/state: B-pen-takeover/N21, B30, B32, B29, B-canceled-navigation, B-multitouch-swipe, B-quick-scale, B-stylus-secondary, B-pending-pdf/N22, B-page-dialog, B12/N32, B39, B38, B42 | Section 2 and 6; tests first, no geometry redesign; N2, B21, B27, U9, U10 and B-storage-recovery-effect landed (#27/#46, #56, #63, #58, #62, #34) |
 | 3 | Release/privacy obligations: T8, T9, T10, G1, B41; helper errors G10, T11 and B-rc4-import compatibility | Sections 2, 3 and 8; G5 landed (#28); RC4 failure occurs before export |
 | 4 | Performance: P-prefetch, P-page-tree, P-live-chunks/P10, N29, P14, P16, P17, P5/G6, P6, P8, P20, P25 | Section 4; P9, N28, P19 and P21 need device baselines; P11 landed (#26) |
-| 5 | Writing space/product/accessibility: V16/F3/V9, V24, V17, V10/N34, V25, U5/U8/U4 (remaining), F-presets/N38, F32, F16/N36/N37, F8 (rest), U11, U12, U14, V26, F-accessible-text; N24/N39 and remaining features/UX | Sections 2, 5–7; integration follow-up: pill taps during its fade-out (#36); F6, hover, loader, haptics, undo, dark theme, per-tool ink and straighten landed; focus, night and flip stay open (#51, #49, #52 closed) |
+| 5 | Writing space/product/accessibility: V16/F3/V9, V24, V17, V10/N34, V25, U5/U8/U4 (remaining), F-presets/N38, F32, F16/N36/N37, F8 (rest), U11, U12, U14, V26, F-accessible-text; N24/N39 and remaining features/UX | Sections 2, 5–7; F6, hover, loader, haptics, undo, dark theme, per-tool ink and straighten landed; focus, night and flip stay open (#51, #49, #52 closed) |
 | 6 | Exploratory risks and remaining verification, including N26/N28, G12-G14 and T12-T14 | Sections 3, 4, 8–9; R-* and T-keyboard are not confirmed bugs |
 
 The 2026-10-06 review's value-for-effort order: B21 (#56), B22 (#57), U9
@@ -959,12 +957,10 @@ that no single PR shows on its own:
   the ink and the history and posts the INFO message. MainActivityIntentTest: a
   VIEW intent for the same bytes while dirty shows no "Open another PDF?"
   dialog.
-- **Open follow-up (#57 review):** a provider that returns a blank or whitespace
-  DISPLAY_NAME should count as "no name" (in `DocumentStore.import`, `?.takeIf {
-  it.isNotBlank() }`), so a same-PDF reopen keeps the draft's name and writes
-  nothing. Test: a provider cursor with `"  "` as DISPLAY_NAME leaves the draft
-  name unchanged and no draft write is recorded. Lands naturally with B42's
-  column lookup.
+- **Done after #57:** a blank provider DISPLAY_NAME counts as no name, and
+  the prompt follows the import: `open` leaves a different PDF waiting in
+  `EditorState.replacing` until `adopt` or `discard`, so the same bytes never
+  ask and a different PDF asks only over unexported notes.
 - **Effort:** M
 
 ### B23. Draft writes wait behind page renders on the single worker
