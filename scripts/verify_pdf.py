@@ -26,6 +26,9 @@ FILL_FORM_PERMISSION = 1 << 8
 AES_DENIED_PERMISSIONS = PRINT_PERMISSION | EXTRACT_PERMISSION | FILL_FORM_PERMISSION
 BITS_PER_BYTE = 8
 INK_POSITION = (0.23, 0.31)
+# The "highlight" fixture's highlighter tap, as a fraction of the page.
+TAP_POSITION = (0.7, 0.8)
+TAP_REACH = 8
 COLOR_THRESHOLD = 100
 POSITION_TOLERANCE = 3
 
@@ -147,5 +150,8 @@ for name, rotation in CASES:
         left, right = min(x for x, _ in yellow), max(x for x, _ in yellow)
         top, bottom = min(y for _, y in yellow), max(y for _, y in yellow)
         assert any(left <= x <= right and top <= y <= bottom for x, y in dark), f"Highlight in {name} covers no text"
+        # A tap leaves a mark too: PDFium drops a path that only repeats one point.
+        tap_x, tap_y = TAP_POSITION[0] * exported.width, TAP_POSITION[1] * exported.height
+        assert any(abs(x - tap_x) <= TAP_REACH and abs(y - tap_y) <= TAP_REACH for x, y in yellow), f"Highlighter tap missing in {name}"
     exported.save(FIXTURES / f"export-{name}.png")
     print(f"{name}: {security_summary}ink aligned; text and artwork preserved")

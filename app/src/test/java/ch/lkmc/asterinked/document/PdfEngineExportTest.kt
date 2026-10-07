@@ -230,6 +230,23 @@ class PdfEngineExportTest {
         }
     }
 
+    // Down and up at one spot gives two equal samples. A path that only repeats
+    // its point paints nothing in PDFium (Chrome, Android viewers), so the
+    // tap must be one zero-length line.
+    @Test
+    fun export_aHighlighterTapIsOneZeroLengthLine() {
+        val source = sourcePdf()
+        val dest = tmp("highlight-tap")
+        val tap = InkPoint(120f, 200f, 1f)
+        engine.export(source, dest, mapOf(0 to listOf(InkStroke(listOf(tap, tap), 0xFFFFE45C.toInt(), 12f, InkKind.HIGHLIGHTER))))
+
+        val contents = contentsOf(dest, 0)
+        assertEquals(1, countOf(contents, " m\n"))
+        assertEquals("One lineTo, not a repeated point", 1, countOf(contents, " l\n"))
+        val ends = Regex("(\\S+) (\\S+) [ml]\n").findAll(contents).map { it.groupValues[1] to it.groupValues[2] }.toList()
+        assertEquals("The line returns to its start", ends[0], ends[1])
+    }
+
     @Test
     fun export_highlightsShareOneMultiplyState() {
         val source = sourcePdf()

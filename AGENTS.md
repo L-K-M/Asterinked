@@ -65,9 +65,9 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   placement and preserved text/artwork at all four rotations, that an
   owner-restricted encrypted export stays encrypted without regaining print
   permission, that AESV2/AESV3 sources without top-level `/Length` retain AES
-  strength and all permission bits, and that text stays dark under a
-  multiply-blended highlighter marker. It only works after `testDebugUnitTest`
-  ran in the same checkout.
+  strength and all permission bits, that text stays dark under a
+  multiply-blended highlighter marker, and that a highlighter tap still leaves
+  a mark. It only works after `testDebugUnitTest` ran in the same checkout.
 - PDFBox's `PDEncryption.length` defaults to 40 when `/Length` is absent;
   its loaded `securityHandler.keyLength` also stays at 40. Export strength
   comes from security version / `StdCF` method, not those getters. Standard

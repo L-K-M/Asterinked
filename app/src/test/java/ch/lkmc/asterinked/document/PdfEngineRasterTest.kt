@@ -79,10 +79,13 @@ class PdfEngineRasterTest {
             // The text baseline sits at user y=700: display y = 48 + 696 - 700 = 44, so a
             // 12-wide marker centred at y=40 covers the glyphs from baseline to cap height.
             val marker = InkStroke(listOf(InkPoint(30f, 40f, 1f), InkPoint(150f, 40f, .3f)), Color.rgb(255, 228, 92), 12f, InkKind.HIGHLIGHTER)
+            // A highlighter tap: down and up at one spot, on blank paper (verify_pdf.py's TAP_POSITION).
+            val tap = InkPoint(spec.displayWidth * 0.7f, spec.displayHeight * 0.8f, 1f)
+            val dot = InkStroke(listOf(tap, tap), Color.rgb(255, 228, 92), 12f, InkKind.HIGHLIGHTER)
             val ink = listOf(
                 InkStroke(listOf(InkPoint(x, y, 1f)), Color.RED, 10f),
                 InkStroke(listOf(InkPoint(x - 20f, y, .2f), InkPoint(x + 20f, y, 1f)), Color.RED, 5f),
-            ) + if (highlight) listOf(marker) else emptyList()
+            ) + if (highlight) listOf(marker, dot) else emptyList()
             engine.export(source, exported, mapOf(0 to ink))
             assertTrue(exported.length() > source.length())
         }

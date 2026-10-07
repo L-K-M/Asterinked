@@ -37,4 +37,14 @@ class InkTest {
         assertTrue(segments.all { it.width.isFinite() && it.width > 0f && it.width <= 3f })
         assertEquals(points.last().x, segments.last().end.x)
     }
+
+    @Test fun aHighlightTapIsOnePointAndALineKeepsItsEnds() {
+        val tap = InkPoint(5f, 5f, 1f)
+        assertEquals(listOf(InkPoint(5f, 5f, 1f)), InkGeometry.highlightLine(InkStroke(listOf(tap, tap), 0, 12f, InkKind.HIGHLIGHTER)))
+
+        val line = InkGeometry.highlightLine(InkStroke(listOf(InkPoint(0f, 0f, 1f), InkPoint(40f, 0f, 1f), InkPoint(40f, 0f, 1f)), 0, 12f, InkKind.HIGHLIGHTER))
+        assertEquals(0f, line.first().x, 0.001f)
+        assertEquals(40f, line.last().x, 0.001f)
+        assertTrue("No consecutive repeats", line.zipWithNext().all { (a, b) -> a.x != b.x || a.y != b.y })
+    }
 }

@@ -189,7 +189,7 @@ internal class PdfEngine(private val scratchDirectory: File) {
     // One constant-width path multiplied onto the page, as on screen: text under it
     // stays dark, and the stroke never darkens where its own segments overlap.
     private fun highlight(stream: PDPageContentStream, stroke: InkStroke, multiply: PDExtendedGraphicsState) {
-        val line = InkGeometry.centerline(stroke)
+        val line = InkGeometry.highlightLine(stroke)
         if (line.isEmpty()) return
         stream.saveGraphicsState()
         stream.setGraphicsStateParameters(multiply)
