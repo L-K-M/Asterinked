@@ -2,6 +2,7 @@ package ch.lkmc.asterinked.ui
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Rect
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.accessibility.AccessibilityManager
@@ -34,6 +35,7 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
     private val accessibility = context.getSystemService(AccessibilityManager::class.java)
     private val hide = Runnable { dismiss() }
     private var tone = Tone.INFO
+    private val actionBounds = Rect()
     private val actionButton = Button(context).apply {
         visibility = GONE
         setTextAppearance(android.R.style.TextAppearance_Material_Widget_Button)
@@ -108,8 +110,11 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
         return tool == MotionEvent.TOOL_TYPE_STYLUS || tool == MotionEvent.TOOL_TYPE_ERASER
     }
 
-    private fun onAction(event: MotionEvent): Boolean = actionButton.isShown &&
-        event.x >= actionButton.left && event.x < actionButton.right && event.y >= actionButton.top && event.y < actionButton.bottom
+    private fun onAction(event: MotionEvent): Boolean {
+        if (!actionButton.isShown) return false
+        actionButton.getHitRect(actionBounds)
+        return actionBounds.contains(event.x.toInt(), event.y.toInt())
+    }
 
     fun dismiss() {
         removeCallbacks(hide)

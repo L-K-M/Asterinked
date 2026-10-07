@@ -62,7 +62,7 @@ class NoticeBarTest {
 
     @Test fun aHintDoesNotHideAnError() {
         notice.show("Couldn’t save", Tone.ERROR)
-        notice.show("Drag across strokes to erase them", Tone.INFO)
+        assertFalse("The hint says it waited", notice.show("Drag across strokes to erase them", Tone.INFO))
         assertEquals("Couldn’t save", notice.shown)
         advance(Tone.ERROR.millis + ANIMATION_MS)
         notice.show("Drag across strokes to erase them", Tone.INFO)
