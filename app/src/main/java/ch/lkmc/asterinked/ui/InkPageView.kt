@@ -78,6 +78,7 @@ internal class InkPageView(context: Context) : View(context) {
     private var activeColor = Color.BLACK
     private var activeWidth = DEFAULT_WIDTH
     private var activeKind = InkKind.PEN
+    private var activeOnStroke: (InkStroke) -> Unit = {}
     private var pageKey: String? = null
     private var documentKey: String? = null
     private var zoom = 1f
@@ -343,6 +344,7 @@ internal class InkPageView(context: Context) : View(context) {
                 activeColor = inkColor
                 activeWidth = inkWidth
                 activeKind = inkKind
+                activeOnStroke = onStroke
                 activeErasing = eraserEnd || tool == InkTool.ERASER || (stylus && event.buttonState and STYLUS_BUTTONS != 0)
                 if (stylus || eraserEnd) requestUnbufferedDispatch(event)
                 track(event, index)
@@ -494,7 +496,7 @@ internal class InkPageView(context: Context) : View(context) {
         // change during it.
         liveStroke?.let { geometryCache.seed(stroke, it.segments()) }
         cancelStroke()
-        onStroke(stroke)
+        activeOnStroke(stroke)
     }
 
     private fun cancelStroke() {

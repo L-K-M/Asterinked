@@ -71,6 +71,35 @@ class InkPageViewTest {
         assertEquals("Every sample, before and after the change", 4, stroke.points.size)
     }
 
+    @Test fun choosingTheEraserMidStrokeErasesNothing() {
+        val (view, _) = pageWithInk(InputMode.PEN)
+        val erased = mutableListOf<InkStroke>()
+        view.onErase = { erased.addAll(it) }
+
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 200f, 250f)))
+        view.tool = InkTool.ERASER
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 200f, 350f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 200f, 450f)))
+
+        assertTrue("Crossing ink with the pen down erases nothing", erased.isEmpty())
+        assertEquals("The stroke completes", 1, strokes.size)
+    }
+
+    @Test fun choosingThePenMidEraseDrawsNothing() {
+        val (view, drawn) = pageWithInk(InputMode.PEN)
+        val erased = mutableListOf<InkStroke>()
+        view.onErase = { erased.addAll(it) }
+        view.tool = InkTool.ERASER
+
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 200f, 280f)))
+        view.tool = InkTool.PEN
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 200f, 300f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 200f, 320f)))
+
+        assertEquals("The erase finishes as an erase", listOf(drawn[0]), erased)
+        assertTrue(strokes.isEmpty())
+    }
+
     @Test fun pageStillRenderingTakesInkRightAway() {
         val strokes = mutableListOf<InkStroke>()
         val view = InkPageView(RuntimeEnvironment.getApplication()).apply {
