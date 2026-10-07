@@ -108,7 +108,8 @@ internal class DocumentStore(context: Context, private val draftIo: DraftFileIo 
         output.use { destination -> file.inputStream().use { it.copyTo(destination) } }
     }
 
-    fun saveDraft(draft: Draft) {
+    /** Writes [draft] and prunes every other PDF except those in [keep]. */
+    fun saveDraft(draft: Draft, keep: Set<File> = emptySet()) {
         val json = JSONObject()
             .put("source", draft.source.name)
             .put("name", draft.name)
@@ -121,7 +122,7 @@ internal class DocumentStore(context: Context, private val draftIo: DraftFileIo 
         commitDraft(json.toString().toByteArray(Charsets.UTF_8))
 
         // A committed draft owns one source; failed replacements retain the previous file.
-        directory.listFiles()?.filter { it.extension == "pdf" && it != draft.source }?.forEach { it.delete() }
+        directory.listFiles()?.filter { it.extension == "pdf" && it != draft.source && it !in keep }?.forEach { it.delete() }
     }
 
     private fun commitDraft(bytes: ByteArray) {

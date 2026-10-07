@@ -89,6 +89,20 @@ class ReopenSamePdfTest {
         assertSame(preview, service.cachedPreview(current))
     }
 
+    // A PDF waiting for the replace question is not part of the draft, but a
+    // draft write meanwhile (a save that lands) must not delete it.
+    @Test fun aDraftWriteKeepsAPdfWaitingForTheQuestion() {
+        val store = DocumentStore(app)
+        val current = savedDraft(store)
+        val service = DocumentService(app)
+        val waiting = file("other.pdf", OTHER)
+        waiting(service) += waiting
+
+        service.saveDraft(current)
+
+        assertTrue("The waiting PDF survives the write", waiting.exists())
+    }
+
     @Test fun differentBytesAreOpenedAsAnotherPdf() {
         val store = DocumentStore(app)
         val current = savedDraft(store)
@@ -180,6 +194,12 @@ class ReopenSamePdfTest {
     @Suppress("UNCHECKED_CAST")
     private fun cache(service: DocumentService) =
         DocumentService::class.java.getDeclaredField("previews").apply { isAccessible = true }.get(service) as LruCache<String, Bitmap>
+
+    // The service's imported PDFs awaiting adoption, which only a device can
+    // fill: opening another PDF renders it.
+    @Suppress("UNCHECKED_CAST")
+    private fun waiting(service: DocumentService) =
+        DocumentService::class.java.getDeclaredField("waiting").apply { isAccessible = true }.get(service) as MutableSet<File>
 
     private fun savedDraft(store: DocumentStore): Draft {
         val stroke = InkStroke(listOf(InkPoint(10f, 20f, 0.5f), InkPoint(30f, 40f, 0.75f)), 1, 2f)

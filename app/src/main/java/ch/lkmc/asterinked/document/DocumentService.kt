@@ -70,6 +70,11 @@ internal class DocumentService(context: Context) : DocumentOperations {
         override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
     }
 
+    // Imported PDFs waiting to be adopted or discarded. They are not the
+    // draft's, but a draft write meanwhile must not prune them. Only the
+    // worker touches this set.
+    private val waiting = mutableSetOf<File>()
+
     init {
         PDFBoxResourceLoader.init(context.applicationContext)
     }
@@ -89,6 +94,7 @@ internal class DocumentService(context: Context) : DocumentOperations {
                 OpenDocument(draft, pages, renderPage(draft))
             }
             // Not yet the draft: adopt() makes it so, once nothing would be lost.
+            waiting += draft.source
             return OpenResult.Opened(document)
         } catch (error: Exception) {
             draft.source.delete()
@@ -99,7 +105,8 @@ internal class DocumentService(context: Context) : DocumentOperations {
     // A failed write leaves the current draft in place and drops the new copy.
     override fun adopt(document: OpenDocument) {
         try {
-            during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(document.draft) }
+            during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(document.draft, waiting - document.draft.source) }
+            waiting -= document.draft.source
         } catch (error: Exception) {
             discard(document)
             throw error
@@ -111,6 +118,7 @@ internal class DocumentService(context: Context) : DocumentOperations {
     // Nothing of a dropped PDF stays behind: a stale preview would push the
     // current document's pages out of the cache.
     override fun discard(document: OpenDocument) {
+        waiting -= document.draft.source
         document.draft.source.delete()
         dropPreviews { it.startsWith(previewPrefix(document.draft)) }
     }
@@ -133,7 +141,7 @@ internal class DocumentService(context: Context) : DocumentOperations {
 
     override fun cachedPreview(draft: Draft): Bitmap? = previews.get(key(draft))
 
-    override fun saveDraft(draft: Draft) = during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(draft) }
+    override fun saveDraft(draft: Draft) = during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(draft, waiting) }
 
     override fun close() {
         previews.evictAll()
