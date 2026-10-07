@@ -70,7 +70,12 @@ with the gesture hint seen.
 Still open from these PRs: B22's replace prompt runs before the bytes are
 known; D-focus, D-night and D-flip need new designs; device checks for hover,
 palm guard timing, hold-to-straighten dwell and multi-finger tap timing remain
-in section 9.
+in section 9. Found while reviewing the combination and deferred as minor:
+a pending message and a pending "PDF saved" in one render show back to back,
+so the first can vanish unseen (#34; needs a notice queue); a save-picker
+grant taken just before a rotation and a failed export is never released
+(#38; keep `unclaimedGrant` in the saved state); the page pill still takes
+taps during its 150 ms fade-out (#36; it was always tappable before).
 
 ## Continuation pass: six implementations (resolved; see Integration pass)
 
