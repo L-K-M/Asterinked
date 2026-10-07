@@ -71,6 +71,49 @@ class MainActivityChromeTest {
         }
     }
 
+    @Test fun penAndHighlighterKeepTheirOwnInk() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val root = settle(controller.get())
+            dot(root, R.string.red).performClick()
+            control(root, R.string.highlighter).performClick()
+            assertTrue("The highlighter starts yellow, not the pen's red slot", dot(root, R.string.yellow).isSelected)
+            assertTrue(dot(root, R.string.medium).isSelected)
+
+            dot(root, R.string.green).performClick()
+            dot(root, R.string.bold).performClick()
+            control(root, R.string.pen).performClick()
+            assertTrue("The pen is still red", dot(root, R.string.red).isSelected)
+            assertTrue("and medium", dot(root, R.string.medium).isSelected)
+        }
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val root = settle(controller.get())
+            assertTrue(dot(root, R.string.red).isSelected)
+            control(root, R.string.highlighter).performClick()
+            assertTrue("Both survive a restart", dot(root, R.string.green).isSelected)
+            assertTrue(dot(root, R.string.bold).isSelected)
+        }
+    }
+
+    // Before each tool kept its own ink, both used the pen's keys.
+    @Test fun anUpdateStartsTheHighlighterFromTheSharedChoice() {
+        app.getSharedPreferences("pen", Context.MODE_PRIVATE).edit().putInt("penColor", 2).putInt("penWidth", 2).commit()
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val root = settle(controller.get())
+            assertTrue(dot(root, R.string.red).isSelected)
+            control(root, R.string.highlighter).performClick()
+            assertTrue("The shared slot, now pink", dot(root, R.string.pink).isSelected)
+            assertTrue(dot(root, R.string.bold).isSelected)
+            dot(root, R.string.yellow).performClick()
+        }
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val root = settle(controller.get())
+            control(root, R.string.pen).performClick()
+            assertTrue("The pen is untouched", dot(root, R.string.red).isSelected)
+            control(root, R.string.highlighter).performClick()
+            assertTrue(dot(root, R.string.yellow).isSelected)
+        }
+    }
+
     @Test fun pickingInkPutsTheEraserAway() {
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
             val root = settle(controller.get())

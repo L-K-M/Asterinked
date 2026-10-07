@@ -51,6 +51,7 @@ import androidx.core.view.updatePaddingRelative
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.ink.InkKind
 import java.io.File
+import java.util.EnumMap
 
 /*
  * The editor is one screen in three states (welcome, loading, editing):
@@ -104,9 +105,17 @@ internal class MainActivity : ComponentActivity() {
     private var screen: Screen? = null
     private var systemBars = Insets.NONE
     private var mode = InputMode.PEN
-    private var colorIndex = DEFAULT_COLOR
-    private var widthIndex = DEFAULT_WIDTH
     private var kind = InkKind.PEN
+    // Each ink kind keeps its own colour and width, so a graphite pen and a
+    // yellow highlighter stay as they are when switching between them.
+    private val colorIndices = EnumMap<InkKind, Int>(InkKind::class.java)
+    private val widthIndices = EnumMap<InkKind, Int>(InkKind::class.java)
+    private var colorIndex: Int
+        get() = colorIndices.getValue(kind)
+        set(value) { colorIndices[kind] = value }
+    private var widthIndex: Int
+        get() = widthIndices.getValue(kind)
+        set(value) { widthIndices[kind] = value }
     private var tool = InkTool.PEN
     // A pen that ever touched or hovered over the page (kept across launches)
     // means panning with a finger is deliberate. The finger hint shows once per
@@ -157,8 +166,13 @@ internal class MainActivity : ComponentActivity() {
         window.isNavigationBarContrastEnforced = false
         super.onCreate(savedInstanceState)
         // Pen settings persist across launches, not only across recreation.
-        colorIndex = settings.getInt(COLOR_KEY, DEFAULT_COLOR).coerceIn(COLORS.indices)
-        widthIndex = settings.getInt(WIDTH_KEY, DEFAULT_WIDTH).coerceIn(WIDTHS.indices)
+        // Both tools shared the pen's keys before; the others start from them once.
+        val sharedColor = settings.getInt(COLOR_KEY, DEFAULT_COLOR)
+        val sharedWidth = settings.getInt(WIDTH_KEY, DEFAULT_WIDTH)
+        for (kind in InkKind.entries) {
+            colorIndices[kind] = settings.getInt(colorKey(kind), sharedColor).coerceIn(colorsOf(kind).indices)
+            widthIndices[kind] = settings.getInt(widthKey(kind), sharedWidth).coerceIn(widthsOf(kind).indices)
+        }
         mode = initialInputMode(settings.getString(MODE_KEY, null), stylusAttached())
         stylusSeen = settings.getBoolean(STYLUS_SEEN_KEY, false)
         handButtonUsed = settings.getBoolean(HAND_BUTTON_USED_KEY, false)
@@ -524,7 +538,7 @@ internal class MainActivity : ComponentActivity() {
 
     private fun configurePen() {
         val highlighting = kind == InkKind.HIGHLIGHTER
-        // The same colour and width choices pick a highlighter tint and a line-height width.
+        // The same swatches and dots show highlighter tints and line-height widths.
         val colors = if (highlighting) HIGHLIGHT_COLORS else COLORS
         val names = if (highlighting) HIGHLIGHT_NAMES else COLOR_NAMES
         tools.select(currentTool().ordinal)
@@ -546,11 +560,32 @@ internal class MainActivity : ComponentActivity() {
         page.configure(mode, colors[colorIndex], width, kind, model::addStroke)
         page.tool = tool
         settings.edit {
-            putInt(COLOR_KEY, colorIndex)
-            putInt(WIDTH_KEY, widthIndex)
+            for ((kind, index) in colorIndices) putInt(colorKey(kind), index)
+            for ((kind, index) in widthIndices) putInt(widthKey(kind), index)
             putString(MODE_KEY, mode.name)
             putString(KIND_KEY, kind.name)
         }
+    }
+
+    private fun colorsOf(kind: InkKind) = when (kind) {
+        InkKind.PEN -> COLORS
+        InkKind.HIGHLIGHTER -> HIGHLIGHT_COLORS
+    }
+
+    private fun widthsOf(kind: InkKind) = when (kind) {
+        InkKind.PEN -> WIDTHS
+        InkKind.HIGHLIGHTER -> HIGHLIGHT_WIDTHS
+    }
+
+    // The pen keeps the keys both tools used before.
+    private fun colorKey(kind: InkKind) = when (kind) {
+        InkKind.PEN -> COLOR_KEY
+        InkKind.HIGHLIGHTER -> HIGHLIGHT_COLOR_KEY
+    }
+
+    private fun widthKey(kind: InkKind) = when (kind) {
+        InkKind.PEN -> WIDTH_KEY
+        InkKind.HIGHLIGHTER -> HIGHLIGHT_WIDTH_KEY
     }
 
     private fun currentTool(): ToolChoice = when {
@@ -944,6 +979,8 @@ internal class MainActivity : ComponentActivity() {
         const val SETTINGS = "pen"
         const val COLOR_KEY = "penColor"
         const val WIDTH_KEY = "penWidth"
+        const val HIGHLIGHT_COLOR_KEY = "highlightColor"
+        const val HIGHLIGHT_WIDTH_KEY = "highlightWidth"
         const val MODE_KEY = "inputMode"
         const val KIND_KEY = "inkKind"
         const val TOOL_KEY = "inkTool"

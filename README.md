@@ -15,8 +15,8 @@ Pen-based PDF annotation for Android 10 and newer.
    end near where they started, stay as drawn.
    A stylus that hovers previews where the nib will land: a ring for the pen
    and the eraser, a tinted dot for the highlighter.
-   Pick ink colour and pen width in the tool bar at the bottom; they stay as you
-   left them.
+   Pick ink colour and pen width in the tool bar at the bottom; the pen and the
+   highlighter each keep their own, as you left them.
 3. Switch between pen, highlighter and eraser in the tool bar. Highlights
    multiply with the page, so the text stays readable on screen and in the
    export. The eraser removes whole strokes; a stylus side button erases too.
