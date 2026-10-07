@@ -47,6 +47,7 @@ import androidx.core.view.updatePaddingRelative
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.ink.InkKind
 import java.io.File
+import java.util.EnumMap
 
 /*
  * The editor is one screen in three states (welcome, loading, editing):
@@ -99,9 +100,17 @@ internal class MainActivity : ComponentActivity() {
     private var screen: Screen? = null
     private var systemBars = Insets.NONE
     private var mode = InputMode.PEN
-    private var colorIndex = DEFAULT_COLOR
-    private var widthIndex = DEFAULT_WIDTH
     private var kind = InkKind.PEN
+    // Each ink kind keeps its own colour and width, so a graphite pen and a
+    // yellow highlighter stay as they are when switching between them.
+    private val colorIndices = EnumMap<InkKind, Int>(InkKind::class.java)
+    private val widthIndices = EnumMap<InkKind, Int>(InkKind::class.java)
+    private var colorIndex: Int
+        get() = colorIndices.getValue(kind)
+        set(value) { colorIndices[kind] = value }
+    private var widthIndex: Int
+        get() = widthIndices.getValue(kind)
+        set(value) { widthIndices[kind] = value }
     private var tool = InkTool.PEN
     // A PDF handed over by another app, waiting until the editor is idle so the
     // unsaved-notes check sees the restored draft.
@@ -124,8 +133,13 @@ internal class MainActivity : ComponentActivity() {
         window.isNavigationBarContrastEnforced = false
         super.onCreate(savedInstanceState)
         // Pen settings persist across launches, not only across recreation.
-        colorIndex = settings.getInt(COLOR_KEY, DEFAULT_COLOR).coerceIn(COLORS.indices)
-        widthIndex = settings.getInt(WIDTH_KEY, DEFAULT_WIDTH).coerceIn(WIDTHS.indices)
+        val penColor = settings.getInt(COLOR_KEY, DEFAULT_COLOR)
+        val penWidth = settings.getInt(WIDTH_KEY, DEFAULT_WIDTH)
+        colorIndices[InkKind.PEN] = penColor.coerceIn(COLORS.indices)
+        widthIndices[InkKind.PEN] = penWidth.coerceIn(WIDTHS.indices)
+        // Both tools shared the pen's keys before; the highlighter starts from them once.
+        colorIndices[InkKind.HIGHLIGHTER] = settings.getInt(HIGHLIGHT_COLOR_KEY, penColor).coerceIn(HIGHLIGHT_COLORS.indices)
+        widthIndices[InkKind.HIGHLIGHTER] = settings.getInt(HIGHLIGHT_WIDTH_KEY, penWidth).coerceIn(HIGHLIGHT_WIDTHS.indices)
         mode = InputMode.entries.firstOrNull { it.name == settings.getString(MODE_KEY, null) } ?: InputMode.PEN
         kind = InkKind.entries.firstOrNull { it.name == settings.getString(KIND_KEY, null) } ?: InkKind.PEN
         // The eraser is a momentary tool: it survives rotation, but a new launch writes.
@@ -453,7 +467,7 @@ internal class MainActivity : ComponentActivity() {
 
     private fun configurePen() {
         val highlighting = kind == InkKind.HIGHLIGHTER
-        // The same colour and width choices pick a highlighter tint and a line-height width.
+        // The same swatches and dots show highlighter tints and line-height widths.
         val colors = if (highlighting) HIGHLIGHT_COLORS else COLORS
         val names = if (highlighting) HIGHLIGHT_NAMES else COLOR_NAMES
         tools.select(currentTool().ordinal)
@@ -475,8 +489,10 @@ internal class MainActivity : ComponentActivity() {
         page.configure(mode, colors[colorIndex], width, kind, model::addStroke)
         page.tool = tool
         settings.edit {
-            putInt(COLOR_KEY, colorIndex)
-            putInt(WIDTH_KEY, widthIndex)
+            putInt(COLOR_KEY, colorIndices.getValue(InkKind.PEN))
+            putInt(WIDTH_KEY, widthIndices.getValue(InkKind.PEN))
+            putInt(HIGHLIGHT_COLOR_KEY, colorIndices.getValue(InkKind.HIGHLIGHTER))
+            putInt(HIGHLIGHT_WIDTH_KEY, widthIndices.getValue(InkKind.HIGHLIGHTER))
             putString(MODE_KEY, mode.name)
             putString(KIND_KEY, kind.name)
         }
@@ -731,6 +747,8 @@ internal class MainActivity : ComponentActivity() {
         const val SETTINGS = "pen"
         const val COLOR_KEY = "penColor"
         const val WIDTH_KEY = "penWidth"
+        const val HIGHLIGHT_COLOR_KEY = "highlightColor"
+        const val HIGHLIGHT_WIDTH_KEY = "highlightWidth"
         const val MODE_KEY = "inputMode"
         const val KIND_KEY = "inkKind"
         const val TOOL_KEY = "inkTool"
