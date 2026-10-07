@@ -115,6 +115,9 @@ internal class MainActivity : ComponentActivity() {
     // A grant taken for a file whose export then failed is not tracked by
     // lastDestination; hold it until the outcome is known so it can be given back.
     private var unclaimedGrant: Uri? = null
+    private var pillHidden = false
+    private var shownPageKey: String? = null
+    private val showPill = Runnable { showPagePill() }
 
     private val openPdf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(model::open)
@@ -165,6 +168,8 @@ internal class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        pagePill.removeCallbacks(showPill)
+        pagePill.animate().cancel()
         confirming?.dismiss()
         pageDialog?.dismiss()
         super.onDestroy()
@@ -221,6 +226,7 @@ internal class MainActivity : ComponentActivity() {
 
         workspace = FrameLayout(this)
         page = InkPageView(this).apply {
+            onWritingChanged = ::writingChanged
             onTurnPage = ::turnPage
             onErase = model::eraseStrokes
         }
@@ -624,6 +630,12 @@ internal class MainActivity : ComponentActivity() {
             counter.text = getString(R.string.page_position, draft.page + 1, state.pages.size)
             counter.contentDescription = getString(R.string.page_count, draft.page + 1, state.pages.size)
             counter.isEnabled = ready && state.pages.size > 1
+            val pageKey = "${draft.source.name}:${draft.page}"
+            if (shownPageKey != pageKey) {
+                shownPageKey = pageKey
+                pagePill.removeCallbacks(showPill)
+                showPagePill()
+            }
         }
 
         page.show(state)
@@ -667,6 +679,14 @@ internal class MainActivity : ComponentActivity() {
         screen = next
         val editing = next == Screen.EDITOR
         listOf(topBar, toolBar, pagePill).forEach { it.visibility = if (editing) View.VISIBLE else View.GONE }
+        if (editing) {
+            showPagePill()
+        } else {
+            pagePill.removeCallbacks(showPill)
+            pagePill.animate().cancel()
+            pillHidden = false
+            shownPageKey = null
+        }
         // Invisible rather than gone, so the page keeps its size for the editor.
         page.visibility = if (editing) View.VISIBLE else View.INVISIBLE
         welcome.visibility = if (next == Screen.WELCOME) View.VISIBLE else View.GONE
@@ -731,6 +751,36 @@ internal class MainActivity : ComponentActivity() {
             Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
             else -> null
         } ?: incoming
+    }
+
+    // The pill covers the bottom of the page, where notes often go: it steps
+    // aside while the pen or eraser is down and returns shortly after the
+    // stroke ends, or at once when the page changes.
+    private fun writingChanged(state: WritingState) {
+        pagePill.removeCallbacks(showPill)
+        // showScreen runs before page.show cancels an active stroke.
+        if (screen != Screen.EDITOR) return
+
+        if (state == WritingState.ACTIVE) hidePagePill() else pagePill.postDelayed(showPill, PILL_RETURN_MS)
+    }
+
+    private fun hidePagePill() {
+        if (pillHidden) return
+
+        pillHidden = true
+        pagePill.animate().cancel()
+        pagePill.animate().alpha(0f).setDuration(Motion.SHORT).setInterpolator(Motion.EASING)
+            // Invisible, not just transparent: a see-through pill would still eat touches.
+            .withEndAction { if (screen == Screen.EDITOR && pillHidden) pagePill.visibility = View.INVISIBLE }.start()
+    }
+
+    private fun showPagePill() {
+        if (screen != Screen.EDITOR) return
+
+        pillHidden = false
+        pagePill.animate().cancel()
+        pagePill.visibility = View.VISIBLE
+        pagePill.animate().alpha(1f).setDuration(Motion.SHORT).setInterpolator(Motion.EASING).start()
     }
 
     private fun turnPage(delta: Int) {
@@ -845,6 +895,8 @@ internal class MainActivity : ComponentActivity() {
         const val SAVE_LABEL_MIN_WIDTH_DP = 680
         // Phones in landscape: a lower top bar leaves more height for the page.
         const val COMPACT_HEIGHT_DP = 480
+        // The page pill returns this long after a stroke ends.
+        const val PILL_RETURN_MS = 1_500L
         // Android's "largest" text sizes start around 1.5x.
         const val LARGE_FONT_SCALE = 1.5f
 

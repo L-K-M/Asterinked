@@ -39,6 +39,8 @@ internal enum class InputMode { PEN, TOUCH }
 /** What a writing gesture does. The stylus eraser end and side button always erase. */
 internal enum class InkTool { PEN, ERASER }
 
+internal enum class WritingState { IDLE, ACTIVE }
+
 internal class InkPageView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
     // Multiplying with the page keeps text under a highlight dark, like the export.
@@ -122,6 +124,9 @@ internal class InkPageView(context: Context) : View(context) {
     private val pageMargin = PAGE_MARGIN_DP * density
     private val swipeDistance = SWIPE_DISTANCE_DP * density
     private val swipeVelocity = SWIPE_VELOCITY_DP * density
+
+    /** Reports accepted writing/erasing gestures, including cancellation. */
+    var onWritingChanged: (WritingState) -> Unit = {}
 
     /** Called with +1 or -1 when a finger swipes the page at fit zoom in pen mode. */
     var onTurnPage: (Int) -> Unit = {}
@@ -428,6 +433,7 @@ internal class InkPageView(context: Context) : View(context) {
                 activeOnStroke = onStroke
                 activeErasing = eraserEnd || tool == InkTool.ERASER || (stylus && event.buttonState and STYLUS_BUTTONS != 0)
                 if (stylus || eraserEnd) requestUnbufferedDispatch(event)
+                onWritingChanged(WritingState.ACTIVE)
                 track(event, index)
                 parent?.requestDisallowInterceptTouchEvent(true)
                 return true
@@ -647,6 +653,7 @@ internal class InkPageView(context: Context) : View(context) {
         holdAnchor = null
         linePressure = null
         lineEnd = null
+        val wasWriting = activePointer != NO_POINTER
         points = mutableListOf()
         liveStroke = null
         // Strokes hidden by a cancelled erase must be drawn again.
@@ -656,6 +663,7 @@ internal class InkPageView(context: Context) : View(context) {
         eraserAt = null
         activeErasing = false
         activePointer = NO_POINTER
+        if (wasWriting) onWritingChanged(WritingState.IDLE)
         parent?.requestDisallowInterceptTouchEvent(false)
         invalidate()
     }

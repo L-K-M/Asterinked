@@ -145,6 +145,77 @@ class MainActivityChromeTest {
         assertEquals(R.string.working, status(exported, busy = true))
     }
 
+    @Test fun thePagePillStepsAsideWhileWriting() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing())
+            val page = page(root)
+            page.draw(android.graphics.Canvas(Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)))
+            val pill = control(root, R.string.previous).parent as View
+            assertTrue("The pill starts visible", pill.isShown)
+
+            stylus(page, android.view.MotionEvent.ACTION_DOWN, 300f, 500f)
+            stylus(page, android.view.MotionEvent.ACTION_MOVE, 320f, 500f)
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(400))
+            assertFalse("The pill steps aside while writing", pill.isShown)
+
+            // Cancel avoids committing the stand-in PDF used by this UI test.
+            stylus(page, android.view.MotionEvent.ACTION_CANCEL, 320f, 500f)
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(400))
+            assertFalse("The pill stays away right after the stroke", pill.isShown)
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(1500))
+            assertTrue("The pill returns once the pen rests", pill.isShown)
+        }
+    }
+
+    @Test fun aPendingPillReturnDoesNotRevealControlsOnWelcome() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing())
+            val page = page(root)
+            page.draw(android.graphics.Canvas(Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)))
+            val pill = control(root, R.string.previous).parent as View
+
+            stylus(page, android.view.MotionEvent.ACTION_DOWN, 300f, 500f)
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(400))
+            stylus(page, android.view.MotionEvent.ACTION_CANCEL, 300f, 500f)
+            EditorScreens.publish(activity, EditorState(busy = false))
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(2000))
+
+            assertEquals("Navigation stays gone outside the editor", View.GONE, pill.visibility)
+        }
+    }
+
+    @Test fun leavingTheEditorDuringAStrokeDoesNotRescheduleThePill() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing())
+            val page = page(root)
+            page.draw(android.graphics.Canvas(Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)))
+            val pill = control(root, R.string.previous).parent as View
+
+            stylus(page, android.view.MotionEvent.ACTION_DOWN, 300f, 500f)
+            EditorScreens.publish(activity, EditorState(busy = false))
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(2000))
+
+            assertEquals(View.GONE, pill.visibility)
+        }
+    }
+
+    private fun stylus(view: View, action: Int, x: Float, y: Float) {
+        val properties = arrayOf(android.view.MotionEvent.PointerProperties().apply {
+            id = 7
+            toolType = android.view.MotionEvent.TOOL_TYPE_STYLUS
+        })
+        val coordinates = arrayOf(android.view.MotionEvent.PointerCoords().apply { this.x = x; this.y = y; pressure = 0.6f })
+        val event = android.view.MotionEvent.obtain(1000L, 1004L, action, 1, properties, coordinates,
+            0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_STYLUS, 0)
+        try { view.onTouchEvent(event) } finally { event.recycle() }
+    }
+
     private fun settle(activity: MainActivity): View {
         repeat(50) {
             shadowOf(Looper.getMainLooper()).idle()
