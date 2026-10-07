@@ -10,6 +10,8 @@
     <color name="on_surface_disabled">#61E9EBEF</color>
     <color name="outline">#4A4F59</color>
     <color name="outline_variant">#2C3037</color>
+    <!-- At least 3:1 on the bar, so graphite ink reads as a filled dot. -->
+    <color name="swatch_edge">#6B7280</color>
     <color name="ripple">#29E9EBEF</color>
     <color name="shadow">#66000000</color>
 
@@ -20,9 +22,8 @@
     <color name="accent_container">#4B171B</color>
     <color name="on_accent_container">#FFB8BB</color>
 
-    <color name="inverse_surface">#E9EBEF</color>
-    <color name="inverse_on_surface">#1B1F27</color>
-    <color name="notice_success">#1B7A3A</color>
-    <color name="notice_error">#BF1520</color>
-    <color name="notice_action">#A00C15</color>
+    <!-- Lifted off the canvas rather than inverted: a light card would barely
+         show against the white page. -->
+    <color name="inverse_surface">#33373F</color>
+    <color name="notice_edge">#4A4F59</color>
 </resources>

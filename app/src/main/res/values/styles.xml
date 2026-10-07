@@ -32,6 +32,12 @@
         <item name="android:buttonBarPositiveButtonStyle">@style/DialogButton.Positive</item>
     </style>
 
+    <!-- For a confirm that throws work away: only then is the positive button
+         brand red. Pass it to AlertDialog.Builder(context, themeResId). -->
+    <style name="AlertDialogTheme.Destructive">
+        <item name="android:buttonBarPositiveButtonStyle">@style/DialogButton.Destructive</item>
+    </style>
+
     <!-- Typeface on the style itself: the theme's fontFamily would override the
          text appearance's on inflated views. -->
     <style name="DialogTitle">
@@ -39,9 +45,13 @@
         <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 
-    <!-- Sentence case, like the rest of the app. The positive button carries the
-         accent: it is the step that changes something. -->
+    <!-- Sentence case, like the rest of the app. The positive button is graphite,
+         a step stronger than the others; brand red is kept for destructive
+         confirms. The parent's 88dp minimum width would leave short labels
+         like "Go" floating away from the dialog edge. -->
     <style name="DialogButton" parent="android:style/Widget.Material.Button.Borderless.Colored">
+        <item name="android:minWidth">@dimen/touch_target</item>
+        <item name="android:paddingHorizontal">@dimen/dialog_button_padding</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:textAppearance">@style/TextAppearance.Asterinked.Label</item>
         <item name="android:fontFamily">sans-serif-medium</item>
@@ -50,6 +60,10 @@
 
     <style name="DialogButton.Positive">
         <item name="android:textColor">@color/dialog_button_positive</item>
+    </style>
+
+    <style name="DialogButton.Destructive">
+        <item name="android:textColor">@color/dialog_button_destructive</item>
     </style>
 
     <!-- Type scale. Sizes in sp so they follow the system font size. -->

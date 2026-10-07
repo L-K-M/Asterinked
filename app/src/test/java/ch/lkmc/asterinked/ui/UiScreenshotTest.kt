@@ -1,5 +1,6 @@
 package ch.lkmc.asterinked.ui
 
+import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.graphics.Bitmap
@@ -10,6 +11,7 @@ import android.graphics.RectF
 import android.net.Uri
 import android.os.Looper
 import android.view.View
+import android.widget.EditText
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -18,6 +20,8 @@ import ch.lkmc.asterinked.ui.EditorScreens.descendants
 import ch.lkmc.asterinked.ui.EditorScreens.editing
 import ch.lkmc.asterinked.ui.EditorScreens.publish
 import ch.lkmc.asterinked.ui.EditorScreens.settle
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -134,6 +138,11 @@ class UiScreenshotTest {
         publish(it, editing().copy(message = EditorMessage(app.getString(R.string.error_source_unreadable), Tone.ERROR)))
     }
 
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
+    fun editorErrorDark() = shoot("editor-error-dark") {
+        publish(it, editing().copy(message = EditorMessage(app.getString(R.string.error_source_unreadable), Tone.ERROR)))
+    }
+
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun editorSuccess() = shoot("editor-success") {
         publish(it, editing(exported = true).copy(exported = android.net.Uri.parse("content://test/saved.pdf")))
@@ -143,6 +152,7 @@ class UiScreenshotTest {
     fun dialogReplace() = shoot("dialog-replace") {
         publish(it, editing())
         click(it, R.string.open_pdf)
+        assertEquals("Replacing unexported notes is the one red confirm", app.getColor(R.color.accent), positiveButton().currentTextColor)
     }
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
@@ -154,7 +164,8 @@ class UiScreenshotTest {
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun dialogGoToPage() = shoot("dialog-page") {
         publish(it, editing())
-        descendants(it.window.decorView).first { view -> view.tooltipText == app.getString(R.string.go_to_page) }.performClick()
+        openPageDialog(it)
+        assertEquals("Plain navigation stays graphite", app.getColor(R.color.on_surface), positiveButton().currentTextColor)
     }
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
@@ -179,6 +190,23 @@ class UiScreenshotTest {
         publish(activity, state.copy(draft = draft.copy(ink = draft.ink + (0 to strokes) + (7 to strokes))))
         descendants(activity.window.decorView).first { it.tooltipText == app.getString(R.string.go_to_page) }.performClick()
     }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
+    fun dialogGoToPageDark() = shoot("dialog-page-dark") {
+        publish(it, editing())
+        openPageDialog(it)
+    }
+
+    // Only an out-of-range number turns the field's edge accent.
+    @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
+    fun dialogGoToPageOutOfRange() = shoot("dialog-page-invalid") {
+        publish(it, editing())
+        openPageDialog(it)
+        descendants(ShadowDialog.getLatestDialog().window!!.decorView).filterIsInstance<EditText>().single().setText("40")
+        assertFalse("Go waits for a page of this document", positiveButton().isEnabled)
+    }
+
+    private fun positiveButton() = (ShadowDialog.getLatestDialog() as AlertDialog).getButton(AlertDialog.BUTTON_POSITIVE)
 
     private fun shoot(name: String, settleMillis: Long = 0, arrange: (MainActivity) -> Unit) {
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
@@ -242,6 +270,11 @@ class UiScreenshotTest {
     private fun click(activity: MainActivity, label: Int) {
         val text = app.getString(label)
         descendants(activity.window.decorView).first { it.contentDescription == text || (it is android.widget.TextView && it.text.toString() == text && it.isClickable) }.performClick()
+        settle()
+    }
+
+    private fun openPageDialog(activity: MainActivity) {
+        descendants(activity.window.decorView).first { it.tooltipText == app.getString(R.string.go_to_page) }.performClick()
         settle()
     }
 

@@ -939,7 +939,8 @@ internal class MainActivity : ComponentActivity() {
             open()
             return
         }
-        confirming = AlertDialog.Builder(this)
+        // Opening another PDF discards the unexported notes, so the confirm is red.
+        confirming = AlertDialog.Builder(this, R.style.AlertDialogTheme_Destructive)
             .setTitle(R.string.open_another).setMessage(R.string.unsaved_prompt)
             .setNegativeButton(R.string.keep_editing) { _, _ -> keep() }
             .setPositiveButton(R.string.open_anyway) { _, _ -> open() }

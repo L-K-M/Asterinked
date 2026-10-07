@@ -14,7 +14,8 @@ import androidx.core.graphics.ColorUtils
  * enabled state come from the standard View flags, so TalkBack announces them.
  *
  * A dot too close to the bar colour (graphite in the dark theme, yellow
- * highlighter in the light one) gets a hairline outline so it stays visible.
+ * highlighter in the light one) gets an outline so it stays visible; a
+ * swatch-sized dot gets a heavier one, so it reads as filled, not as a ring.
  */
 internal class ChoiceDot(context: Context) : View(context) {
     private val density = resources.displayMetrics.density
@@ -23,10 +24,7 @@ internal class ChoiceDot(context: Context) : View(context) {
         style = Paint.Style.STROKE
         strokeWidth = RING_WIDTH_DP * density
     }
-    private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = EDGE_WIDTH_DP * density
-    }
+    private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     // 0 = no ring, 1 = full ring.
     private var ringProgress = 0f
     private var ringAnimator: ValueAnimator? = null
@@ -105,6 +103,7 @@ internal class ChoiceDot(context: Context) : View(context) {
         dot.alpha = alpha
         canvas.drawCircle(x, y, radiusPx, dot)
         if (blendsIn(fill)) {
+            edge.strokeWidth = (if (radius >= LARGE_RADIUS_DP) EDGE_WIDTH_LARGE_DP else EDGE_WIDTH_DP) * density
             edge.color = outlineColor
             edge.alpha = alpha
             canvas.drawCircle(x, y, radiusPx - edge.strokeWidth / 2f, edge)
@@ -131,6 +130,9 @@ internal class ChoiceDot(context: Context) : View(context) {
         const val RING_WIDTH_DP = 2f
         const val RING_START_SCALE = 0.8f
         const val EDGE_WIDTH_DP = 1f
+        const val EDGE_WIDTH_LARGE_DP = 1.5f
+        // Swatches and the bold width dot; the small width dots keep the hairline.
+        const val LARGE_RADIUS_DP = 8f
         // Below the non-text control contrast target, the edge carries the shape.
         const val MIN_CONTRAST = 3.0
         const val OPAQUE_MASK = 0xFF000000.toInt()
