@@ -539,6 +539,7 @@ internal class MainActivity : ComponentActivity() {
         if (settings.getBoolean(GESTURE_HINT_KEY, false)) return
         // Existing installs get the hint once after updating too — intended.
         hint(if (mode == InputMode.PEN) R.string.input_hint else R.string.touch_hint)
+        // Persisted only after the hint displays, so a crash can't consume it unseen.
         settings.edit { putBoolean(GESTURE_HINT_KEY, true) }
     }
 
