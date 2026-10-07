@@ -3,12 +3,13 @@ package ch.lkmc.asterinked.document
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.util.Log
 import android.util.LruCache
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import java.io.File
 import java.util.UUID
 
-internal data class OpenDocument(val draft: Draft, val pages: List<PageSpec>, val preview: Bitmap)
+internal data class OpenDocument(val draft: Draft, val pages: List<PageSpec>, val preview: Bitmap?)
 
 /**
  * What the editor needs from storage and rendering. Every call except
@@ -62,10 +63,11 @@ internal class DocumentService(context: Context) : DocumentOperations {
     }
 
     override fun restore(): OpenDocument? = during(DocumentProblem.DRAFT_UNREADABLE) {
-        val draft = store.restore() ?: return@during null
-        val pages = engine.inspect(draft.source)
-        require(draft.page in pages.indices) { "The saved page is invalid." }
-        OpenDocument(draft, pages, renderPage(draft))
+        val saved = store.restore() ?: return@during null
+        val pages = engine.inspect(saved.source)
+        // A page beyond the document (a damaged draft) opens its last page instead.
+        val draft = saved.copy(page = saved.page.coerceIn(pages.indices))
+        OpenDocument(draft, pages, previewOrNull(draft))
     }
 
     override fun render(draft: Draft): Bitmap = during(DocumentProblem.NOT_A_PDF) { renderPage(draft) }
@@ -109,6 +111,18 @@ internal class DocumentService(context: Context) : DocumentOperations {
         }
     }
 
+    // The ink is restored even when its page fails to render (a huge page on a
+    // small heap): the editor shows the page blank, retries and reports there.
+    private fun previewOrNull(draft: Draft): Bitmap? = try {
+        renderPage(draft)
+    } catch (error: Exception) {
+        Log.w(TAG, "The restored page did not render; the editor retries", error)
+        null
+    } catch (error: OutOfMemoryError) {
+        Log.w(TAG, "The restored page did not render; the editor retries", error)
+        null
+    }
+
     private fun renderPage(draft: Draft): Bitmap =
         cachedPreview(draft) ?: engine.render(draft.source, draft.page).also { previews.put(key(draft), it) }
 
@@ -131,5 +145,6 @@ internal class DocumentService(context: Context) : DocumentOperations {
         /** Matches the cache-path in res/xml/shared_files.xml. */
         const val SHARED_DIRECTORY = "shared"
         private const val PREVIEW_HEAP_SHARE = 6
+        private const val TAG = "Asterinked"
     }
 }

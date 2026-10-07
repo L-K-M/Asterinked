@@ -4,6 +4,8 @@ import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.cos.COSArray
+import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
@@ -239,6 +241,27 @@ class PdfEngineExportTest {
         // The editor draws highlights under all pen ink, so the export must too.
         val contents = contentsOf(dest, 0)
         assertTrue("Highlight drawn before pen ink", contents.indexOf(" gs") in 0 until contents.indexOf("1 0 0 RG"))
+    }
+
+    // /Count claims a page the tree does not hold; the page list is what the
+    // editor shows, so an empty one must be refused rather than opened.
+    @Test
+    fun inspect_refusesAPageTreeWithoutPages() {
+        val source = tmp("no-kids")
+        PDDocument().use { doc ->
+            doc.addPage(PDPage())
+            doc.documentCatalog.cosObject.getCOSDictionary(COSName.PAGES).setItem(COSName.KIDS, COSArray())
+            doc.save(source)
+        }
+
+        val problem = try {
+            engine.inspect(source)
+            null
+        } catch (error: DocumentException) {
+            error.problem
+        }
+
+        assertEquals(DocumentProblem.NO_PAGES, problem)
     }
 
     @Test

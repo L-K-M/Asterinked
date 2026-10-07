@@ -53,6 +53,7 @@ internal class DocumentStore(context: Context, private val draftIo: DraftFileIo 
     private val resolver = context.contentResolver
     private val directory = File(context.filesDir, "documents").apply { mkdirs() }
     private val draftFile = AtomicFile(File(directory, "draft.json"))
+    private val brokenFile = File(directory, "draft.broken.json")
 
     fun import(uri: Uri): Draft {
         val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
@@ -116,9 +117,24 @@ internal class DocumentStore(context: Context, private val draftIo: DraftFileIo 
 
     fun restore(): Draft? {
         if (!draftFile.baseFile.exists() && !File("${draftFile.baseFile}$BACKUP_SUFFIX").exists()) return null
-        val json = JSONObject(draftFile.openRead().bufferedReader().use { it.readText() })
+        val text = draftFile.openRead().bufferedReader().use { it.readText() }
+        return try {
+            decodeDraft(text)
+        } catch (error: Exception) {
+            // Content that cannot be decoded never will be: set it aside, once,
+            // so the next launch starts clean instead of failing again. Read
+            // errors above are not set aside; they may pass.
+            brokenFile.delete()
+            draftFile.baseFile.renameTo(brokenFile)
+            draftFile.delete()
+            throw DocumentException(DocumentProblem.DRAFT_UNREADABLE, error)
+        }
+    }
+
+    private fun decodeDraft(text: String): Draft {
+        val json = JSONObject(text)
         val source = File(directory, json.getString("source"))
-        require(source.canonicalFile.parentFile == directory.canonicalFile && source.isFile) { "The saved PDF is missing." }
+        if (source.canonicalFile.parentFile != directory.canonicalFile || !source.isFile) throw IOException("The saved PDF is missing.")
         return Draft(source, json.getString("name"), json.getInt("page"), decodeInk(json.getJSONObject("ink")), decodeInk(json.getJSONObject("savedInk")))
     }
 
