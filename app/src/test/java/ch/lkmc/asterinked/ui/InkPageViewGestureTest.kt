@@ -120,6 +120,14 @@ class InkPageViewGestureTest {
         assertEquals("A tap does not zoom", fit, unitsPer100px(view), 0.01f)
     }
 
+    @Test fun aFourthFingerRulesTheTapOut() {
+        val view = pageView(InputMode.PEN)
+
+        tap(view, 4)
+
+        assertTrue(taps.isEmpty() && strokes.isEmpty())
+    }
+
     @Test fun twoFingerTapUndoesWithoutInkingInTouchMode() {
         val view = pageView(InputMode.TOUCH)
 

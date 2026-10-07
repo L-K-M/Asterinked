@@ -588,7 +588,7 @@ internal class InkPageView(context: Context) : View(context) {
         }
 
         private fun land(event: MotionEvent, index: Int) {
-            if (event.getToolType(index) != MotionEvent.TOOL_TYPE_FINGER || starts.size == REDO_FINGERS) ruledOut = true
+            if (event.getToolType(index) != MotionEvent.TOOL_TYPE_FINGER || starts.size >= REDO_FINGERS) ruledOut = true
             starts[event.getPointerId(index)] = PointF(event.getX(index), event.getY(index))
         }
 
