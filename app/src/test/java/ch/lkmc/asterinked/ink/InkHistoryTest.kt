@@ -19,9 +19,47 @@ class InkHistoryTest {
         history.record(0, emptyList(), one)
         history.record(0, one, two)
 
-        val undone = history.undo(0, two)!!
-        assertSame(one, undone)
-        assertSame(two, history.redo(0, undone))
+        val undone = history.undo(0, mapOf(0 to two))!!
+        assertEquals(0, undone.page)
+        assertSame(one, undone.strokes)
+        assertSame(two, history.redo(mapOf(0 to undone.strokes))!!.strokes)
+    }
+
+    @Test fun undoReachesTheLastEditOnAnotherPage() {
+        val history = InkHistory()
+        val first = listOf(a)
+        val third = listOf(b)
+        history.record(0, emptyList(), first)
+        history.record(2, emptyList(), third)
+        var ink = mapOf(0 to first, 2 to third)
+
+        // The user turned to page 5, which has no ink: undo still works.
+        assertTrue(history.canUndo(5, ink))
+        val newest = history.undo(5, ink)!!
+        assertEquals(PageInk(2, emptyList()), newest)
+        ink = ink + (newest.page to newest.strokes)
+
+        assertEquals(PageInk(0, emptyList()), history.undo(5, ink))
+    }
+
+    @Test fun redoReplaysEditsAcrossPagesInOrder() {
+        val history = InkHistory()
+        val first = listOf(a)
+        val second = listOf(b)
+        history.record(0, emptyList(), first)
+        history.record(1, emptyList(), second)
+        var ink = mapOf(0 to first, 1 to second)
+        repeat(2) {
+            val undone = history.undo(1, ink)!!
+            ink = ink + (undone.page to undone.strokes)
+        }
+
+        val redone = history.redo(ink)!!
+        assertEquals(0, redone.page)
+        assertSame(first, redone.strokes)
+        ink = ink + (redone.page to redone.strokes)
+        assertSame(second, history.redo(ink)!!.strokes)
+        assertFalse(history.canRedo())
     }
 
     @Test fun undoingAnEraseRestoresStrokesWhereTheyWere() {
@@ -30,46 +68,70 @@ class InkHistoryTest {
         val after = listOf(a, c)
         history.record(0, before, after)
 
-        assertEquals(listOf(a, b, c), history.undo(0, after))
+        assertEquals(listOf(a, b, c), history.undo(0, mapOf(0 to after))!!.strokes)
     }
 
     @Test fun erasingEverythingStillLeavesSomethingToUndo() {
         val history = InkHistory()
-        history.record(0, listOf(a), emptyList())
-        assertTrue(history.canUndo(0, emptyList()))
-        assertEquals(listOf(a), history.undo(0, emptyList()))
-        assertFalse(history.canUndo(0, emptyList()))
+        val erased = listOf(a).filterNot { it === a }
+        history.record(0, listOf(a), erased)
+        assertTrue(history.canUndo(0, mapOf(0 to erased)))
+        assertEquals(listOf(a), history.undo(0, mapOf(0 to erased))!!.strokes)
+        assertFalse(history.canUndo(0, emptyMap()))
     }
 
-    @Test fun strokesFromAnEarlierSessionUndoNewestFirst() {
+    @Test fun strokesFromAnEarlierSessionUndoNewestFirstOnTheVisiblePage() {
         val history = InkHistory()
-        val restored = listOf(a, b)
+        val restored = mapOf(0 to listOf(c), 1 to listOf(a, b))
 
-        val undone = history.undo(0, restored)!!
-        assertEquals(listOf(a), undone)
-        assertEquals(listOf(a, b), history.redo(0, undone))
+        val undone = history.undo(1, restored)!!
+        assertEquals(PageInk(1, listOf(a)), undone)
+        assertEquals(PageInk(1, listOf(a, b)), history.redo(restored + (1 to undone.strokes)))
     }
 
-    @Test fun aNewEditClearsThatPagesRedoOnly() {
+    @Test fun aNewEditClearsRedo() {
         val history = InkHistory()
-        history.record(0, emptyList(), listOf(a))
-        history.record(1, emptyList(), listOf(b))
-        history.undo(0, listOf(a))
-        history.undo(1, listOf(b))
+        val first = listOf(a)
+        val second = listOf(b)
+        history.record(0, emptyList(), first)
+        history.record(1, emptyList(), second)
+        history.undo(1, mapOf(0 to first, 1 to second))
+        assertTrue(history.canRedo())
 
-        history.record(0, emptyList(), listOf(c))
+        history.record(0, first, first + c)
 
-        assertFalse(history.canRedo(0))
-        assertTrue(history.canRedo(1))
+        assertFalse(history.canRedo())
     }
 
     @Test fun historyNeverRewritesStrokesItDidNotProduce() {
         val history = InkHistory()
         history.record(0, emptyList(), listOf(a))
-        val unrelated = listOf(b, c)
+        val unrelated = mapOf(0 to listOf(b, c))
 
-        assertEquals("Falls back to removing the newest stroke", listOf(b), history.undo(0, unrelated))
-        assertNull("Redo does not apply to a different list", history.redo(0, listOf(c)))
+        assertEquals("Falls back to removing the newest stroke", PageInk(0, listOf(b)), history.undo(0, unrelated))
+        assertNull("Redo does not apply to a different list", history.redo(mapOf(0 to listOf(c))))
+        assertFalse(history.canRedo())
+    }
+
+    @Test fun aStaleEditDoesNotCostTheOlderOnes() {
+        val history = InkHistory()
+        val first = listOf(a)
+        history.record(0, emptyList(), first)
+        history.record(1, emptyList(), listOf(b))
+        // Page 1's ink was replaced outside the history; page 0 still matches.
+        val ink = mapOf(0 to first, 1 to listOf(c))
+
+        assertTrue(history.canUndo(5, ink))
+        assertEquals(PageInk(0, emptyList()), history.undo(5, ink))
+    }
+
+    @Test fun undoIsOfferedOnlyWhenItWouldDoSomething() {
+        val history = InkHistory()
+        history.record(1, emptyList(), listOf(b))
+        val stale = mapOf(1 to listOf(c))
+
+        assertFalse("The only edit is stale and the visible page is empty", history.canUndo(5, stale))
+        assertNull(history.undo(5, stale))
     }
 
     private fun stroke(x: Float) = InkStroke(listOf(InkPoint(x, x, 1f)), 0, 2f)
