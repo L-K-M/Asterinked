@@ -40,8 +40,9 @@ class ReopenSamePdfTest {
 
         val result = DocumentService(app).open(uri, current)
 
-        // Robolectric's resolver knows no display name for the URI, so the default arrives.
-        assertEquals(OpenResult.AlreadyOpen(current.copy(name = "Document.pdf")), result)
+        // Robolectric's resolver knows no display name for the URI; a provider
+        // that names nothing must not replace the name the draft already has.
+        assertEquals(OpenResult.AlreadyOpen(current), result)
         assertEquals("Only the current PDF is left", listOf(current.source.name), pdfNames())
         assertEquals("The stored draft is untouched", current, store.restore())
     }

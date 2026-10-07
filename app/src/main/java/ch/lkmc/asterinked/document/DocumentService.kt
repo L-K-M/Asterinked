@@ -30,7 +30,8 @@ internal sealed interface OpenResult {
 internal interface DocumentOperations {
     /**
      * Imports [uri] to replace [current]. A file with the same bytes as
-     * [current]'s PDF keeps that draft instead, and its new copy is dropped.
+     * [current]'s PDF keeps that draft instead, and its new copy is dropped;
+     * the caller then saves the kept draft if its name changed.
      */
     fun open(uri: Uri, current: Draft?): OpenResult
     fun restore(): OpenDocument?
@@ -68,7 +69,8 @@ internal class DocumentService(context: Context) : DocumentOperations {
             // The draft already holds this file, so nothing needs inspecting or rendering.
             if (current != null && store.sameBytes(imported, current.source)) {
                 draft.source.delete()
-                return OpenResult.AlreadyOpen(current.copy(name = draft.name))
+                // A provider that names nothing keeps the name the draft has.
+                return OpenResult.AlreadyOpen(current.copy(name = imported.displayName ?: current.name))
             }
             val document = during(DocumentProblem.NOT_A_PDF) {
                 val pages = engine.inspect(draft.source)

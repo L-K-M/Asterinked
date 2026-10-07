@@ -50,8 +50,12 @@ internal data class Draft(
     }
 }
 
-/** A fresh private copy of a picked PDF and the SHA-256 of its bytes. */
-internal class ImportedPdf(val draft: Draft, val digest: ByteArray)
+/**
+ * A fresh private copy of a picked PDF and the SHA-256 of its bytes.
+ * [displayName] is null when the provider named nothing; the draft then
+ * carries a fallback name.
+ */
+internal class ImportedPdf(val draft: Draft, val digest: ByteArray, val displayName: String?)
 
 internal class DocumentStore(context: Context) {
     private val resolver = context.contentResolver
@@ -61,14 +65,14 @@ internal class DocumentStore(context: Context) {
     fun import(uri: Uri): ImportedPdf {
         val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) cursor.getString(0) else null
-        } ?: "Document.pdf"
+        }
         val file = File(directory, "${UUID.randomUUID()}.pdf")
         try {
             val digest = MessageDigest.getInstance(DIGEST_ALGORITHM)
             val input = resolver.openInputStream(uri) ?: throw IOException("Cannot read this PDF.")
             // Hashing on the way through reads the provider's stream only once.
             DigestInputStream(input, digest).use { source -> file.outputStream().use { source.copyTo(it) } }
-            return ImportedPdf(Draft(file, name), digest.digest())
+            return ImportedPdf(Draft(file, name ?: "Document.pdf"), digest.digest(), name)
         } catch (error: Exception) {
             file.delete()
             throw error
