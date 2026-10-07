@@ -360,7 +360,14 @@ internal class MainActivity : ComponentActivity() {
 
     // Previous, the page number (tap to jump), next, then Fit.
     private fun buildPagePill(): View {
-        val pill = row().apply {
+        // While it fades out, a new touch goes to the page underneath, as it
+        // does once the pill is invisible.
+        val pill = object : LinearLayout(this) {
+            override fun dispatchTouchEvent(event: MotionEvent): Boolean =
+                if (pillHidden && event.actionMasked == MotionEvent.ACTION_DOWN) false else super.dispatchTouchEvent(event)
+        }.apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             background = ui.raisedPill()
             elevation = ui.dp(Elevation.RAISED).toFloat()
             setPadding(ui.dp(Space.XXS), 0, ui.dp(Space.XXS), 0)

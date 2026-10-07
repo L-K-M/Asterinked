@@ -333,6 +333,27 @@ class MainActivityChromeTest {
         }
     }
 
+    // Fading out takes a moment; a tap meanwhile must not reach the pill's
+    // buttons, as it would not once the pill is gone.
+    @Test fun aFadingPillLetsANewTouchThrough() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing())
+            val next = control(root, R.string.next)
+            val pill = next.parent as View
+
+            page(root).onWritingChanged(WritingState.ACTIVE)
+            val x = next.left + next.width / 2f
+            val y = next.top + next.height / 2f
+            val down = android.view.MotionEvent.obtain(0L, 0L, android.view.MotionEvent.ACTION_DOWN, x, y, 0)
+            val taken = try { pill.dispatchTouchEvent(down) } finally { down.recycle() }
+
+            assertFalse("The fading pill refuses the touch", taken)
+            assertFalse(next.isPressed)
+        }
+    }
+
     @Test fun aPendingPillReturnDoesNotRevealControlsOnWelcome() {
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
             val activity = controller.get()
