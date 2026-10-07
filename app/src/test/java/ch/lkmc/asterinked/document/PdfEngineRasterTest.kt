@@ -32,9 +32,11 @@ class PdfEngineRasterTest {
         val output = File("build/test-output/raster-proof").apply { mkdirs() }
         // name to (rotation, owner-restricted encryption, highlight across the text line)
         val cases = listOf(0, 90, 180, 270).map { "$it" to Triple(it, false, false) } +
-            ("encrypted" to Triple(0, true, false)) + ("highlight" to Triple(0, false, true))
+            ("encrypted" to Triple(0, true, false)) + ("highlight" to Triple(0, false, true)) +
+            AesWithoutLengthFixture.entries.map { "${it.name.lowercase()}-no-length" to Triple(0, true, false) }
         for ((name, options) in cases) {
             val (rotation, encrypted, highlight) = options
+            val aes = AesWithoutLengthFixture.entries.firstOrNull { name == "${it.name.lowercase()}-no-length" }
             val source = File(output, "source-$name.pdf")
             val exported = File(output, "export-$name.pdf")
             PDDocument().use { document ->
@@ -56,11 +58,21 @@ class PdfEngineRasterTest {
                 }
                 if (encrypted) {
                     // Opens without a password but forbids printing: the export must keep that.
-                    val permissions = AccessPermission().apply { setCanPrint(false) }
-                    document.protect(StandardProtectionPolicy("owner", "", permissions).apply { encryptionKeyLength = 128 })
+                    val permissions = AccessPermission().apply {
+                        setCanPrint(false)
+                        if (aes != null) {
+                            setCanExtractContent(false)
+                            setCanFillInForm(false)
+                        }
+                    }
+                    document.protect(StandardProtectionPolicy("owner", "", permissions).apply {
+                        encryptionKeyLength = aes?.keyBits ?: 128
+                        isPreferAES = aes != null
+                    })
                 }
                 document.save(source)
             }
+            aes?.omitTopLevelLength(source)
             val spec = engine.inspect(source).single()
             val x = spec.displayWidth * 0.23f
             val y = spec.displayHeight * 0.31f
