@@ -114,6 +114,26 @@ class MainActivityChromeTest {
         }
     }
 
+    @Test fun aToolHintShowsTwiceThenStaysOutOfTheWay() {
+        val hint = app.getString(R.string.highlight_hint)
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val root = settle(controller.get())
+            val shown = (1..3).map {
+                control(root, R.string.highlighter).performClick()
+                val text = notice(root).shown
+                shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(HINT_GONE_S))
+                control(root, R.string.pen).performClick()
+                text == hint
+            }
+            assertEquals(listOf(true, true, false), shown)
+        }
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val root = settle(controller.get())
+            control(root, R.string.highlighter).performClick()
+            assertNull("Also after a restart", notice(root).shown)
+        }
+    }
+
     @Test fun pickingInkPutsTheEraserAway() {
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
             val root = settle(controller.get())
@@ -383,6 +403,8 @@ class MainActivityChromeTest {
     }
 
     private companion object {
+        // Longer than an info notice stays, so the next one starts from hidden.
+        const val HINT_GONE_S = 4L
         const val STYLUS_DEVICE = 7
         const val DRAG_PX = 120f
         const val DRAG_STEPS = 6
