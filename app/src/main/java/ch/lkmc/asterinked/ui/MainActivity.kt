@@ -238,8 +238,8 @@ internal class MainActivity : ComponentActivity() {
             KeyEvent.KEYCODE_PAGE_DOWN -> next
             else -> return super.onKeyDown(keyCode, event)
         }
-        if (target.isShown && target.isEnabled) target.performClick()
-        return true
+        if (!target.isShown || !target.isEnabled) return super.onKeyDown(keyCode, event)
+        return target.performClick()
     }
 
     override fun onProvideKeyboardShortcuts(data: MutableList<KeyboardShortcutGroup>, menu: Menu?, deviceId: Int) {
@@ -389,8 +389,8 @@ internal class MainActivity : ComponentActivity() {
     // Measured controls and available width choose the rows, so narrow windows
     // and system insets never squeeze or clip the touch targets.
     private fun buildToolBar(): View {
-        undo = ui.iconButton(R.drawable.ic_undo, R.string.undo) { model.undo() }
-        redo = ui.iconButton(R.drawable.ic_redo, R.string.redo) { model.redo() }
+        undo = ui.iconButton(R.drawable.ic_undo, R.string.undo) { model.undo(); tick() }
+        redo = ui.iconButton(R.drawable.ic_redo, R.string.redo) { model.redo(); tick() }
         tools = SegmentedControl(this)
         for (choice in ToolChoice.entries) {
             tools.addView(ui.segment(choice.icon, choice.chosenIcon, choice.label, choice.ordinal) { selectTool(choice) }, square())
@@ -647,12 +647,10 @@ internal class MainActivity : ComponentActivity() {
         configurePen()
     }
 
-    // Finger taps go through the buttons, like the keyboard shortcuts, and
-    // tick so that undoing a hard-to-see dot is still felt.
+    // Finger taps go through the buttons, like the keyboard shortcuts. The
+    // buttons tick, so undoing a hard-to-see dot is still felt.
     private fun tapHistory(button: View) {
-        if (!button.isEnabled) return
-        tick()
-        button.performClick()
+        if (button.isEnabled) button.performClick()
     }
 
     private fun tick() {
@@ -690,6 +688,16 @@ internal class MainActivity : ComponentActivity() {
         hint(R.string.finger_drag_hint)
     }
 
+    // Gestures do the navigating; tell a new user once, then get out of the way.
+    private fun maybeHintGestures() {
+        if (settings.getBoolean(GESTURE_HINT_KEY, false)) return
+        // Existing installs get the hint once after updating too, deliberately.
+        // Persisted only once it showed, so an error on screen cannot consume it unseen.
+        if (hint(if (mode == InputMode.PEN) R.string.input_hint else R.string.touch_hint)) {
+            settings.edit { putBoolean(GESTURE_HINT_KEY, true) }
+        }
+    }
+
     private fun show(state: EditorState) {
         val draft = state.draft
         val ready = draft != null && !state.busy
@@ -698,6 +706,7 @@ internal class MainActivity : ComponentActivity() {
             state.busy -> Screen.LOADING
             else -> Screen.WELCOME
         })
+        if (ready) maybeHintGestures()
         title.text = draft?.name.orEmpty()
         showStatus(state.statusText())
         progress.visibility = if (draft != null && state.busy) View.VISIBLE else View.GONE
@@ -890,7 +899,14 @@ internal class MainActivity : ComponentActivity() {
     }
 
     private fun turnPage(delta: Int) {
-        model.state.value?.draft?.let { model.goToPage(it.page + delta) }
+        val state = model.state.value ?: return
+        val draft = state.draft ?: return
+        val next = draft.page + delta
+        // Only a turn that will happen earns the tick; the pill buttons are
+        // disabled at the ends, but swipes and hardware keys come through here.
+        if (state.busy || next !in state.pages.indices) return
+        tick()
+        model.goToPage(next)
     }
 
     private fun askForPage() {
@@ -993,6 +1009,7 @@ internal class MainActivity : ComponentActivity() {
         const val HIGHLIGHT_WIDTH_KEY = "highlightWidth"
         const val MODE_KEY = "inputMode"
         const val KIND_KEY = "inkKind"
+        const val GESTURE_HINT_KEY = "hintedGestures"
         const val TOOL_KEY = "inkTool"
         const val STYLUS_SEEN_KEY = "stylusSeen"
         const val HAND_BUTTON_USED_KEY = "handButtonUsed"
