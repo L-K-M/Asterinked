@@ -10,14 +10,17 @@ import ch.lkmc.asterinked.document.PageSpec
 import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
+import android.os.Looper
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
+import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -51,6 +54,73 @@ class InkPageViewTest {
         send(view, MotionEvent.ACTION_CANCEL, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 180f, 180f)))
         assertTrue(strokes.isEmpty())
     }
+
+    @Test fun holdingThePenStillStraightensTheStroke() {
+        val strokes = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, strokes)
+        wavyLine(view)
+
+        hold()
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 350f, 300f)))
+
+        val line = strokes.single().points
+        assertEquals("A straight line from start to end", 2, line.size)
+        assertEquals(page(150f), line.first().x, 0.5f)
+        assertEquals(page(350f), line.last().x, 0.5f)
+        assertEquals("Level, like the wave's ends", line.first().y, line.last().y, 0.5f)
+    }
+
+    @Test fun afterTheSnapThePenDragsTheLineEnd() {
+        val strokes = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, strokes)
+        wavyLine(view)
+        hold()
+
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 400f, 500f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 400f, 500f)))
+
+        val line = strokes.single().points
+        assertEquals(2, line.size)
+        assertEquals(page(400f), line.last().x, 0.5f)
+    }
+
+    @Test fun writingWithoutAPauseOrAShortTickStaysAsDrawn() {
+        val strokes = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, strokes)
+        wavyLine(view)
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 350f, 300f)))
+        assertTrue("No pause: freehand", strokes.removeAt(0).points.size > 2)
+
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 155f, 304f)))
+        hold()
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 155f, 304f)))
+        assertTrue("Too short to straighten", strokes.single().points.size > 2)
+    }
+
+    @Test fun theEraserNeverStraightens() {
+        val (view, _) = pageWithInk(InputMode.PEN)
+        view.tool = InkTool.ERASER
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 100f, 300f)))
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 100f, 450f)))
+        hold()
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 100f, 450f)))
+        assertTrue("A held eraser draws no line", strokes.isEmpty())
+    }
+
+    // Screen x to page units in the 600x800 test view with a 400-wide page (fit 1.293, margin 12).
+    private fun page(screenX: Float) = (screenX - (600f - 400f * FIT) / 2f) / FIT
+
+    // A wave from (150, 300) to (350, 300), as handwriting would draw an underline.
+    private fun wavyLine(view: InkPageView) {
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+        for (step in 1..10) {
+            val y = 300f + if (step % 2 == 0) 6f else -6f
+            send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f + 20f * step, if (step == 10) 300f else y)))
+        }
+    }
+
+    private fun hold() = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(HOLD_MS))
 
     @Test fun pageStillRenderingTakesInkRightAway() {
         val strokes = mutableListOf<InkStroke>()
@@ -267,4 +337,11 @@ class InkPageViewTest {
     }
 
     private data class Pointer(val id: Int, val tool: Int, val x: Float, val y: Float)
+
+    private companion object {
+        // Fit scale of a 400x600 page in a 600x800 view with 12px margins.
+        const val FIT = (800f - 24f) / 600f
+        // Longer than the pen has to rest before the stroke straightens.
+        const val HOLD_MS = 700L
+    }
 }
