@@ -30,6 +30,7 @@ import java.time.Duration
 class InkPageViewGestureTest {
     private val strokes = mutableListOf<InkStroke>()
     private val turns = mutableListOf<Int>()
+    private val taps = mutableListOf<String>()
     private var clock = 1_000L
 
     @Test fun twoFingersPanInTouchMode() {
@@ -105,6 +106,48 @@ class InkPageViewGestureTest {
         strokes.clear()
         assertTrue("A palm leaving the screen must not turn the page", turns.isEmpty())
         assertEquals(before.x, pageAt(view, 300f, 400f).x, 0.01f)
+    }
+
+    @Test fun twoFingerTapUndoesAndThreeFingerTapRedoes() {
+        val view = pageView(InputMode.PEN)
+        val fit = unitsPer100px(view)
+
+        tap(view, 2)
+        tap(view, 3)
+
+        assertEquals(listOf("undo", "redo"), taps)
+        assertTrue("A tap neither inks nor turns the page", strokes.isEmpty() && turns.isEmpty())
+        assertEquals("A tap does not zoom", fit, unitsPer100px(view), 0.01f)
+    }
+
+    @Test fun aFourthFingerRulesTheTapOut() {
+        val view = pageView(InputMode.PEN)
+
+        tap(view, 4)
+
+        assertTrue(taps.isEmpty() && strokes.isEmpty())
+    }
+
+    @Test fun twoFingerTapUndoesWithoutInkingInTouchMode() {
+        val view = pageView(InputMode.TOUCH)
+
+        tap(view, 2)
+
+        assertEquals(listOf("undo"), taps)
+        assertTrue("The first finger's dot is dropped", strokes.isEmpty())
+    }
+
+    @Test fun pinchesHoldsAndPenGesturesAreNotTaps() {
+        val view = pageView(InputMode.PEN)
+
+        pinch(view, 200f to 400f, 100f to 500f)
+        tap(view, 2, holdMillis = 600)
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f), finger(1, 400f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f), finger(1, 400f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f)))
+
+        assertTrue(taps.isEmpty())
     }
 
     @Test fun pinchFollowsTheFingers() {
@@ -186,6 +229,8 @@ class InkPageViewGestureTest {
     private fun pageView(mode: InputMode) = InkPageView(RuntimeEnvironment.getApplication()).apply {
         configure(mode, Color.BLACK, 2f) { strokes.add(it) }
         onTurnPage = { turns.add(it) }
+        onUndo = { taps.add("undo") }
+        onRedo = { taps.add("redo") }
         show(state(page = 0))
         layout(0, 0, 600, 800)
         redraw(this)
@@ -253,6 +298,18 @@ class InkPageViewGestureTest {
             send(view, MotionEvent.ACTION_MOVE, listOf(finger(0, from + (to - from) * step / 4)))
         }
         send(view, MotionEvent.ACTION_UP, listOf(finger(0, to)))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
+        redraw(view)
+    }
+
+    // Fingers land one after another, then lift one after another, in place.
+    private fun tap(view: InkPageView, fingers: Int, holdMillis: Long = 60) {
+        val all = List(fingers) { finger(it, 200f + it * 120f) }
+        send(view, MotionEvent.ACTION_DOWN, all.take(1))
+        for (count in 2..fingers) send(view, MotionEvent.ACTION_POINTER_DOWN, all.take(count), actionIndex = count - 1)
+        clock += holdMillis
+        for (count in fingers downTo 2) send(view, MotionEvent.ACTION_POINTER_UP, all.take(count), actionIndex = count - 1)
+        send(view, MotionEvent.ACTION_UP, all.take(1))
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
         redraw(view)
     }

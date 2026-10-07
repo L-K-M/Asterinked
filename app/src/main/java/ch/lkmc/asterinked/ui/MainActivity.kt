@@ -229,6 +229,8 @@ internal class MainActivity : ComponentActivity() {
             onWritingChanged = ::writingChanged
             onTurnPage = ::turnPage
             onErase = model::eraseStrokes
+            onUndo = { tapHistory(undo) }
+            onRedo = { tapHistory(redo) }
         }
         workspace.addView(page, FrameLayout.LayoutParams(MATCH, MATCH))
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -568,6 +570,14 @@ internal class MainActivity : ComponentActivity() {
         tool = InkTool.PEN
         tick()
         configurePen()
+    }
+
+    // Finger taps go through the buttons, like the keyboard shortcuts, and
+    // tick so that undoing a hard-to-see dot is still felt.
+    private fun tapHistory(button: View) {
+        if (!button.isEnabled) return
+        tick()
+        button.performClick()
     }
 
     private fun tick() {
