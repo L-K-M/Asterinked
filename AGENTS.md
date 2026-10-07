@@ -249,6 +249,9 @@ and verification procedure. State any inability to reproduce the failure.
   page units rather than reading private zoom state. `ScaleGestureDetector`
   ignores spans under ~27mm (about 170px at the default mdpi test density),
   so synthetic pinches need wider spans; double taps need real event times.
+- Robolectric reports no input devices, so a first launch in an activity test
+  starts with finger drawing on. Tests that need pen mode attach a stylus
+  through `ShadowInputManager.addInputDevice` (see `MainActivityChromeTest`).
 
 ## Commit messages
 
