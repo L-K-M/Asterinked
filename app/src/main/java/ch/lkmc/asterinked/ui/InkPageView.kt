@@ -406,7 +406,10 @@ internal class InkPageView(context: Context) : View(context) {
     private fun trackFingerGesture(event: MotionEvent) {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                fingerGesture = FingerGesture.TAP
+                // Only a finger or a mouse is someone trying to write without a pen.
+                val tool = event.getToolType(event.actionIndex)
+                val writer = tool == MotionEvent.TOOL_TYPE_FINGER || tool == MotionEvent.TOOL_TYPE_MOUSE
+                fingerGesture = if (writer) FingerGesture.TAP else FingerGesture.OTHER
                 fingerDownX = event.x
                 fingerDownY = event.y
             }

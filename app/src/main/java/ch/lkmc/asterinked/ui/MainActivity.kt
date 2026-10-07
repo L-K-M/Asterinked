@@ -109,6 +109,8 @@ internal class MainActivity : ComponentActivity() {
     // session at most.
     private var stylusSeen = false
     private var fingerHintShown = false
+    // Someone who ever used the hand button knows it; also kept across launches.
+    private var handButtonUsed = false
     // A PDF handed over by another app, waiting until the editor is idle so the
     // unsaved-notes check sees the restored draft.
     private var incoming: Uri? = null
@@ -134,6 +136,7 @@ internal class MainActivity : ComponentActivity() {
         widthIndex = settings.getInt(WIDTH_KEY, DEFAULT_WIDTH).coerceIn(WIDTHS.indices)
         mode = initialInputMode(settings.getString(MODE_KEY, null), stylusAttached())
         stylusSeen = settings.getBoolean(STYLUS_SEEN_KEY, false)
+        handButtonUsed = settings.getBoolean(HAND_BUTTON_USED_KEY, false)
         kind = InkKind.entries.firstOrNull { it.name == settings.getString(KIND_KEY, null) } ?: InkKind.PEN
         // The eraser is a momentary tool: it survives rotation, but a new launch writes.
         tool = savedInstanceState?.getString(TOOL_KEY)?.let { InkTool.valueOf(it) } ?: InkTool.PEN
@@ -517,7 +520,10 @@ internal class MainActivity : ComponentActivity() {
     private fun toggleFingerDrawing() {
         mode = if (mode == InputMode.TOUCH) InputMode.PEN else InputMode.TOUCH
         // Whoever uses the hand button needs no hint pointing to it.
-        fingerHintShown = true
+        if (!handButtonUsed) {
+            handButtonUsed = true
+            settings.edit { putBoolean(HAND_BUTTON_USED_KEY, true) }
+        }
         tick()
         configurePen()
         // The mode changes what fingers do; say so once, where the user is looking.
@@ -561,7 +567,7 @@ internal class MainActivity : ComponentActivity() {
     // Pen mode on a device that has never shown a pen: the finger only nudges
     // the page, so say once per session how to write with it.
     private fun explainFingerDrag() {
-        if (stylusSeen || fingerHintShown) return
+        if (stylusSeen || handButtonUsed || fingerHintShown) return
         fingerHintShown = true
         hint(R.string.finger_drag_hint)
     }
@@ -765,6 +771,7 @@ internal class MainActivity : ComponentActivity() {
         const val KIND_KEY = "inkKind"
         const val TOOL_KEY = "inkTool"
         const val STYLUS_SEEN_KEY = "stylusSeen"
+        const val HAND_BUTTON_USED_KEY = "handButtonUsed"
         const val FINGER_HINT_KEY = "fingerHintShown"
         const val INCOMING_KEY = "incomingPdf"
         // Matches android:authorities="${'$'}{applicationId}.files" in the manifest.
@@ -798,7 +805,8 @@ internal class MainActivity : ComponentActivity() {
 /**
  * The first launch writes with a finger unless a stylus is attached: in pen
  * mode a finger only pans, which looks broken without a pen. A saved choice
- * always wins.
+ * always wins. A pen paired after the first launch does not switch modes;
+ * the hand button does.
  */
 internal fun initialInputMode(saved: String?, stylusAttached: Boolean): InputMode =
     InputMode.entries.firstOrNull { it.name == saved } ?: if (stylusAttached) InputMode.PEN else InputMode.TOUCH

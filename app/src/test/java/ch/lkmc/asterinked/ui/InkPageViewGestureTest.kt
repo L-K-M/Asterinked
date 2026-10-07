@@ -172,6 +172,13 @@ class InkPageViewGestureTest {
         assertTrue(turns.isEmpty())
     }
 
+    @Test fun onlyFingersAndMiceAreReportedAsDrags() {
+        val view = pageView(InputMode.PEN)
+        slowDrag(view, MotionEvent.TOOL_TYPE_UNKNOWN)
+        slowDrag(view, MotionEvent.TOOL_TYPE_STYLUS)
+        assertEquals("An unknown tool or a pen is no finger looking for ink", 0, drags)
+    }
+
     @Test fun aOneFingerDragInPenModeIsReported() {
         val view = pageView(InputMode.PEN)
         slowDrag(view, MotionEvent.TOOL_TYPE_FINGER)

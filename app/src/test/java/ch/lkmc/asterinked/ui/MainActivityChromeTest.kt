@@ -152,6 +152,19 @@ class MainActivityChromeTest {
         }
     }
 
+    @Test fun noFingerHintForSomeoneWhoUsedTheHandButton() {
+        attachStylus()
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val root = settle(controller.get())
+            repeat(2) { control(root, R.string.draw_with_finger).performClick() }
+        }
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val root = editor(controller.get())
+            drag(page(root), MotionEvent.TOOL_TYPE_FINGER)
+            assertNull("They know the button, also after a restart", notice(root).shown)
+        }
+    }
+
     @Test fun noFingerHintOnceAPenTouchedThePage() {
         attachStylus()
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
