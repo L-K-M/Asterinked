@@ -55,8 +55,9 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   re-renders them with PDFium — independent of PDFBox — checking ink
   placement and preserved text/artwork at all four rotations, that an
   owner-restricted encrypted export stays encrypted without regaining print
-  permission, and that text stays dark under a multiply-blended highlighter
-  marker. It only works after `testDebugUnitTest` ran in the same checkout.
+  permission, that text stays dark under a multiply-blended highlighter
+  marker, and that a highlighter tap still leaves a mark. It only works
+  after `testDebugUnitTest` ran in the same checkout.
 - The debug build carries `applicationIdSuffix ".debug"` (and `-debug` on
   versionName) so it can sit next to a release install on the same device.
 - `InkPageView` replays committed ink from cached `RenderNode`s only on

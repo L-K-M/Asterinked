@@ -20,6 +20,7 @@ internal object InkGeometry {
     private const val DEFAULT_WIDTH = 2.2f
     private const val SEGMENT_LENGTH = 0.75f
     private const val MAX_SPAN_STEPS = 64
+    private const val REPEAT_DISTANCE = 1e-3f
 
     fun segments(stroke: InkStroke): List<InkSegment> {
         val builder = InkStrokeBuilder(stroke.width)
@@ -35,6 +36,21 @@ internal object InkGeometry {
         val segments = segments(stroke)
         if (segments.isEmpty()) return emptyList()
         return listOf(segments.first().start) + segments.map { it.end }
+    }
+
+    /**
+     * The [centerline] of a highlight without consecutive repeats: a tap gives
+     * one point. PDFium paints nothing for a path that only repeats its point,
+     * while a single zero-length line with round caps shows as a dot.
+     */
+    fun highlightLine(stroke: InkStroke): List<InkPoint> {
+        val line = ArrayList<InkPoint>()
+        for (point in centerline(stroke)) {
+            val last = line.lastOrNull()
+            // PDF operands keep a few decimals, so near-repeats would repeat on the page too.
+            if (last == null || hypot(point.x - last.x, point.y - last.y) > REPEAT_DISTANCE) line.add(point)
+        }
+        return line
     }
 
     internal fun sanitize(point: InkPoint): InkPoint? {
