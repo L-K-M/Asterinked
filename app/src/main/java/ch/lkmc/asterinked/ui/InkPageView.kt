@@ -146,7 +146,7 @@ internal class InkPageView(context: Context) : View(context) {
     /** Called when three fingers tap the page. */
     var onRedo: () -> Unit = {}
 
-    private val fingerTaps = FingerTaps(ViewConfiguration.get(context).scaledTouchSlop.toFloat())
+    private val fingerTaps = FingerTaps(touchSlop.toFloat())
 
 
     /** Called whenever a stylus or its eraser end touches or hovers over the page. */
@@ -762,41 +762,59 @@ internal class InkPageView(context: Context) : View(context) {
     /**
      * Recognizes a quick tap with several fingers: every finger lands and lifts
      * within [MAX_TAP_MS] of the first touch without moving past the touch
-     * slop. A stylus in the gesture, a drag or a pinch rules it out.
+     * slop. Each fingertip is checked by pointer ID, in batched samples and
+     * where it lifts: a centroid misses fingers moving in opposite directions.
+     * A stylus, a pointer the system cancelled (a palm), a drag or a pinch
+     * rules it out.
      */
     private class FingerTaps(private val slop: Float) {
         private val starts = HashMap<Int, PointF>()
+        private var fingers = 0
         private var ruledOut = false
 
         /** Returns the number of fingers when [event] completes a tap, otherwise null. */
         fun track(event: MotionEvent): Int? {
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    starts.clear()
-                    ruledOut = false
-                    land(event, 0)
-                }
-                MotionEvent.ACTION_POINTER_DOWN -> land(event, event.actionIndex)
+            val action = event.actionMasked
+            if (action == MotionEvent.ACTION_DOWN) {
+                starts.clear()
+                fingers = 0
+                ruledOut = false
+            }
+            if (action == MotionEvent.ACTION_CANCEL || event.flags and MotionEvent.FLAG_CANCELED != 0) ruledOut = true
+            when (action) {
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> land(event, event.actionIndex)
                 MotionEvent.ACTION_MOVE -> for (index in 0 until event.pointerCount) checkMoved(event, index)
-                MotionEvent.ACTION_CANCEL -> ruledOut = true
+                MotionEvent.ACTION_POINTER_UP -> lift(event, event.actionIndex)
                 MotionEvent.ACTION_UP -> {
-                    checkMoved(event, 0)
+                    lift(event, event.actionIndex)
                     val quick = event.eventTime - event.downTime <= MAX_TAP_MS
-                    if (!ruledOut && quick && starts.size >= UNDO_FINGERS) return starts.size
+                    if (!ruledOut && quick && fingers >= UNDO_FINGERS) return fingers
                 }
             }
             return null
         }
 
         private fun land(event: MotionEvent, index: Int) {
-            if (event.getToolType(index) != MotionEvent.TOOL_TYPE_FINGER || starts.size >= REDO_FINGERS) ruledOut = true
+            fingers++
+            if (event.getToolType(index) != MotionEvent.TOOL_TYPE_FINGER || fingers > REDO_FINGERS) ruledOut = true
             starts[event.getPointerId(index)] = PointF(event.getX(index), event.getY(index))
+        }
+
+        // Some digitizers report a finger's last movement only as it lifts.
+        private fun lift(event: MotionEvent, index: Int) {
+            checkMoved(event, index)
+            starts.remove(event.getPointerId(index))
         }
 
         private fun checkMoved(event: MotionEvent, index: Int) {
             val start = starts[event.getPointerId(index)] ?: return
-            if (hypot(event.getX(index) - start.x, event.getY(index) - start.y) > slop) ruledOut = true
+            for (sample in 0 until event.historySize) {
+                if (moved(start, event.getHistoricalX(index, sample), event.getHistoricalY(index, sample))) ruledOut = true
+            }
+            if (moved(start, event.getX(index), event.getY(index))) ruledOut = true
         }
+
+        private fun moved(start: PointF, x: Float, y: Float) = hypot(x - start.x, y - start.y) > slop
     }
 
     /** What a gesture without the pen has done so far. */
