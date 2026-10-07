@@ -528,10 +528,7 @@ internal class MainActivity : ComponentActivity() {
 
     private fun buildLoading(): View = column().apply {
         gravity = Gravity.CENTER_HORIZONTAL
-        addView(ProgressBar(context).apply {
-            isIndeterminate = true
-            indeterminateTintList = ColorStateList.valueOf(ui.color(R.color.accent))
-        }, LinearLayout.LayoutParams(ui.dp(Size.SPINNER), ui.dp(Size.SPINNER)))
+        addView(AsteriskLoader(context), LinearLayout.LayoutParams(ui.dp(Size.MARK), ui.dp(Size.MARK)))
         addView(ui.text(TextStyle.CAPTION, getString(R.string.opening)), spaced(Space.M))
     }
 
@@ -808,9 +805,18 @@ internal class MainActivity : ComponentActivity() {
         loading.visibility = if (next == Screen.LOADING) View.VISIBLE else View.GONE
         workspace.setBackgroundColor(ui.color(if (editing) R.color.canvas else R.color.surface))
         if (next == Screen.LOADING) {
-            // Restoring a draft is usually instant; only a slow load shows the spinner.
+            // Restoring a draft is usually instant; only a slow load shows the
+            // loader. The caption replaces the progress bar for accessibility,
+            // so announce it once the screen is up.
             loading.alpha = 0f
             loading.animate().alpha(1f).setStartDelay(Motion.LOADING_DELAY).setDuration(Motion.SHORT).start()
+            // A fast restore can leave LOADING before the post runs: only
+            // announce while the screen is still up.
+            loading.post {
+                if (loading.visibility == View.VISIBLE) {
+                    loading.announceForAccessibility(getString(R.string.opening))
+                }
+            }
         }
         applyInsets()
     }
