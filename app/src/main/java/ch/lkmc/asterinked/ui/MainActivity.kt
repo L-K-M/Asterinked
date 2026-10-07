@@ -564,7 +564,11 @@ internal class MainActivity : ComponentActivity() {
 
         page.show(state)
         state.message?.let {
-            notice.show(it.text, it.tone)
+            val actionLabel = if (it.text.contains("couldn\u2019t be stored")) getString(R.string.save_copy) else null
+            val action = if (actionLabel != null) {
+                { launchPicker { savePdf.launch(exportName()) } }
+            } else null
+            notice.show(it.text, it.tone, actionLabel, action)
             model.acknowledgeMessage()
         }
         state.shared?.let {

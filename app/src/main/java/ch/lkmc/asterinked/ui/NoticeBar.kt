@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.view.Gravity
 import android.view.accessibility.AccessibilityManager
+import android.widget.Button
 import android.widget.ImageView
 import androidx.annotation.ColorRes
 import androidx.annotation.DrawableRes
@@ -32,6 +33,13 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
     private val accessibility = context.getSystemService(AccessibilityManager::class.java)
     private val hide = Runnable { dismiss() }
     private var tone = Tone.INFO
+    private val actionButton = Button(context).apply {
+        visibility = GONE
+        setTextAppearance(android.R.style.TextAppearance_Material_Widget_Button)
+        setPadding(ui.dp(Space.S), 0, ui.dp(Space.S), 0)
+        minimumHeight = 0
+        minimumWidth = 0
+    }
 
     /** The message on screen, or null while hidden. */
     val shown: CharSequence? get() = if (isVisible) message.text else null
@@ -46,20 +54,29 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
         minimumHeight = ui.dp(Size.TOUCH)
         accessibilityLiveRegion = ACCESSIBILITY_LIVE_REGION_POLITE
         addView(icon, LayoutParams(ui.dp(Size.ICON_SMALL), ui.dp(Size.ICON_SMALL)).apply { marginEnd = ui.dp(Space.M) })
-        addView(message, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+        addView(message, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = ui.dp(Space.S) })
+        addView(actionButton, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         icon.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
         visibility = GONE
         setOnClickListener { dismiss() }
     }
 
-    fun show(text: CharSequence, tone: Tone) {
+    fun show(text: CharSequence, tone: Tone, actionLabel: CharSequence? = null, action: (() -> Unit)? = null) {
         // A tool hint must not wipe out an error the user has not read yet.
-        if (tone == Tone.INFO && this.tone == Tone.ERROR && isVisible) return
+        if (tone == Tone.INFO && this.tone == Tone.ERROR && isVisible && action == null) return
 
         this.tone = tone
         message.text = text
         icon.setImageResource(tone.icon)
         icon.imageTintList = ColorStateList.valueOf(ui.color(tone.tint))
+        if (actionLabel != null && action != null) {
+            actionButton.text = actionLabel
+            actionButton.visibility = VISIBLE
+            actionButton.setOnClickListener { action(); dismiss() }
+        } else {
+            actionButton.visibility = GONE
+            actionButton.setOnClickListener(null)
+        }
         removeCallbacks(hide)
         postDelayed(hide, accessibility.getRecommendedTimeoutMillis(tone.millis,
             AccessibilityManager.FLAG_CONTENT_ICONS or AccessibilityManager.FLAG_CONTENT_TEXT).toLong())
