@@ -117,6 +117,18 @@ class UiScreenshotTest {
         click(it, R.string.highlighter)
     }
 
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
+    fun editorHighlighterDark() = shoot("editor-highlighter-dark") {
+        publish(it, editing())
+        click(it, R.string.highlighter)
+    }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
+    fun editorBlueInkDark() = shoot("editor-blue-ink-dark") {
+        publish(it, editing())
+        click(it, R.string.blue)
+    }
+
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun editorError() = shoot("editor-error") {
         publish(it, editing().copy(message = EditorMessage(app.getString(R.string.error_source_unreadable), Tone.ERROR)))
