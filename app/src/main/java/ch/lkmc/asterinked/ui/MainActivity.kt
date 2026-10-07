@@ -186,7 +186,9 @@ internal class MainActivity : ComponentActivity() {
             KeyEvent.KEYCODE_O -> open
             else -> return super.onKeyShortcut(keyCode, event)
         }
-        if (target.isShown && target.isEnabled) target.performClick()
+        // Leave keys for a hidden or disabled action to the rest of the system.
+        if (!target.isShown || !target.isEnabled) return super.onKeyShortcut(keyCode, event)
+        target.performClick()
         return true
     }
 

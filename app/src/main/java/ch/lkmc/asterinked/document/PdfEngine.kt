@@ -117,7 +117,7 @@ internal class PdfEngine(private val scratchDirectory: File) {
                     stream.addRect(0f, 0f, spec.displayWidth, spec.displayHeight)
                     stream.clip()
                     stream.setLineCapStyle(ROUND_CAP)
-                    stream.setLineJoinStyle(ROUND_CAP)
+                    stream.setLineJoinStyle(ROUND_JOIN)
                     // Highlights go under all pen ink, as on screen, where multiply must
                     // blend with the page rather than with the cached pen layer.
                     for (stroke in strokes.sortedBy { it.kind != InkKind.HIGHLIGHTER }) {
@@ -190,7 +190,7 @@ internal class PdfEngine(private val scratchDirectory: File) {
         if (line.isEmpty()) return
         stream.saveGraphicsState()
         stream.setGraphicsStateParameters(PDExtendedGraphicsState().apply { blendMode = BlendMode.MULTIPLY })
-        stream.setLineWidth(stroke.width)
+        stream.setLineWidth(InkGeometry.strokeWidth(stroke.width))
         stream.moveTo(line.first().x, line.first().y)
         // A tap still leaves a round mark: a zero-length line with round caps.
         if (line.size == 1) stream.lineTo(line.first().x, line.first().y)
@@ -213,6 +213,7 @@ internal class PdfEngine(private val scratchDirectory: File) {
         const val PREVIEW_LONG_EDGE = 2048
         const val PDF_MEMORY_BYTES = 32L * 1024 * 1024
         const val ROUND_CAP = 1
+        const val ROUND_JOIN = 1
         const val CIRCLE_BEZIER = 0.55228475f
         // PDFBox 2 exposes no constant for the PDF 1.7 extension's V=5.
         const val AES_256_SECURITY_VERSION = 5

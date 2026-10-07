@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.AtomicFile
+import ch.lkmc.asterinked.ink.InkGeometry
 import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
@@ -198,7 +199,7 @@ internal class DocumentStore(context: Context, private val draftIo: DraftFileIo 
             InkStroke(List(points.length()) { pointIndex ->
                 val point = points.getJSONArray(pointIndex)
                 InkPoint(point.getDouble(0).toFloat(), point.getDouble(1).toFloat(), point.getDouble(2).toFloat())
-            }, stroke.getInt("color"), stroke.getDouble("width").toFloat(), kindOf(stroke.optString(KIND_KEY)))
+            }, stroke.getInt("color"), InkGeometry.strokeWidth(stroke.getDouble("width").toFloat()), kindOf(stroke.optString(KIND_KEY)))
         }
     }
 
