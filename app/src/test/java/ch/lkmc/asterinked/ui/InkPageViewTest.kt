@@ -84,6 +84,33 @@ class InkPageViewTest {
         assertEquals(page(400f), line.last().x, 0.5f)
     }
 
+    @Test fun theNextStrokeAfterASnapIsFreehand() {
+        val strokes = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, strokes)
+        wavyLine(view)
+        hold()
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 350f, 300f)))
+
+        wavyLine(view)
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 350f, 300f)))
+        hold()
+
+        assertTrue("No leftover line or timer reshapes it", strokes.last().points.size > 2)
+    }
+
+    @Test fun draggingTheEndBackOntoTheStartKeepsTheLine() {
+        val strokes = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, strokes)
+        wavyLine(view)
+        hold()
+
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+
+        val line = strokes.single().points
+        assertEquals("Not a dot at the start", page(350f), line.last().x, 0.5f)
+    }
+
     @Test fun writingWithoutAPauseOrAShortTickStaysAsDrawn() {
         val strokes = mutableListOf<InkStroke>()
         val view = pageView(InputMode.PEN, strokes)

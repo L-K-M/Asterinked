@@ -489,6 +489,8 @@ internal class InkPageView(context: Context) : View(context) {
 
     private fun reshapeLine(end: InkPoint) {
         val pressure = linePressure ?: return
+        // Dragged back onto its start, the line would shrink to a dot: keep the last one.
+        if (distance(points.first(), end) <= dpOnPage(HOLD_SLOP_DP)) return
         points = mutableListOf(points.first().copy(pressure = pressure), end.copy(pressure = pressure))
         liveStroke = InkStrokeBuilder(activeWidth).also { builder -> points.forEach(builder::add) }
         invalidate()
