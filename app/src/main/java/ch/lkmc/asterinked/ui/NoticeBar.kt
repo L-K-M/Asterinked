@@ -143,6 +143,9 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
         return actionBounds.contains(event.x.toInt(), event.y.toInt())
     }
 
+    /** Runs when a shown notice starts to go: it has been read, timed out or acted on. */
+    var onDismissing: (() -> Unit)? = null
+
     /** Runs after a shown notice has fully dismissed; notices suppressed by it
      *  can then surface without waiting on another state change. */
     var onDismissed: (() -> Unit)? = null
@@ -151,6 +154,7 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
         removeCallbacks(hide)
         if (visibility != VISIBLE) return
 
+        onDismissing?.invoke()
         animate().alpha(0f).translationY(ui.dp(Space.S).toFloat()).setDuration(Motion.SHORT).setInterpolator(Motion.EASING)
             .withEndAction { visibility = GONE; onDismissed?.invoke() }.start()
     }

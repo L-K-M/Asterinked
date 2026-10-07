@@ -158,11 +158,18 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   the stroke callback, to avoid asynchronously persisting a nonexistent PDF.
 - Messages to the user go through `NoticeBar`, not toasts: Android 12+ cuts
   toasts to two lines. A notice can carry one action (`NoticeAction`), which
-  keeps it up for ten seconds instead of the tone's usual timeout.
+  keeps it up for ten seconds instead of the tone's usual timeout. Reports
+  (`EditorState.message` and `exported`) are acknowledged once read, one at a
+  time and errors first; hints and failed launches cover a report, which then
+  shows again.
+- Opening never replaces a draft by itself: `DocumentOperations.open` leaves a
+  different PDF for `adopt` or `discard`, and the model asks first when the
+  draft has unexported notes. A newer open replaces the PDF waiting for that
+  answer; the waiting PDF's address survives process death in the model's
+  `SavedStateHandle`, and clearing the model discards its copy.
 - The page-number button opens page and note navigation. Note destinations
   come from current draft ink, skip empty pages and do not wrap at the ends.
   Reopen the dialog to refresh destinations; document replacement dismisses it.
-  toasts to two lines.
 - The loading spinner is `AsteriskLoader`: the brand mark strokes itself in
   on a loop, gated by attach + aggregated visibility (visibility flags and
   window visibility; scroll position and occlusion are not considered). Its faint ghost keeps captured frames non-blank; Robolectric

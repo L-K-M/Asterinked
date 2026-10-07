@@ -13,7 +13,10 @@ internal data class OpenDocument(val draft: Draft, val pages: List<PageSpec>, va
 
 /** What [DocumentOperations.open] found behind a URI. */
 internal sealed interface OpenResult {
-    /** A different PDF, which is now the draft. */
+    /**
+     * A different PDF, inspected and rendered but not yet the draft:
+     * [DocumentOperations.adopt] makes it the draft, [DocumentOperations.discard] drops it.
+     */
     data class Opened(val document: OpenDocument) : OpenResult
 
     /**
@@ -32,9 +35,17 @@ internal interface DocumentOperations {
     /**
      * Imports [uri] to replace [current]. A file with the same bytes as
      * [current]'s PDF keeps that draft instead, and its new copy is dropped;
-     * the caller then saves the kept draft if its name changed.
+     * the caller then saves the kept draft if its name changed. Any other PDF
+     * waits to be adopted or discarded, so unexported notes are replaced only
+     * once the user agrees.
      */
     fun open(uri: Uri, current: Draft?): OpenResult
+
+    /** Makes an opened document the draft, replacing the current one and its PDF. */
+    fun adopt(document: OpenDocument)
+
+    /** Drops an opened document the user decided not to keep. */
+    fun discard(document: OpenDocument)
     fun restore(): OpenDocument?
     fun render(draft: Draft): Bitmap
 
@@ -59,6 +70,11 @@ internal class DocumentService(context: Context) : DocumentOperations {
         override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
     }
 
+    // Imported PDFs waiting to be adopted or discarded. They are not the
+    // draft's, but a draft write meanwhile must not prune them. Only the
+    // worker touches this set.
+    private val waiting = mutableSetOf<File>()
+
     init {
         PDFBoxResourceLoader.init(context.applicationContext)
     }
@@ -75,16 +91,43 @@ internal class DocumentService(context: Context) : DocumentOperations {
             }
             val document = during(DocumentProblem.NOT_A_PDF) {
                 val pages = engine.inspect(draft.source)
-                previews.evictAll()
                 OpenDocument(draft, pages, renderPage(draft))
             }
-            during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(draft) }
+            // Not yet the draft: adopt() makes it so, once nothing would be lost.
+            waiting += draft.source
             return OpenResult.Opened(document)
         } catch (error: Exception) {
             draft.source.delete()
             throw error
         }
     }
+
+    // A failed write leaves the current draft in place and drops the new copy.
+    override fun adopt(document: OpenDocument) {
+        try {
+            during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(document.draft, waiting - document.draft.source) }
+            waiting -= document.draft.source
+        } catch (error: Exception) {
+            discard(document)
+            throw error
+        }
+        // The replaced document's pages are no longer needed; its own stay.
+        dropPreviews { !it.startsWith(previewPrefix(document.draft)) }
+    }
+
+    // Nothing of a dropped PDF stays behind: a stale preview would push the
+    // current document's pages out of the cache.
+    override fun discard(document: OpenDocument) {
+        waiting -= document.draft.source
+        document.draft.source.delete()
+        dropPreviews { it.startsWith(previewPrefix(document.draft)) }
+    }
+
+    private fun dropPreviews(matching: (String) -> Boolean) {
+        previews.snapshot().keys.filter(matching).forEach(previews::remove)
+    }
+
+    private fun previewPrefix(draft: Draft) = "${draft.source.name}:"
 
     override fun restore(): OpenDocument? = during(DocumentProblem.DRAFT_UNREADABLE) {
         val saved = store.restore() ?: return@during null
@@ -98,7 +141,7 @@ internal class DocumentService(context: Context) : DocumentOperations {
 
     override fun cachedPreview(draft: Draft): Bitmap? = previews.get(key(draft))
 
-    override fun saveDraft(draft: Draft) = during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(draft) }
+    override fun saveDraft(draft: Draft) = during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(draft, waiting) }
 
     override fun close() {
         previews.evictAll()
@@ -150,7 +193,7 @@ internal class DocumentService(context: Context) : DocumentOperations {
     private fun renderPage(draft: Draft): Bitmap =
         cachedPreview(draft) ?: engine.render(draft.source, draft.page).also { previews.put(key(draft), it) }
 
-    private fun key(draft: Draft) = "${draft.source.name}:${draft.page}"
+    private fun key(draft: Draft) = "${previewPrefix(draft)}${draft.page}"
 
     // Tags failures with the step that was running. Two errors are recoverable
     // here too: OutOfMemoryError from a single oversized page or bitmap, and

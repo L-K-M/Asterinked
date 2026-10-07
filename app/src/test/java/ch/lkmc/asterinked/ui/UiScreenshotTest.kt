@@ -16,6 +16,8 @@ import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import ch.lkmc.asterinked.R
+import ch.lkmc.asterinked.document.Draft
+import ch.lkmc.asterinked.document.OpenDocument
 import ch.lkmc.asterinked.ui.EditorScreens.descendants
 import ch.lkmc.asterinked.ui.EditorScreens.editing
 import ch.lkmc.asterinked.ui.EditorScreens.publish
@@ -157,16 +159,17 @@ class UiScreenshotTest {
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun dialogReplace() = shoot("dialog-replace") {
-        publish(it, editing())
-        click(it, R.string.open_pdf)
+        publish(it, replacing())
         assertEquals("Replacing unexported notes is the one red confirm", app.getColor(R.color.accent), positiveButton().currentTextColor)
     }
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
     fun dialogReplaceDark() = shoot("dialog-replace-dark") {
-        publish(it, editing())
-        click(it, R.string.open_pdf)
+        publish(it, replacing())
     }
+
+    // Another PDF, opened over unexported notes, waits for the answer.
+    private fun replacing() = editing().copy(replacing = OpenDocument(Draft(File("Other.pdf"), "Other.pdf"), editing().pages, null))
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun dialogGoToPage() = shoot("dialog-page") {

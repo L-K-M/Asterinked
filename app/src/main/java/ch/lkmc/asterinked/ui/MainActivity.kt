@@ -49,6 +49,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.core.view.updatePaddingRelative
 import ch.lkmc.asterinked.R
+import ch.lkmc.asterinked.document.OpenDocument
 import ch.lkmc.asterinked.ink.InkKind
 import java.io.File
 import java.util.EnumMap
@@ -124,17 +125,24 @@ internal class MainActivity : ComponentActivity() {
     private var fingerHintShown = false
     // Someone who ever used the hand button knows it; also kept across launches.
     private var handButtonUsed = false
-    // A PDF handed over by another app, waiting until the editor is idle so the
-    // unsaved-notes check sees the restored draft.
+    // A PDF handed over by another app, waiting until the editor is idle so it
+    // is compared with the restored draft.
     private var incoming: Uri? = null
     private var confirming: AlertDialog? = null
+    // The waiting PDF the question on screen is about.
+    private var confirmingFor: OpenDocument? = null
     private var pageDialog: AlertDialog? = null
     private var lastDestination: Uri? = null
 
     // A grant taken for a file whose export then failed is not tracked by
-    // lastDestination; hold it until the outcome is known so it can be given back.
+    // lastDestination; hold it until the outcome is known so it can be given
+    // back. It survives recreation, since the export may end after a rotation.
     private var unclaimedGrant: Uri? = null
     private var pillHidden = false
+    // The report on the notice bar. It is acknowledged only once read (left to
+    // time out, tapped away or acted on), so another that arrives meanwhile
+    // waits its turn, and one a hint or an error covers shows again after it.
+    private var reading: Report? = null
     private var shownPageKey: String? = null
     private val showPill = Runnable { showPagePill() }
     private var pageDialogSource: File? = null
@@ -182,6 +190,7 @@ internal class MainActivity : ComponentActivity() {
         tool = savedInstanceState?.getString(TOOL_KEY)?.let { InkTool.valueOf(it) } ?: InkTool.PEN
         fingerHintShown = savedInstanceState?.getBoolean(FINGER_HINT_KEY) ?: false
         incoming = savedInstanceState?.let { BundleCompat.getParcelable(it, INCOMING_KEY, Uri::class.java) }
+        unclaimedGrant = savedInstanceState?.let { BundleCompat.getParcelable(it, UNCLAIMED_GRANT_KEY, Uri::class.java) }
         buildLayout()
         configurePen()
         if (savedInstanceState == null) receive(intent)
@@ -214,6 +223,7 @@ internal class MainActivity : ComponentActivity() {
         outState.putString(TOOL_KEY, tool.name)
         outState.putBoolean(FINGER_HINT_KEY, fingerHintShown)
         incoming?.let { outState.putParcelable(INCOMING_KEY, it) }
+        unclaimedGrant?.let { outState.putParcelable(UNCLAIMED_GRANT_KEY, it) }
         super.onSaveInstanceState(outState)
     }
 
@@ -289,8 +299,9 @@ internal class MainActivity : ComponentActivity() {
         loading = buildLoading()
         workspace.addView(loading, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
         notice = NoticeBar(this)
-        // A notice an unread error suppressed stays pending in the state; the
-        // error's own dismissal re-renders and surfaces it — no polling needed.
+        // A dismissal starting reads the report on screen, so a new one arriving
+        // during the fade-out is not mistaken for it; the end lets it show.
+        notice.onDismissing = { reading?.let(::acknowledge) }
         notice.onDismissed = { model.state.value?.let(::show) }
         workspace.addView(notice, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
             setMargins(ui.dp(Space.L), 0, ui.dp(Space.L), ui.dp(Space.L))
@@ -360,7 +371,14 @@ internal class MainActivity : ComponentActivity() {
 
     // Previous, the page number (tap to jump), next, then Fit.
     private fun buildPagePill(): View {
-        val pill = row().apply {
+        // While it fades out, a new touch goes to the page underneath, as it
+        // does once the pill is invisible.
+        val pill = object : LinearLayout(this) {
+            override fun dispatchTouchEvent(event: MotionEvent): Boolean =
+                if (pillHidden && event.actionMasked == MotionEvent.ACTION_DOWN) false else super.dispatchTouchEvent(event)
+        }.apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             background = ui.raisedPill()
             elevation = ui.dp(Elevation.RAISED).toFloat()
             setPadding(ui.dp(Space.XXS), 0, ui.dp(Space.XXS), 0)
@@ -612,7 +630,7 @@ internal class MainActivity : ComponentActivity() {
         val key = HINT_SHOWN_KEY_PREFIX + choice.name
         val shown = settings.getInt(key, 0)
         if (shown >= TOOL_HINT_SHOWINGS) return
-        if (notice.show(getString(message), Tone.INFO)) settings.edit { putInt(key, shown + 1) }
+        if (hint(message)) settings.edit { putInt(key, shown + 1) }
     }
 
     private fun toggleFingerDrawing() {
@@ -661,7 +679,15 @@ internal class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun hint(message: Int) = notice.show(getString(message), Tone.INFO)
+    private fun hint(message: Int) = flash(getString(message), Tone.INFO)
+
+    // A notice of the editor's own, a hint or a failed launch, answers what the
+    // user just did. A report it covers waits and shows again once it is gone.
+    private fun flash(text: String, tone: Tone): Boolean {
+        val shown = notice.show(text, tone)
+        if (shown) reading = null
+        return shown
+    }
 
     // Any device input source that reports a stylus: built-in pens and paired
     // ones alike. Some screens report one without a pen in reach, which is why
@@ -750,38 +776,70 @@ internal class MainActivity : ComponentActivity() {
         }
 
         page.show(state)
-        state.message?.let {
-            val action = when (it.action) {
-                MessageAction.SAVE_COPY -> NoticeAction(getString(R.string.save_copy)) { launchPicker { savePdf.launch(exportName()) } }
-                null -> null
-            }
-            // A suppressed notice stays pending: the blocking error's dismissal
-            // re-renders and surfaces it instead of dropping it unseen.
-            if (notice.show(it.text, it.tone, action)) model.acknowledgeMessage()
-        }
+        showReport(state)
         state.shared?.let {
             model.acknowledgeShare()
             sendToShareSheet(it)
         }
-        state.exported?.let {
-            // Same rule: if an unread error suppressed the flash, exported stays
-            // set and the error's dismissal offers Open the moment it clears.
-            if (notice.show(getString(R.string.pdf_saved), Tone.SUCCESS,
-                    NoticeAction(getString(R.string.open)) { openExported(it) })) {
-                model.acknowledgeExport()
-            }
-        }
         // Only into an empty notice bar, so no message replaces it unseen; a
         // dismissed notice renders again and offers it then.
-        if (ready && notice.shown == null) maybeHintGestures()
-        // Cleared only once the user decides, so a rotation during the prompt asks
-        // again; a newer PDF that arrived meanwhile stays pending.
+        if (ready && notice.shown == null && state.replacing == null) maybeHintGestures()
+        // The model holds a replacement until the user decides, so a rotation
+        // during the question asks again.
+        // The question shows only while the editor is idle, since no answer can
+        // be taken during other work, and only about the PDF still waiting; a
+        // newer one asks afresh.
+        if (state.busy || confirmingFor !== state.replacing) {
+            confirming?.dismiss()
+            confirming = null
+        }
+        if (confirmingFor !== state.replacing) confirmingFor = null
+        state.replacing?.takeIf { !state.busy && confirming == null }?.let(::confirmReplacing)
+        // A PDF from another app opens once the editor is idle; one that arrives
+        // while a replacement waits for its answer opens after it.
         val uri = incoming
-        if (uri != null && !state.busy && confirming == null) {
-            confirmReplacing(keep = { if (incoming == uri) incoming = null }) {
-                if (incoming == uri) incoming = null
-                model.open(uri)
-            }
+        if (uri != null && !state.busy && state.replacing == null) {
+            incoming = null
+            model.open(uri)
+        }
+    }
+
+    // One report at a time, errors first. An error shows at once, covering
+    // anything else; any other report waits for an empty notice bar.
+    private fun showReport(state: EditorState) {
+        val message = state.message?.let(Report::Message)
+        val next = message?.takeIf { it.message.tone == Tone.ERROR }
+            ?: state.exported?.let(Report::Exported)
+            ?: message
+            ?: return
+        if (next == reading) return
+        if (notice.shown != null && next.tone != Tone.ERROR) return
+
+        val shown = when (next) {
+            is Report.Message -> notice.show(next.message.text, next.tone, saveCopyAction(next))
+            is Report.Exported -> notice.show(getString(R.string.pdf_saved), next.tone, acting(next, R.string.open) { openExported(next.uri) })
+        }
+        if (shown) reading = next
+    }
+
+    // A failed draft write offers the one action that keeps the notes.
+    private fun saveCopyAction(report: Report.Message): NoticeAction? = when (report.message.action) {
+        MessageAction.SAVE_COPY -> acting(report, R.string.save_copy) { launchPicker { savePdf.launch(exportName()) } }
+        null -> null
+    }
+
+    // Acting on a report reads it.
+    private fun acting(report: Report, label: Int, act: () -> Unit) = NoticeAction(getString(label)) {
+        acknowledge(report)
+        act()
+    }
+
+    private fun acknowledge(report: Report) {
+        if (reading == report) reading = null
+        val state = model.state.value ?: return
+        when (report) {
+            is Report.Message -> if (state.message == report.message) model.acknowledgeMessage()
+            is Report.Exported -> if (state.exported == report.uri) model.acknowledgeExport()
         }
     }
 
@@ -937,23 +995,23 @@ internal class MainActivity : ComponentActivity() {
         }
     }
 
+    // Whether notes would be lost depends on the file picked: the model asks
+    // once it knows, and only for a different PDF.
     private fun requestOpen() {
         if (model.state.value?.busy != false) return
-        confirmReplacing { launchPicker { openPdf.launch(arrayOf(PDF_MIME)) } }
+        launchPicker { openPdf.launch(arrayOf(PDF_MIME)) }
     }
 
-    private fun confirmReplacing(keep: () -> Unit = {}, open: () -> Unit) {
-        if (model.state.value?.draft?.dirty != true) {
-            open()
-            return
-        }
+    private fun confirmReplacing(document: OpenDocument) {
+        confirmingFor = document
         // Opening another PDF discards the unexported notes, so the confirm is red.
         confirming = AlertDialog.Builder(this, R.style.AlertDialogTheme_Destructive)
             .setTitle(R.string.open_another).setMessage(R.string.unsaved_prompt)
-            .setNegativeButton(R.string.keep_editing) { _, _ -> keep() }
-            .setPositiveButton(R.string.open_anyway) { _, _ -> open() }
-            .setOnCancelListener { keep() }
-            .setOnDismissListener { confirming = null }
+            .setNegativeButton(R.string.keep_editing) { _, _ -> model.keepDraft() }
+            .setPositiveButton(R.string.open_anyway) { _, _ -> model.replaceDraft() }
+            .setOnCancelListener { model.keepDraft() }
+            // Delivered later: a question replaced meanwhile must not clear its successor.
+            .setOnDismissListener { if (confirming === it) confirming = null }
             .show()
     }
 
@@ -969,7 +1027,7 @@ internal class MainActivity : ComponentActivity() {
         val viewers = packageManager.queryIntentActivities(view, 0)
             .filterNot { it.activityInfo.packageName == packageName }
         if (viewers.isEmpty()) {
-            notice.show(getString(R.string.no_viewer), Tone.ERROR)
+            flash(getString(R.string.no_viewer), Tone.ERROR)
             return
         }
         view.clipData = ClipData.newRawUri(uri.lastPathSegment ?: exportName(), uri)
@@ -995,7 +1053,7 @@ internal class MainActivity : ComponentActivity() {
 
     private fun launchPicker(failure: Int = R.string.no_picker, action: () -> Unit) {
         try { action() } catch (_: ActivityNotFoundException) {
-            notice.show(getString(failure), Tone.ERROR)
+            flash(getString(failure), Tone.ERROR)
         }
     }
 
@@ -1013,6 +1071,19 @@ internal class MainActivity : ComponentActivity() {
     private fun spaced(space: Int) = LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = ui.dp(space) }
 
     private enum class Screen { WELCOME, LOADING, EDITOR }
+
+    /** The outcome of document work on the notice bar: a message, or where an export landed. */
+    private sealed interface Report {
+        val tone: Tone
+
+        data class Message(val message: EditorMessage) : Report {
+            override val tone get() = message.tone
+        }
+
+        data class Exported(val uri: Uri) : Report {
+            override val tone get() = Tone.SUCCESS
+        }
+    }
 
     private enum class ToolBarRows { SINGLE, DOUBLE, TRIPLE }
 
@@ -1040,6 +1111,7 @@ internal class MainActivity : ComponentActivity() {
         const val HINT_SHOWN_KEY_PREFIX = "hintShown_"
         const val TOOL_HINT_SHOWINGS = 2
         const val INCOMING_KEY = "incomingPdf"
+        const val UNCLAIMED_GRANT_KEY = "unclaimedGrant"
         // Matches android:authorities="${'$'}{applicationId}.files" in the manifest.
         const val FILE_AUTHORITY_SUFFIX = ".files"
         const val DEFAULT_EXPORT_NAME = "Document-annotated.pdf"

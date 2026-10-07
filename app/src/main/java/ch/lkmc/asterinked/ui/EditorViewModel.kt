@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.SavedStateHandle
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.document.DocumentProblem
 import ch.lkmc.asterinked.document.DocumentOperations
@@ -40,8 +41,10 @@ internal data class EditorState(
     val message: EditorMessage? = null,
     /** An annotated copy ready for the share sheet; acknowledge once handed over. */
     val shared: File? = null,
-    /** Where the last export landed; acknowledge once the notice is shown. */
+    /** Where the last export landed; acknowledge once its notice is read. */
     val exported: Uri? = null,
+    /** Another PDF opened over unexported notes, waiting for the user to replace or keep them. */
+    val replacing: OpenDocument? = null,
 )
 
 /** What a notice's action button does when the message offers one. */
@@ -53,11 +56,13 @@ internal data class EditorMessage(val text: String, val tone: Tone, val action: 
 internal class EditorViewModel private constructor(
     application: Application,
     private val session: DocumentSession,
+    // Survives the process: the address of a PDF waiting for the replace question.
+    private val saved: SavedStateHandle,
 ) : AndroidViewModel(application) {
-    constructor(application: Application) : this(application, DocumentSession.process(application))
+    constructor(application: Application, saved: SavedStateHandle) : this(application, DocumentSession.process(application), saved)
 
-    internal constructor(application: Application, service: DocumentOperations, worker: ExecutorService) :
-        this(application, DocumentSession.owned(service, worker))
+    internal constructor(application: Application, service: DocumentOperations, worker: ExecutorService, saved: SavedStateHandle = SavedStateHandle()) :
+        this(application, DocumentSession.owned(service, worker), saved)
 
     private val service = session.operations
     private val worker = session.worker
@@ -78,7 +83,10 @@ internal class EditorViewModel private constructor(
             restoring = false
             val pending = pendingPickerResult
             pendingPickerResult = null
-            pending?.invoke()
+            // A PDF that waited for the replace question when the process ended
+            // is opened again, unless the user has since picked something else.
+            val waiting = saved.remove<Uri>(WAITING_KEY)
+            (pending ?: waiting?.let { { open(it) } })?.invoke()
         }) { document ->
             if (document == null) publish(EditorState(busy = false)) else show(document)
         }
@@ -90,17 +98,54 @@ internal class EditorViewModel private constructor(
             return
         }
         if (current.busy) return
+        // The newer request wins over a PDF still waiting for an answer.
+        current.replacing?.let(::forget)
+        endQuestionForWork()
         // Read on the main thread; the worker only gets this snapshot.
         val shown = current.draft
-        perform({ service.open(uri, shown) }) { result ->
+        // Unexported notes give way only to a different PDF, and only once the
+        // user agrees; asking before the import could not tell the two apart.
+        val ask = shown?.dirty == true
+        perform({
+            service.open(uri, shown).also { if (it is OpenResult.Opened && !ask) service.adopt(it.document) }
+        }) { result ->
             when (result) {
-                is OpenResult.Opened -> {
-                    history.clear()
-                    show(result.document)
-                }
+                is OpenResult.Opened -> if (ask) ask(uri, result.document) else replaceWith(result.document)
                 is OpenResult.AlreadyOpen -> keep(result.draft)
             }
         }
+    }
+
+    /** Replaces the draft, and its unexported notes, with the PDF in [EditorState.replacing]. */
+    fun replaceDraft() {
+        val pending = current.replacing ?: return
+        if (current.busy) return
+        // Answered: the question goes as the write starts, so a failure
+        // reports its error without asking again.
+        saved.remove<Uri>(WAITING_KEY)
+        endQuestionForWork()
+        perform({ service.adopt(pending) }) { replaceWith(pending) }
+    }
+
+    /** Keeps the draft and drops the PDF that was waiting to replace it. */
+    fun keepDraft() {
+        val pending = current.replacing ?: return
+        forget(pending)
+        publish(current.copy(replacing = null))
+    }
+
+    private fun ask(uri: Uri, document: OpenDocument) {
+        saved[WAITING_KEY] = uri
+        publish(current.copy(busy = false, replacing = document))
+    }
+
+    // Busy and without a question in one step: idle without a question is
+    // when the activity opens a PDF it holds from another app.
+    private fun endQuestionForWork() = publish(current.copy(busy = true, replacing = null))
+
+    private fun forget(pending: OpenDocument) {
+        saved.remove<Uri>(WAITING_KEY)
+        worker.execute { service.discard(pending) }
     }
 
     fun goToPage(page: Int) {
@@ -197,6 +242,11 @@ internal class EditorViewModel private constructor(
         // A restored page that failed to render shows blank with its ink; try again.
         if (document.preview == null) renderVisible(document.draft)
         prefetchAround(document.draft)
+    }
+
+    private fun replaceWith(document: OpenDocument) {
+        history.clear()
+        show(document)
     }
 
     // The same PDF again, say tapped once more in Files: ink, page, preview and
@@ -332,12 +382,15 @@ internal class EditorViewModel private constructor(
     override fun onCleared() {
         cleared = true
         visiblePage.set(NO_PAGE)
+        // Leaving without an answer: the imported copy goes before the close.
+        current.replacing?.let { pending -> worker.execute { service.discard(pending) } }
         session.close()
     }
 
     private companion object {
         const val TAG = "Asterinked"
         const val NO_PAGE = -1
+        const val WAITING_KEY = "waitingPdf"
     }
 }
 

@@ -1,10 +1,14 @@
 package ch.lkmc.asterinked.ui
 
+import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.graphics.Canvas
 import android.hardware.input.InputManager
+import android.os.Bundle
 import android.os.Looper
 import android.os.SystemClock
 import android.view.InputDevice
@@ -15,6 +19,7 @@ import android.widget.Button
 import androidx.lifecycle.ViewModelProvider
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.document.Draft
+import ch.lkmc.asterinked.document.OpenDocument
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import org.junit.Assert.assertEquals
@@ -31,6 +36,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.InputDeviceBuilder
+import org.robolectric.shadows.ShadowDialog
 import java.io.File
 import java.time.Duration
 
@@ -333,6 +339,235 @@ class MainActivityChromeTest {
         }
     }
 
+    // Fading out takes a moment; a tap meanwhile must not reach the pill's
+    // buttons, as it would not once the pill is gone.
+    // A save picked just before a rotation that then fails must still give
+    // back the grant taken for the picked file; grants are finite.
+    // A message and a landed export arriving together are both read, one after
+    // the other, rather than the second hiding the first unseen.
+    // Whether notes would be lost depends on the file picked, so the question
+    // comes after the picker, not before it.
+    @Test fun unexportedNotesGoStraightToThePicker() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing())
+
+            control(root, R.string.open_pdf).performClick()
+
+            assertEquals(Intent.ACTION_OPEN_DOCUMENT, shadowOf(activity).nextStartedActivityForResult?.intent?.action)
+            assertNull("No question yet", ShadowDialog.getLatestDialog()?.takeIf { it.isShowing })
+        }
+    }
+
+    @Test fun aPdfFromAnotherAppOpensBeforeAnyQuestion() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing())
+
+            controller.newIntent(Intent(Intent.ACTION_VIEW, Uri.parse("content://downloads/report.pdf")))
+            settle(activity)
+            EditorScreens.awaitIdle(activity)
+            settle(activity)
+
+            assertNull("Only a different PDF asks, once it is known", ShadowDialog.getLatestDialog()?.takeIf { it.isShowing })
+            // No provider serves the address here, so the attempted open reports it.
+            assertEquals(app.getString(R.string.error_source_unreadable), notice(activity.window.decorView).shown?.toString())
+        }
+    }
+
+    @Test fun aWaitingReplacementAsksAndKeepingDropsIt() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            settle(activity)
+            val other = OpenDocument(Draft(File("other.pdf"), "Other.pdf"), emptyList(), null)
+            EditorScreens.publish(activity, EditorScreens.editing().copy(replacing = other))
+
+            val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+            assertTrue(dialog.isShowing)
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+            settle(activity)
+
+            assertNull(ViewModelProvider(activity)[EditorViewModel::class.java].state.value!!.replacing)
+        }
+    }
+
+    // The one-time gesture hint is not spent under the question's dialog.
+    @Test fun theGestureHintWaitsForTheReplaceQuestion() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            val other = OpenDocument(Draft(File("other.pdf"), "Other.pdf"), emptyList(), null)
+            EditorScreens.publish(activity, EditorScreens.editing().copy(replacing = other))
+            assertNull(notice(root).shown)
+
+            (ShadowDialog.getLatestDialog() as AlertDialog).getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+            settle(activity)
+
+            assertEquals(app.getString(R.string.touch_hint), notice(root).shown?.toString())
+        }
+    }
+
+    // A question about a PDF that is no longer waiting must not stay up.
+    @Test fun aNewReplacementReplacesTheQuestion() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing().copy(replacing = OpenDocument(Draft(File("a.pdf"), "A.pdf"), emptyList(), null)))
+            val first = ShadowDialog.getLatestDialog()
+
+            EditorScreens.publish(activity, EditorScreens.editing().copy(replacing = OpenDocument(Draft(File("b.pdf"), "B.pdf"), emptyList(), null)))
+
+            assertFalse(first.isShowing)
+            assertTrue(ShadowDialog.getLatestDialog().isShowing)
+        }
+    }
+
+    // While a save runs the question cannot be answered, so it steps aside and
+    // returns once the editor is idle.
+    @Test fun theQuestionWaitsOutASave() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            settle(activity)
+            val other = OpenDocument(Draft(File("other.pdf"), "Other.pdf"), emptyList(), null)
+            val waiting = EditorScreens.editing().copy(replacing = other)
+            EditorScreens.publish(activity, waiting)
+
+            EditorScreens.swap(activity, waiting.copy(busy = true))
+            assertNull(ShadowDialog.getLatestDialog()?.takeIf { it.isShowing })
+
+            EditorScreens.swap(activity, waiting)
+            assertTrue(ShadowDialog.getLatestDialog().isShowing)
+        }
+    }
+
+    @Test fun twoReportsTakeTurns() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            val already = app.getString(R.string.already_open)
+            EditorScreens.publish(activity, EditorScreens.editing().copy(
+                message = EditorMessage(already, Tone.INFO), exported = Uri.parse("content://test/saved.pdf")))
+            assertEquals(app.getString(R.string.pdf_saved), notice(root).shown?.toString())
+
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ACTION_NOTICE_MS + NOTICE_ANIMATION_MS))
+
+            assertEquals("The message waited its turn", already, notice(root).shown?.toString())
+        }
+    }
+
+    // A failed draft write right after a save interrupts "PDF saved", which
+    // comes back once the error has been read.
+    @Test fun anErrorInterruptingASavedNoticeLetsItReturn() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            val model = ViewModelProvider(activity)[EditorViewModel::class.java]
+            EditorScreens.publish(activity, EditorScreens.editing().copy(exported = Uri.parse("content://test/saved.pdf")))
+            val error = app.getString(R.string.notes_not_saved)
+            EditorScreens.publish(activity, model.state.value!!.copy(message = EditorMessage(error, Tone.ERROR)))
+            assertEquals(error, notice(root).shown?.toString())
+
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis((Tone.ERROR.millis + NOTICE_ANIMATION_MS).toLong()))
+
+            assertEquals(app.getString(R.string.pdf_saved), notice(root).shown?.toString())
+        }
+    }
+
+    // A tool hint answers what the user just did; the report it covers returns after it.
+    @Test fun aSavedNoticeReturnsAfterAToolHint() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing().copy(exported = Uri.parse("content://test/saved.pdf")))
+            control(root, R.string.highlighter).performClick()
+            assertEquals(app.getString(R.string.highlight_hint), notice(root).shown?.toString())
+
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis((Tone.INFO.millis + NOTICE_ANIMATION_MS).toLong()))
+
+            assertEquals(app.getString(R.string.pdf_saved), notice(root).shown?.toString())
+        }
+    }
+
+    // Dismissing reads a report at once, so a second save to the same file that
+    // lands during the fade-out gets its own notice instead of being swallowed.
+    @Test fun aSecondSaveDuringTheFadeOutIsShownToo() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            val model = ViewModelProvider(activity)[EditorViewModel::class.java]
+            val saved = Uri.parse("content://test/saved.pdf")
+            EditorScreens.publish(activity, EditorScreens.editing().copy(exported = saved))
+
+            notice(root).dismiss()
+            EditorScreens.publish(activity, model.state.value!!.copy(exported = saved))
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(NOTICE_ANIMATION_MS.toLong()))
+
+            assertEquals(app.getString(R.string.pdf_saved), notice(root).shown?.toString())
+        }
+    }
+
+    // A report already dismissed must not come back after a notice covers its fade-out.
+    @Test fun aDismissedReportStaysReadWhenCoveredWhileFading() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            val model = ViewModelProvider(activity)[EditorViewModel::class.java]
+            EditorScreens.publish(activity, EditorScreens.editing().copy(exported = Uri.parse("content://test/saved.pdf")))
+
+            notice(root).dismiss()
+            val error = app.getString(R.string.error_out_of_memory)
+            EditorScreens.publish(activity, model.state.value!!.copy(message = EditorMessage(error, Tone.ERROR)))
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis((Tone.ERROR.millis + NOTICE_ANIMATION_MS).toLong()))
+
+            assertNotEquals(app.getString(R.string.pdf_saved), notice(root).shown?.toString())
+        }
+    }
+
+    @Test fun aGrantPickedBeforeARotationIsGivenBackWhenTheSaveFails() {
+        val picked = Uri.parse("content://test/picked.pdf")
+        val state = Bundle()
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing())
+            descendants(root).filterIsInstance<Button>().single { it.text == app.getString(R.string.save_copy) }.performClick()
+            val request = shadowOf(activity).nextStartedActivityForResult
+            // The save is still running when the activity is recreated.
+            EditorScreens.publish(activity, EditorScreens.editing().copy(busy = true))
+            shadowOf(activity).receiveResult(request.intent, Activity.RESULT_OK, Intent().setData(picked))
+            assertTrue(app.contentResolver.persistedUriPermissions.any { it.uri == picked })
+            controller.saveInstanceState(state)
+        }
+
+        Robolectric.buildActivity(MainActivity::class.java).setup(state).use { controller ->
+            // The save failed: the draft has no destination.
+            EditorScreens.publish(controller.get(), EditorScreens.editing())
+
+            assertTrue("The grant is given back", app.contentResolver.persistedUriPermissions.none { it.uri == picked })
+        }
+    }
+
+    @Test fun aFadingPillLetsANewTouchThrough() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val root = settle(activity)
+            EditorScreens.publish(activity, EditorScreens.editing())
+            val next = control(root, R.string.next)
+            val pill = next.parent as View
+
+            page(root).onWritingChanged(WritingState.ACTIVE)
+            val x = next.left + next.width / 2f
+            val y = next.top + next.height / 2f
+            val down = android.view.MotionEvent.obtain(0L, 0L, android.view.MotionEvent.ACTION_DOWN, x, y, 0)
+            val taken = try { pill.dispatchTouchEvent(down) } finally { down.recycle() }
+
+            assertFalse("The fading pill refuses the touch", taken)
+            assertFalse(next.isPressed)
+        }
+    }
+
     @Test fun aPendingPillReturnDoesNotRevealControlsOnWelcome() {
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
             val activity = controller.get()
@@ -446,5 +681,7 @@ class MainActivityChromeTest {
         const val DRAG_STEPS = 6
         const val DRAG_STEP_MS = 50L
         const val NOTICE_ANIMATION_MS = 500
+        // How long NoticeBar keeps a notice that offers an action.
+        const val ACTION_NOTICE_MS = 10_000L
     }
 }
