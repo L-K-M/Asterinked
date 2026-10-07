@@ -9,6 +9,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.os.Looper
 import android.view.View
+import android.widget.EditText
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -105,6 +106,11 @@ class UiScreenshotTest {
         publish(it, editing().copy(message = EditorMessage(app.getString(R.string.error_source_unreadable), Tone.ERROR)))
     }
 
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
+    fun editorErrorDark() = shoot("editor-error-dark") {
+        publish(it, editing().copy(message = EditorMessage(app.getString(R.string.error_source_unreadable), Tone.ERROR)))
+    }
+
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun editorSuccess() = shoot("editor-success") {
         publish(it, editing(exported = true).copy(message = EditorMessage(app.getString(R.string.pdf_saved), Tone.SUCCESS)))
@@ -125,7 +131,21 @@ class UiScreenshotTest {
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun dialogGoToPage() = shoot("dialog-page") {
         publish(it, editing())
-        descendants(it.window.decorView).first { view -> view.tooltipText == app.getString(R.string.go_to_page) }.performClick()
+        openPageDialog(it)
+    }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
+    fun dialogGoToPageDark() = shoot("dialog-page-dark") {
+        publish(it, editing())
+        openPageDialog(it)
+    }
+
+    // Only an out-of-range number turns the field's edge accent.
+    @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
+    fun dialogGoToPageOutOfRange() = shoot("dialog-page-invalid") {
+        publish(it, editing())
+        openPageDialog(it)
+        descendants(ShadowDialog.getLatestDialog().window!!.decorView).filterIsInstance<EditText>().single().setText("40")
     }
 
     private fun shoot(name: String, settleMillis: Long = 0, arrange: (MainActivity) -> Unit) {
@@ -190,6 +210,11 @@ class UiScreenshotTest {
     private fun click(activity: MainActivity, label: Int) {
         val text = app.getString(label)
         descendants(activity.window.decorView).first { it.contentDescription == text || (it is android.widget.TextView && it.text.toString() == text && it.isClickable) }.performClick()
+        settle()
+    }
+
+    private fun openPageDialog(activity: MainActivity) {
+        descendants(activity.window.decorView).first { it.tooltipText == app.getString(R.string.go_to_page) }.performClick()
         settle()
     }
 

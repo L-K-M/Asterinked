@@ -11,6 +11,7 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.LinearLayout
+import androidx.core.graphics.ColorUtils
 import androidx.core.widget.doAfterTextChanged
 import ch.lkmc.asterinked.R
 import java.util.Locale
@@ -37,6 +38,8 @@ internal fun showPageDialog(context: Context, ui: Components, current: Int, coun
         filters = arrayOf(InputFilter.LengthFilter(count.toString().length))
         hint = context.getString(R.string.page_number)
         background = fieldBackground(ui)
+        // Neutral, so only an out-of-range number shows the accent.
+        highlightColor = ColorUtils.setAlphaComponent(ui.color(R.color.on_surface), SELECTION_ALPHA)
         setPadding(ui.dp(Space.M), 0, ui.dp(Space.M), 0)
         // ASCII digits: what the number keyboard types and toIntOrNull() reads back.
         setText(String.format(Locale.ROOT, "%d", current + 1))
@@ -48,8 +51,9 @@ internal fun showPageDialog(context: Context, ui: Components, current: Int, coun
         accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         visibility = View.GONE
     }
+    // The default top gravity keeps LinearLayout's baseline alignment, which
+    // sets "of N" on the line of the number; centring would drop it.
     val row = LinearLayout(context).apply {
-        gravity = Gravity.CENTER_VERTICAL
         addView(field, LinearLayout.LayoutParams(ui.dp(Size.PAGE_FIELD_WIDTH), ui.dp(Size.BUTTON_LARGE + Space.XS)))
         addView(total, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             marginStart = ui.dp(Space.M)
@@ -76,8 +80,10 @@ internal fun showPageDialog(context: Context, ui: Components, current: Int, coun
     // An empty field is not an error yet; it only disables Go.
     fun validate(): Int? {
         val page = chosen()
+        val outOfRange = page == null && field.text.isNotEmpty()
         dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = page != null
-        problem.visibility = if (page != null || field.text.isEmpty()) View.GONE else View.VISIBLE
+        problem.visibility = if (outOfRange) View.VISIBLE else View.GONE
+        field.isActivated = outOfRange
         return page
     }
     field.doAfterTextChanged { validate() }
@@ -97,13 +103,16 @@ internal fun showPageDialog(context: Context, ui: Components, current: Int, coun
     return dialog
 }
 
-// A filled field that gains an accent edge while focused.
+// A filled field with a graphite edge while focused. Activated marks an
+// out-of-range number, which turns the edge accent like the message below.
 private fun fieldBackground(ui: Components) = StateListDrawable().apply {
     val fill = ui.color(R.color.surface_track)
-    addState(intArrayOf(android.R.attr.state_focused), ui.rounded(fill, Radius.MEDIUM).apply {
-        setStroke(ui.dp(FOCUS_STROKE_DP), ui.color(R.color.accent))
-    })
+    fun edged(color: Int) = ui.rounded(fill, Radius.MEDIUM).apply { setStroke(ui.dp(FOCUS_STROKE_DP), color) }
+    addState(intArrayOf(android.R.attr.state_activated), edged(ui.color(R.color.accent)))
+    addState(intArrayOf(android.R.attr.state_focused), edged(ui.color(R.color.on_surface)))
     addState(intArrayOf(), ui.rounded(fill, Radius.MEDIUM))
 }
 
 private const val FOCUS_STROKE_DP = 2
+// 20%: a selection tint the digits stay readable through.
+private const val SELECTION_ALPHA = 51

@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.widget.LinearLayout
+import androidx.core.graphics.ColorUtils
 import ch.lkmc.asterinked.R
 
 /**
@@ -21,11 +22,18 @@ import ch.lkmc.asterinked.R
 internal class SegmentedControl(context: Context) : LinearLayout(context) {
     private val density = resources.displayMetrics.density
     private val inset = (Size.TOUCH - Size.THUMB) / 2f * density
-    private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = context.getColor(R.color.surface_track) }
-    private val thumbPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = context.getColor(R.color.surface_thumb)
-        setShadowLayer(SHADOW_RADIUS_DP * density, 0f, SHADOW_OFFSET_DP * density, context.getColor(R.color.shadow))
-    }
+    private val trackColor = context.getColor(R.color.surface_track)
+    private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = trackColor }
+    private val thumbPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val thumbColor = context.getColor(R.color.surface_thumb)
+    private val shadowColor = context.getColor(R.color.shadow)
+    // A translucent thumb would let its own shadow show through and look darker
+    // than the track. Disabled, it is painted opaque instead, in the colour the
+    // dimmed thumb would have over the dimmed track on the bar.
+    private val disabledThumbColor = ColorUtils.compositeColors(
+        ColorUtils.setAlphaComponent(thumbColor, Alpha.DISABLED),
+        ColorUtils.compositeColors(ColorUtils.setAlphaComponent(trackColor, Alpha.DISABLED), context.getColor(R.color.surface)),
+    )
     private val track = RectF()
     private val thumb = RectF()
     private var thumbX = 0f
@@ -80,7 +88,13 @@ internal class SegmentedControl(context: Context) : LinearLayout(context) {
         val segment = getChildAt(chosen) ?: return
 
         thumb.set(thumbX + inset, segment.top + inset, thumbX + segment.width - inset, segment.bottom - inset)
-        thumbPaint.alpha = alpha
+        if (isEnabled) {
+            thumbPaint.color = thumbColor
+            thumbPaint.setShadowLayer(SHADOW_RADIUS_DP * density, 0f, SHADOW_OFFSET_DP * density, shadowColor)
+        } else {
+            thumbPaint.color = disabledThumbColor
+            thumbPaint.clearShadowLayer()
+        }
         canvas.drawRoundRect(thumb, thumb.height() / 2f, thumb.height() / 2f, thumbPaint)
     }
 

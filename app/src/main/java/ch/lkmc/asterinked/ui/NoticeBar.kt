@@ -2,6 +2,7 @@ package ch.lkmc.asterinked.ui
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Color
 import android.view.Gravity
 import android.view.accessibility.AccessibilityManager
 import android.widget.ImageView
@@ -40,7 +41,12 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
         maxWidth = ui.dp(Size.NOTICE_MAX)
         orientation = HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        background = ui.rounded(ui.color(R.color.inverse_surface), Radius.MEDIUM)
+        background = ui.rounded(ui.color(R.color.inverse_surface), Radius.MEDIUM).apply {
+            // Only a visible edge: GradientDrawable reports a translucent outline,
+            // and so casts no shadow, when stroke and fill alpha differ.
+            val edge = ui.color(R.color.notice_edge)
+            if (Color.alpha(edge) != 0) setStroke(ui.dp(Size.HAIRLINE), edge)
+        }
         elevation = ui.dp(Elevation.NOTICE).toFloat()
         setPadding(ui.dp(Space.L), ui.dp(Space.M), ui.dp(Space.L), ui.dp(Space.M))
         minimumHeight = ui.dp(Size.TOUCH)

@@ -81,6 +81,13 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   Never hard-code a chrome colour: it breaks the dark theme. Ink and
   highlighter colours are document content and stay constants in
   `MainActivity`.
+- Brand red marks only what needs attention. A dialog's positive button is
+  graphite; a confirm that throws work away passes
+  `R.style.AlertDialogTheme_Destructive` to `AlertDialog.Builder` to turn it red.
+- A `GradientDrawable` whose stroke alpha differs from its fill alpha (a
+  transparent edge, say) reports a translucent outline and casts no elevation
+  shadow. Skip the stroke instead. Robolectric always reports outline alpha 0,
+  so this needs a device check.
 - Every tappable control is at least 48dp square; `MainActivityLayoutTest`
   enforces it, with no overlaps, on phone, landscape, tablet and 200% text.
 - The tool bar wraps from its measured, inset-adjusted width. Narrow phones

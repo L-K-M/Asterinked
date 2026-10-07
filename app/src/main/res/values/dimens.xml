@@ -1,3 +1,6 @@
 <resources>
     <dimen name="dialog_radius">24dp</dimen>
+    <!-- Size.TOUCH and Space.M from DesignTokens.kt, for the dialog button style. -->
+    <dimen name="touch_target">48dp</dimen>
+    <dimen name="dialog_button_padding">12dp</dimen>
 </resources>
