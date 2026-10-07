@@ -151,8 +151,18 @@ internal class EditorViewModel private constructor(
         }
         val draft = current.draft ?: return
         if (current.busy) return
-        val saved = draft.copy(savedInk = draft.ink)
-        perform({ service.export(draft, uri); service.saveDraft(saved) }) {
+        val saved = draft.copy(savedInk = draft.ink, destination = uri)
+        perform({ service.export(draft, uri); service.saveDraft(saved) }, failed = { error ->
+            // A retry of the remembered target that can no longer be written
+            // is a dead end: forget it so the next Save asks for a new file.
+            if (draft.destination == uri && error.toProblem(DocumentProblem.UNEXPECTED) == DocumentProblem.DESTINATION_UNWRITABLE) {
+                val cleared = current.draft?.copy(destination = null)
+                publish(current.copy(draft = cleared))
+                // Persist the clearing too: a grant that outlives the file would
+                // otherwise resurrect the dead target on the next restore.
+                cleared?.let { saveDraft(it) }
+            }
+        }) {
             publish(current.copy(draft = saved, busy = false, message = EditorMessage(text(R.string.pdf_saved), Tone.SUCCESS)))
         }
     }
@@ -254,7 +264,7 @@ internal class EditorViewModel private constructor(
         }
     }
 
-    private fun <T> perform(work: () -> T, completed: () -> Unit = {}, success: (T) -> Unit) {
+    private fun <T> perform(work: () -> T, completed: () -> Unit = {}, failed: (Throwable) -> Unit = {}, success: (T) -> Unit) {
         publish(current.copy(busy = true, message = null))
         worker.execute {
             val result = runCatching(work)
@@ -262,6 +272,7 @@ internal class EditorViewModel private constructor(
                 if (cleared) return@post
                 result.fold(success) { error ->
                     publish(current.copy(busy = false, message = messageFor(error)))
+                    failed(error)
                 }
                 completed()
             }

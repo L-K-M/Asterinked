@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.net.Uri
 import android.os.Looper
 import android.view.View
 import androidx.core.graphics.Insets
@@ -89,7 +90,9 @@ class UiScreenshotTest {
     }
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
-    fun editorSaved() = shoot("editor-saved") { publish(it, editing(exported = true)) }
+    fun editorSaved() = shoot("editor-saved") {
+        publish(it, editing(exported = true, destination = Uri.parse("content://test/saved.pdf")))
+    }
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun editorBusy() = shoot("editor-busy") { publish(it, editing().copy(busy = true)) }

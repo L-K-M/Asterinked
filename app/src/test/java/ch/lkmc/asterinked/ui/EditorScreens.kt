@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.net.Uri
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
@@ -50,10 +51,10 @@ internal object EditorScreens {
         settle()
     }
 
-    /** Page 3 of 12 with a few notes, exported or not. */
-    fun editing(exported: Boolean = false): EditorState {
+    /** Page 3 of 12 with a few notes, exported or not, with a save target or not. */
+    fun editing(exported: Boolean = false, destination: Uri? = null): EditorState {
         val ink = mapOf(PAGE to strokes())
-        val draft = Draft(File("Quarterly review.pdf"), "Quarterly review.pdf", PAGE, ink, if (exported) ink else emptyMap())
+        val draft = Draft(File("Quarterly review.pdf"), "Quarterly review.pdf", PAGE, ink, if (exported) ink else emptyMap(), destination)
         val pages = List(PAGES) { PageSpec(0f, 0f, LETTER_WIDTH, LETTER_HEIGHT, 0) }
         return EditorState(draft, pages, page(), busy = false, canUndo = true, canRedo = false)
     }

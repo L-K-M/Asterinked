@@ -23,6 +23,7 @@ import android.view.KeyboardShortcutInfo
 import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -41,6 +42,7 @@ import androidx.core.content.edit
 import androidx.core.graphics.Insets
 import androidx.core.os.BundleCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.core.view.updatePaddingRelative
@@ -108,12 +110,30 @@ internal class MainActivity : ComponentActivity() {
     private var incoming: Uri? = null
     private var confirming: AlertDialog? = null
     private var pageDialog: AlertDialog? = null
+    private var lastDestination: Uri? = null
+
+    // A grant taken for a file whose export then failed is not tracked by
+    // lastDestination; hold it until the outcome is known so it can be given back.
+    private var unclaimedGrant: Uri? = null
 
     private val openPdf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(model::open)
     }
     private val savePdf = registerForActivityResult(ActivityResultContracts.CreateDocument(PDF_MIME)) { uri ->
-        uri?.let(model::export)
+        uri?.let {
+            // The grant dies with the process unless the provider lets us keep it;
+            // only a kept grant earns the draft its remembered destination.
+            try {
+                contentResolver.takePersistableUriPermission(it,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            } catch (_: SecurityException) {
+                // Some providers persist a subset of the flags; write is the
+                // one Save needs, so keep at least that when possible.
+                runCatching { contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+            }
+            unclaimedGrant = it
+            model.export(it)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -265,9 +285,22 @@ internal class MainActivity : ComponentActivity() {
         // With very large text on a phone the label would leave no room for the
         // file name; the action keeps its graphite weight as an icon.
         val crowded = resources.configuration.fontScale >= LARGE_FONT_SCALE && resources.configuration.screenWidthDp < SAVE_LABEL_MIN_WIDTH_DP
-        val saveCopy = { launchPicker { savePdf.launch(exportName()) } }
-        save = if (crowded) ui.primaryIconButton(R.drawable.ic_save, R.string.save_copy, saveCopy)
-            else ui.primaryButton(R.string.save_copy, ButtonSize.REGULAR, action = saveCopy)
+        // One tap writes back to the remembered file; a long press opens the
+        // picker to save a copy somewhere else.
+        val saveOrPick = {
+            val remembered = model.state.value?.draft?.destination
+            if (remembered != null) model.export(remembered) else launchPicker { savePdf.launch(exportName()) }
+        }
+        save = if (crowded) ui.primaryIconButton(R.drawable.ic_save, R.string.save_copy, saveOrPick)
+            else ui.primaryButton(R.string.save_copy, ButtonSize.REGULAR, action = saveOrPick)
+        val saveAs = { launchPicker { savePdf.launch(exportName()) } }
+        save.setOnLongClickListener { saveAs(); true }
+        // A long press is invisible to TalkBack unless it is a labelled action;
+        // the name stays distinct from the button's own label in both states.
+        ViewCompat.replaceAccessibilityAction(save, AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_LONG_CLICK,
+            getString(R.string.save_as)) { _, _ ->
+            if (save.isEnabled) { saveAs(); true } else false
+        }
         bar.addView(save, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = ui.dp(Space.XS) })
         return bar
     }
@@ -530,6 +563,14 @@ internal class MainActivity : ComponentActivity() {
         root.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
     }
 
+    // Grants are finite (~128 per app), so a replaced destination gives its
+    // back; either flag may be missing if the provider persisted only write.
+    private fun releaseGrant(uri: Uri) {
+        for (flag in intArrayOf(Intent.FLAG_GRANT_WRITE_URI_PERMISSION, Intent.FLAG_GRANT_READ_URI_PERMISSION)) {
+            runCatching { contentResolver.releasePersistableUriPermission(uri, flag) }
+        }
+    }
+
     private fun hint(message: Int) = notice.show(getString(message), Tone.INFO)
 
     private fun show(state: EditorState) {
@@ -546,6 +587,26 @@ internal class MainActivity : ComponentActivity() {
 
         open.isEnabled = !state.busy
         save.isEnabled = ready
+        // A replaced or cleared destination drops the grant we took for it;
+        // the last one survives on purpose — it is the quick-save target.
+        val destination = draft?.destination
+        if (destination != lastDestination) {
+            lastDestination?.let(::releaseGrant)
+            lastDestination = destination
+        }
+        // An export that never claimed its picked file (a failed first save or
+        // save-as) leaves the grant orphaned; give it back once the dust settles.
+        unclaimedGrant?.let { staged ->
+            when {
+                staged == destination -> unclaimedGrant = null
+                !state.busy -> { unclaimedGrant = null; releaseGrant(staged) }
+            }
+        }
+        // Once a destination is remembered the button writes back to it; until
+        // then every save goes through the picker.
+        val quickLabel = if (draft?.destination == null) R.string.save_copy else R.string.save
+        (save as? Button)?.setText(quickLabel)
+        save.contentDescription = getString(quickLabel)
         share.isEnabled = ready
         undo.isEnabled = ready && state.canUndo
         redo.isEnabled = ready && state.canRedo

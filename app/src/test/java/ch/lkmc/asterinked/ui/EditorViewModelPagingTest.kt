@@ -1,6 +1,7 @@
 package ch.lkmc.asterinked.ui
 
 import android.os.Looper
+import android.net.Uri
 import androidx.lifecycle.ViewModelStore
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
@@ -139,6 +140,48 @@ class EditorViewModelPagingTest {
         assertEquals("Suppressed restore must not queue prefetch", listOf(0), documents.rendered)
     }
 
+    @Test fun anExportRemembersItsDestination() {
+        settle()
+        model.addStroke(stroke())
+        settle()
+        val destination = Uri.parse("content://test/saved.pdf")
+
+        model.export(destination)
+        settle()
+
+        assertEquals(destination, state.draft!!.destination)
+        assertEquals(state.draft!!.ink, state.draft!!.savedInk)
+        assertEquals(listOf(destination), documents.exportedTo)
+
+        // The remembered place takes the next save without asking again.
+        model.addStroke(stroke())
+        model.export(destination)
+        settle()
+        assertEquals(listOf(destination, destination), documents.exportedTo)
+    }
+
+    @Test fun aDestinationThatStoppedTakingWritesIsForgotten() {
+        settle()
+        model.addStroke(stroke())
+        settle()
+        val destination = Uri.parse("content://test/saved.pdf")
+        model.export(destination)
+        settle()
+        assertEquals(destination, state.draft!!.destination)
+
+        // The provider revoked the grant or deleted the file: the next write
+        // fails, the destination is dropped, and Save asks for a file again.
+        documents.failExports = true
+        model.export(destination)
+        settle()
+
+        assertNull(state.draft!!.destination)
+        assertEquals(listOf(destination), documents.exportedTo)
+        assertTrue(state.message != null)
+        // The clearing is written back: a stale grant cannot resurrect the dead
+        // target on the next restore.
+        assertNull(documents.saved.last().destination)
+    }
     private fun clearModel() = ViewModelStore().apply { put("editor", model) }.clear()
 
     private fun stroke() = InkStroke(listOf(InkPoint(10f, 10f, 0.5f), InkPoint(20f, 20f, 0.5f)), 0, 2f)

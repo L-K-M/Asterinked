@@ -2,7 +2,9 @@ package ch.lkmc.asterinked.ui
 
 import android.graphics.Bitmap
 import android.net.Uri
+import ch.lkmc.asterinked.document.DocumentException
 import ch.lkmc.asterinked.document.DocumentOperations
+import ch.lkmc.asterinked.document.DocumentProblem
 import ch.lkmc.asterinked.document.Draft
 import ch.lkmc.asterinked.document.OpenDocument
 import ch.lkmc.asterinked.document.OpenResult
@@ -49,6 +51,8 @@ internal class FakeDocuments(pageCount: Int) : DocumentOperations {
     val saved = mutableListOf<Draft>()
     val renderFailures = mutableSetOf<Int>()
     var failSaves = false
+    val exportedTo = mutableListOf<Uri>()
+    var failExports = false
     var closed = false
         private set
 
@@ -85,7 +89,11 @@ internal class FakeDocuments(pageCount: Int) : DocumentOperations {
         return openResult ?: throw UnsupportedOperationException()
     }
 
-    override fun export(draft: Draft, destination: Uri) = throw UnsupportedOperationException()
+    override fun export(draft: Draft, destination: Uri) {
+        if (failExports) throw DocumentException(DocumentProblem.DESTINATION_UNWRITABLE)
+        exportedTo += destination
+    }
+
     override fun share(draft: Draft): File = throw UnsupportedOperationException()
     override fun close() {
         closed = true

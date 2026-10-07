@@ -2,10 +2,12 @@ package ch.lkmc.asterinked.ui
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import androidx.lifecycle.ViewModelProvider
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.document.Draft
 import ch.lkmc.asterinked.ink.InkPoint
@@ -110,6 +112,22 @@ class MainActivityChromeTest {
         }
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
             assertTrue(control(settle(controller.get()), R.string.draw_with_finger).isSelected)
+        }
+    }
+
+    @Test fun aRememberedDestinationSkipsThePicker() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            EditorScreens.publish(activity, EditorScreens.editing(destination = Uri.parse("content://test/review.pdf")))
+            val root = settle(activity)
+            val model = ViewModelProvider(activity)[EditorViewModel::class.java]
+            val save = descendants(root).filterIsInstance<Button>().single { it.text == app.getString(R.string.save) }
+
+            save.performClick()
+
+            // The tap writes back to the remembered file instead of opening
+            // the picker — export marks the model busy synchronously.
+            assertTrue(model.state.value!!.busy)
         }
     }
 
