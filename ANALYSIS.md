@@ -29,7 +29,60 @@ resting on screenshots and code reading only). Its line numbers are also
 `d48a41d`; open PRs move lines in InkPageView, EditorViewModel,
 DocumentService and MainActivity, so locate code by function name.
 
-## Continuation pass: six implementations awaiting human merge
+## Integration pass: 2026-10-07, every open PR resolved
+
+All 40 open PRs (#24–#64; #54 was already merged) were reviewed against main
+`2be47a0` and against each other, then merged in dependency order on one
+integration branch, reconciled and verified there: `testDebugUnitTest
+lintDebug assembleDebug` and the PDFium proof (eight fixtures). "Awaiting #N"
+markers in older sections are history; this table is the status.
+
+| PR | Outcome | Why |
+|---|---|---|
+| #25 | Merged | B8 base: store-level set-aside, page clamp, NO_PAGES from the walked tree |
+| #24 | Closed, folded into #25 | Its service and view-model recovery tests were grafted; its missing-`savedInk` tolerance was declined (`savedInk` exists since the first app version) |
+| #26, #27 | Merged | P11 shared multiply state; B19 widths, B15, B20, N2 |
+| #45 | Closed | Subset of #27, no tests, a less accurate gesture comment |
+| #28, #33, #37, #40, #42, #43, #50, #60 | Merged | G5, G9(a), T5, B-session-worker, B-atomic-commit, eraser geometry, B14, B26 |
+| #29 | Merged | U6 document-wide undo |
+| #44 | Closed, folded into #29 | Its delta storage and tests were ported onto #29's chronological history; both rewrote `InkHistory` and could not merge as written |
+| #31 | Merged | U3 base: encapsulated detector, taps routed through the buttons |
+| #32 | Closed, folded into #31 | Its per-fingertip release, batched-sample and cancelled-pointer checks were grafted; two of its cases failed on #31 alone |
+| #30, #59 | Merged, combined | `swatch_edge`: #30's 3:1 rule and day colour, #59's night colour and heavier swatch edge; #59's dark notices drop the night `notice_action` override from #34 |
+| #34, #38 | Merged, combined | Export marks the copy landed (#34) and remembers its destination (#38) in one flow |
+| #35 | Merged | U2/D-preview hover, also reporting a seen pen for #58 |
+| #39 | Closed | Duplicate of #35 with fewer states (no highlighter preview, no side button) and a widened `hoverAt` API |
+| #36, #41, #46, #53, #56, #57, #58, #61, #62, #63, #64 | Merged | V10, D-next, U7/N2, D-loader, B21, B22, U9, U13, U10, B27, D-straight |
+| #47 | Closed | One global last-export URI: Save after opening another PDF would overwrite the previous document's export; tests did not compile; superseded by #38 |
+| #48 | Closed | Did not compile; a five-line star, not the brand mark; superseded by #53 |
+| #49 | Closed | Broke the tool bar layout tests, used the success icon as the toggle, and inverting multiplied highlights misrepresents them |
+| #51 | Closed | Hid the page pill holding its only exit, so focus mode could not be left |
+| #52 | Closed | Unproven against D-flip's acceptance (reduced motion, immediate pen contact); magic numbers |
+| #55 | Closed | The same one-line repair is already on main (`d9a9bef`) |
+
+Reconciled while integrating: #57's two-argument `open` in every test double
+and #40's Robolectric shadow; #50's shared page scale in #35's and #64's page
+mapping; #46's ticking buttons replace #31's extra tick; #46's gesture hint
+persists only when shown, like #62's tool hints; a blank provider display
+name no longer renames a kept draft (#57 follow-up); screenshot renders start
+with the gesture hint seen.
+
+Still open from these PRs: B22's replace prompt runs before the bytes are
+known; D-focus, D-night and D-flip need new designs; device checks for hover,
+palm guard timing, hold-to-straighten dwell and multi-finger tap timing remain
+in section 9. Found while reviewing the combination and deferred as minor:
+a pending message and a pending "PDF saved" in one render show back to back,
+so the first can vanish unseen (#34; needs a notice queue); a save-picker
+grant taken just before a rotation and a failed export is never released
+(#38; keep `unclaimedGrant` in the saved state); the page pill still takes
+taps during its 150 ms fade-out (#36; it was always tappable before). These
+are listed in the Open queue below.
+
+#59 makes notices a dark card in both themes, so #34's night `notice_action`
+(#A00C15, 1.45:1 on #33373F) is dropped; the shared #FFB8BB measures
+7.3:1 against the night card and 8.8:1 against the day one.
+
+## Continuation pass: six implementations (resolved; see Integration pass)
 
 | PR | Branch/head | Coverage | Verification/review boundary |
 |---|---|---|---|
@@ -142,11 +195,11 @@ carry an Effort size: S, M or L.
 
 ---
 
-## Review pass: fourteen implementations awaiting human merge
+## Review pass: fourteen implementations (resolved; see Integration pass)
 
-Implementations of 2026-10-06 review items, each on its own branch and open
-against main. None is merged, so none is in Done; each covered
-entry is marked "(awaiting #N)". "Steady state" means the GLM review rounds
+Snapshot of 2026-10-06: implementations of that review's items, each then
+on its own branch and open against main; each covered entry was marked
+"(awaiting #N)". The Integration pass above records their outcome. "Steady state" means the GLM review rounds
 met the stopping rule (two rounds without important findings); "in review"
 means rounds were still running on 2026-10-07.
 
@@ -209,7 +262,7 @@ trade-offs) and U8 (rest) (text-matched Save copy routing on main).
   is preserved below without re-inspecting those PRs. Application changes
   stay on branches; only this consolidated backlog goes directly to main.
 
-## Retained upstream status: eight implementations awaiting human merge
+## Retained upstream status: eight implementations (resolved; see Integration pass)
 
 The preceding main analysis records eight implementations on separate branches.
 This is its 2026-10-06 snapshot, not a new check of other agents' PRs.
@@ -460,7 +513,7 @@ hardware frame-time/stylus claim follows from these JVM results.
   return the recorded `before` instances and the 201st is unavailable; an erase
   just past the cap never becomes a stroke deletion. Effort: S.
 
-### V-swatch-contrast / V18. Make every enabled swatch boundary discernible (awaiting #30; V18 dark Graphite edge awaiting #59, overlapping)
+### V-swatch-contrast / V18. Make every enabled swatch boundary discernible (done: #30 and #59, combined)
 - **Evidence:** `ui/ChoiceDot.kt:71-73,107-110,134-136` and
   `ui/Components.kt:174-177` use a 1.6:1 threshold versus a 3:1 non-text
   target. Light yellow/pink reach 1.22/1.71; dark graphite/blue/red reach
@@ -528,7 +581,7 @@ hardware frame-time/stylus claim follows from these JVM results.
   / Ctrl+] as additions to #41's destinations after it lands, not a second
   note-navigation model. Its step 2 (overview grid) is in F3 (rest).
 
-### Other implementation branches recorded by main, awaiting merge/status reconciliation
+### Other implementation branches recorded by main (resolved; see Integration pass)
 
 The `829fca1` ANALYSIS additions record two October passes at `d48a41d`
 (post-#23): five branches from SWE-2 Max and seven from Inkling, described as
@@ -577,16 +630,16 @@ eraser work and gesture undo; do not create another overlapping branch.
 
 ## Open queue: priority order
 
-Pick work here after checking the awaiting-merge boundary above. Entries
+Pick work here; the Integration pass above lists what landed. Entries
 with only a risk/hypothesis require proof before a behavior change.
 
 | Rank | Work | Canonical detail |
 |---|---|---|
-| 1 | Draft/export protection: B-share-lifetime, N23, B23, B25, B37, B34, B35; integrate B8/N25, B19, B22, B26 | Section 2; #24/#25 implement recovery, #27 width fixes, #57 same-PDF reopen, #60 highlight taps; N1 remains the separate landed-export contract |
-| 2 | Input/state: B-pen-takeover/N21, B30, B32, B29, B-canceled-navigation, B-multitouch-swipe, B-quick-scale, B-stylus-secondary, B-pending-pdf/N22, B-page-dialog, B12/N32, B-storage-recovery-effect, B39, B38, B42; integrate B21, B27, U9, U10 | Section 2 and 6; tests first, no geometry redesign; N2 awaits #46; B21/B27/U9/U10 await #56/#63/#58/#62 |
-| 3 | Release/privacy obligations: T8, T9, T10, G1, B41; integrate G5; helper errors G10, T11 and B-rc4-import compatibility | Sections 2, 3 and 8; G5 implemented in #28; RC4 failure occurs before export |
-| 4 | Performance: P-prefetch, P-page-tree, P-live-chunks/P10, N29, P14, P16, P17, P5/G6, P6, P8, P20, P25; integrate P11 | Section 4; P9, N28, P19 and P21 need device baselines; P11 awaits #26 |
-| 5 | Writing space/product/accessibility: V16/F3/V9, V24, V17, V10/N34, V25, U5/U8/U4 (remaining), F-presets/N38, F32, F16/N36/N37, F8 (rest), U11, U12, U14, V26, F-accessible-text; N24/N39 and remaining features/UX | Sections 2, 5–7; respect awaiting F6/hover/focus/night/loader/flip/haptic/undo/dark-theme/per-tool/straighten branches |
+| 1 | Draft/export protection: B-share-lifetime, N23, B23, B25, B37, B34 (rest), B35; integration follow-ups: notice queue (#34), `unclaimedGrant` across rotation (#38), B22 prompt before the bytes are known | Section 2; B8/N25, B19, B22, B26 and N1 landed (#25, #27, #57, #60, #34) |
+| 2 | Input/state: B-pen-takeover/N21, B30, B32, B29, B-canceled-navigation, B-multitouch-swipe, B-quick-scale, B-stylus-secondary, B-pending-pdf/N22, B-page-dialog, B12/N32, B39, B38, B42 | Section 2 and 6; tests first, no geometry redesign; N2, B21, B27, U9, U10 and B-storage-recovery-effect landed (#27/#46, #56, #63, #58, #62, #34) |
+| 3 | Release/privacy obligations: T8, T9, T10, G1, B41; helper errors G10, T11 and B-rc4-import compatibility | Sections 2, 3 and 8; G5 landed (#28); RC4 failure occurs before export |
+| 4 | Performance: P-prefetch, P-page-tree, P-live-chunks/P10, N29, P14, P16, P17, P5/G6, P6, P8, P20, P25 | Section 4; P9, N28, P19 and P21 need device baselines; P11 landed (#26) |
+| 5 | Writing space/product/accessibility: V16/F3/V9, V24, V17, V10/N34, V25, U5/U8/U4 (remaining), F-presets/N38, F32, F16/N36/N37, F8 (rest), U11, U12, U14, V26, F-accessible-text; N24/N39 and remaining features/UX | Sections 2, 5–7; integration follow-up: pill taps during its fade-out (#36); F6, hover, loader, haptics, undo, dark theme, per-tool ink and straighten landed; focus, night and flip stay open (#51, #49, #52 closed) |
 | 6 | Exploratory risks and remaining verification, including N26/N28, G12-G14 and T12-T14 | Sections 3, 4, 8–9; R-* and T-keyboard are not confirmed bugs |
 
 The 2026-10-06 review's value-for-effort order: B21 (#56), B22 (#57), U9
@@ -670,7 +723,7 @@ that no single PR shows on its own:
 
 ## 2. Backlog: bugs
 
-### B8 / N25. Recover invalid drafts separately from failed previews (awaiting #24 and #25, overlapping)
+### B8 / N25. Recover invalid drafts separately from failed previews (done: #25 with #24's tests)
 - **Evidence:** Corrupt `draft.json` or a missing private PDF repeats the
   same restore error every launch. `document/DocumentService.kt:64-68` also
   requires rendering before publishing valid ink: a transient failure leaves
@@ -773,7 +826,7 @@ that no single PR shows on its own:
   false, preview is null, and a following addStroke on page 5 is recorded.
 - **Effort:** S
 
-### N1. Report a landed export separately from failed draft storage (awaiting #34)
+### N1. Report a landed export separately from failed draft storage (done: #34)
 - **Evidence:** Documented `EditorViewModel.export` runs `service.export` and
   `service.saveDraft` in one worker block. A failed draft write says "Couldn't
   store this document" and leaves "Unexported notes" even though the PDF landed.
@@ -867,7 +920,7 @@ that no single PR shows on its own:
   empty file is left.
 - **Effort:** M
 
-### B22. Reopening the same PDF discards its editable notes (awaiting #57)
+### B22. Reopening the same PDF discards its editable notes (done: #57)
 - **Why:** Severity high, unverified (UX review). Users return to a document by
   tapping it again in Files or Gmail. Every open imports a new UUID copy and
   saves a fresh Draft (page 0, no ink), and `saveDraft` then deletes every other
@@ -964,7 +1017,7 @@ that no single PR shows on its own:
   within 1 s, relaunch; the note is there.
 - **Effort:** S (step 1), M (step 2)
 
-### B19. Sanitize highlighter width at every boundary (awaiting #27; recorded overlap #45)
+### B19. Sanitize highlighter width at every boundary (done: #27; #45 closed as a subset)
 - **Evidence:** Pen uses finite-positive `InkGeometry.strokeWidth`; highlights
   use raw width in `InkPageView.drawHighlight`/`PdfEngine.highlight`.
   `DocumentStore.kt:127` converts to Float; `PdfEngine.kt:175` rejects
@@ -997,7 +1050,7 @@ that no single PR shows on its own:
   in-memory Infinity-width stroke, once sanitized, is not hit by a distant
   probe. Effort: S.
 - **Scope:** Shared finite-positive policy at decode, draw and export, with
-  explicit highlighter fallback. Coordinate with the awaiting eraser branch.
+  explicit highlighter fallback. The merged eraser (#43) already uses it.
   Main's analysis records #45 decode/export use of `InkGeometry.strokeWidth()`;
   reconcile its fallback and display coverage with #43 instead of recreating
   the same fix. Keep `InkGeometry` algorithm compatibility while integrating.
@@ -1009,7 +1062,7 @@ that no single PR shows on its own:
   require B8 recovery, not a promise of successful restore. Preserve Multiply
   blending and the existing finite-positive fallback; there is no upper clamp.
 
-### B26. A highlighter tap or stationary highlight vanishes from exports in PDFium viewers (awaiting #60)
+### B26. A highlighter tap or stationary highlight vanishes from exports in PDFium viewers (done: #60)
 - **Why:** Severity low, confirmed (lowered from medium: it needs a stationary
   highlighter gesture, which the hint "Drag across text" does not invite). DOWN
   plus UP at one spot records two identical samples (InkPageView.kt:350, :324);
@@ -1042,7 +1095,7 @@ that no single PR shows on its own:
   that no stroked subpath consists only of repeated identical points.
 - **Effort:** S
 
-### B34. A page tree with a wrong /Count puts ink on the wrong page or fails every export (NO_PAGES part awaiting #25)
+### B34. A page tree with a wrong /Count puts ink on the wrong page or fails every export (NO_PAGES part done: #25)
 - **Why:** Severity low, confirmed (bugs-document and general merged; rare
   malformed input, but then ink lands silently on the wrong page). Three notions
   of page index disagree. `inspect` maps `document.pages` (PageIterator walks
@@ -1273,7 +1326,7 @@ that no single PR shows on its own:
   outside the page commits nothing.
 - **Effort:** S
 
-### B21. A resting palm clicks tool bar and page pill buttons while the pen writes (awaiting #56)
+### B21. A resting palm clicks tool bar and page pill buttons while the pen writes (done: #56)
 - **Why:** Severity high, unverified (UX review); reproducible in Robolectric,
   the final feel needs a stylus tablet without firmware palm rejection.
   ViewGroups split motion events (targetSdk >= 11), so while the stylus is down
@@ -1483,7 +1536,7 @@ that no single PR shows on its own:
   busy/export cancellation in `show()` is unchanged and stays N23's scope.
   A page turn also runs `cancelStroke()` (InkPageView.kt:167-168; see B21).
 
-### B27. Tapping a colour, width or tool while writing discards the stroke in progress (awaiting #63)
+### B27. Tapping a colour, width or tool while writing discards the stroke in progress (done: #63)
 - **Why:** Severity low, confirmed. `configure()` and the `tool` setter both
   call `cancelStroke()` (InkPageView.kt:155, :111). Because ViewGroups split
   multi-touch, a second touch on a swatch, width dot, tool segment or the finger
@@ -1576,7 +1629,7 @@ that no single PR shows on its own:
   `show()`, test fallbacks/long translations. Actual PDF text remains the
   separate F-accessible-text boundary.
 
-### N2. Let hidden/disabled shortcut targets decline keys (awaiting #27; recorded overlap #46)
+### N2. Let hidden/disabled shortcut targets decline keys (done: #27 and #46)
 - **Evidence:** Documented Ctrl+S on welcome returned true despite no action;
   disabled/hidden targets swallowed `onKeyShortcut` events.
 - **Scope/status:** #46 returns `super` when no action occurs; verify equivalent
@@ -1586,9 +1639,9 @@ that no single PR shows on its own:
   #27 independently supplies `onKeyShortcut` refusal. Do not add this fix a
   third time; `onKeyDown` page keys remain separate verification.
 
-### B15. Naming slip in export (awaiting #26 and #27, overlapping; recorded #45)
+### B15. Naming slip in export (done: #26 and #27)
 - `stream.setLineJoinStyle(ROUND_CAP)` in `PdfEngine.export` works because
-  both constants are `1`. Explicit `ROUND_JOIN` is recorded on awaiting #45;
+  both constants are `1`. Explicit `ROUND_JOIN` landed with #26/#27 (#45 closed);
   preserve it and verify unchanged PDF geometry/PDFium, not another fix.
   #27 also names the join without changing its numeric value, and so does
   #26 (with P11). Three branches carry the same one-line change.
@@ -1597,7 +1650,7 @@ that no single PR shows on its own:
 - Cancel `zoomAnimator` in `InkPageView.onDetachedFromWindow` (#11's
   double-tap animation keeps invalidating a detached view for ~220 ms).
   This cancellation and the `followFingers` comment correction are recorded
-  on awaiting #45; do not recreate those changes.
+  in #27 (#45 closed); do not recreate those changes.
 - `PdfEngineSecurityTest.deeplyNestedPdf` formats xref offsets with the
   default locale; use `Locale.ROOT`. Check under a non-Latin-digit locale.
 - Second-finger cancellation is already implemented/tested (Done); detach
@@ -1777,10 +1830,11 @@ that no single PR shows on its own:
   (for example a `Channel`/`SharedFlow` or an event queue in the model) so
   state and effects stop mixing. Define unread-message retention before
   choosing transport; rotation must neither duplicate share nor lose unread
-  recovery notices. Coordinate with B-pending-pdf and U8. N1's awaiting #34
-  adds `exported`/`acknowledgeExport`, another manually acknowledged field;
-  current-main B-storage-recovery-effect also couples recovery to English text.
-- **G9(b). All-permissions encryption policy.** G9(a) is awaiting merge above.
+  recovery notices. Coordinate with B-pending-pdf and U8. N1's merged #34
+  adds `exported`/`acknowledgeExport`, another manually acknowledged field.
+  #34 also replaced the English-text match behind B-storage-recovery-effect
+  with a typed `MessageAction`.
+- **G9(b). All-permissions encryption policy.** G9(a) is done (#33).
   For an encrypted source granting every permission, decide whether to strip
   encryption instead of re-locking behind a random unknown owner password.
   This is a product decision, not the confirmed AES downgrade. Proof:
@@ -1897,8 +1951,7 @@ that no single PR shows on its own:
 ## 4. Backlog: performance
 
 Complexity and capacity estimates below are not device measurements.
-P-eraser and P-history are implemented on awaiting branches, not open work;
-P11 awaits #26. The 2026-10-06 review's ms and MB figures are estimates
+P-eraser (#43), P-history (#44, folded into #29) and P11 (#26) are done. The 2026-10-06 review's ms and MB figures are estimates
 unless it says measured.
 
 - **P-prefetch. Skip speculative previews that cannot stay cached.**
@@ -2223,7 +2276,7 @@ unless it says measured.
   cancellation has no ghost tail. Depends on hardware access, P-live-chunks
   and pinned catalog dependencies; no current real-device latency claim.
 - **P11. Export adds a new ExtGState and its own q/Q group for every highlight
-  (awaiting #26).**
+  (done: #26).**
   - **Why:** Severity low, confirmed. `PdfEngine.highlight` creates a fresh
     PDExtendedGraphicsState per highlighter stroke (PdfEngine.kt:174).
     `PDResources.add` reuses a key only when the same COSDictionary instance is
@@ -2437,7 +2490,7 @@ unless it says measured.
 - **F3 (rest). Navigation.** A thumbnail strip (bottom sheet) that marks
   pages carrying ink, and a fit-width mode for landscape tablets. Thumbnails
   reuse #13's renderer at small size on the worker; defer them until the
-  awaiting D-next branch establishes cheap ink-aware navigation. Proof:
+  merged D-next (#41) establishes cheap ink-aware navigation. Proof:
   bounded thumbnail memory, correct ink markers after undo/erase and model-
   routed jumps without losing strokes. Fit-width scope/proof is V16/V9 below.
   - **Overview grid instead of a strip (2026-10-06 review's F3 step 2,
@@ -2468,7 +2521,7 @@ unless it says measured.
     positions; tapping cell 7 calls `goToPage(6)` and dismisses; a
     `pagesWithUnexportedInk` unit test; a UiScreenshotTest "overview" shot;
     device: memory stays bounded while scrolling a 300-page overview. Effort: M.
-- **F6 / D-2. Quick re-save (implementations awaiting #38/#47).** Remember
+- **F6 / D-2. Quick re-save (done: #38; #47 closed).** Remember
   the last export URI (take a persistable permission from `CreateDocument`)
   and offer "Save" next to "Save as…";
   original overwrite only as an explicit option with write access. Proof:
@@ -2690,7 +2743,7 @@ unless it says measured.
     overlay is drawn at the rect; an export test shows that search state does
     not change the exported bytes; device: search latency on a 300-page PDF.
     Effort: L.
-- **F-presets / N38 / U13. Independent pen/highlighter settings (awaiting
+- **F-presets / N38 / U13. Independent pen/highlighter settings (done:
   #61).** Confirmed
   `ui/MainActivity.kt:127-130,454-482` shares colour/width indices across
   different palettes and physical widths. Split per-tool preferences and
@@ -3250,7 +3303,7 @@ unless it says measured.
     at w411dp the labelled button is still shown; regenerate
     editor-narrow-phone.png. Effort: M. F25 makes the heading a menu button
     without adding width.
-- **V10. Keep the page pill off writing starts (writing auto-hide awaiting
+- **V10. Keep the page pill off writing starts (writing auto-hide done:
   #36).** Narrow/small screenshots cover bottom text; existing strokes pass
   underneath but new taps cannot.
   Corrected for orientation (2026-10-06 review): since #23 the pill sits at
@@ -3425,7 +3478,7 @@ unless it says measured.
   shows once, no repeat on reopen/rotation, accessible and theme-aware. Depends
   on B12's truthful instructions; avoid a permanent hint row.
   The first-editor mode hint/`hintedGestures` preference already has an
-  implementation awaiting #46. Remaining coach marks should point at gestures
+  implementation in #46 (done). Remaining coach marks should point at gestures
   and expose help; reconcile the guide with that hint rather than duplicating it.
   The tool-hint part (hints repeating on every switch and covering the page)
   is U10 (#62); U9 (#58) adds the no-stylus explanation. V6 (rest) keeps only
@@ -3436,16 +3489,16 @@ unless it says measured.
   change to second-finger cancellation (already Done). Proof: fingers never
   commit after takeover, intentional finger mode remains reachable; physical
   palm/stylus verification. Depends on B-pen-takeover and V6.
-- **U2. Hover cursor (awaiting #35 and #39, overlapping)** is consolidated
+- **U2. Hover cursor (done: #35; #39 closed as a duplicate)** is consolidated
   into D-preview below.
 - **N35 (finger rest). Make eraser size discoverable without hover.**
-  Awaiting #39 supplies the pen-hover affordance; finger erasing still reveals
+  #35 supplies the pen-hover affordance; finger erasing still reveals
   its ring only on contact. Scope a labelled current-size preview in the
   existing secondary eraser control, no invented finger-hover event or new row.
   Proof: effective size is understandable at current zoom in both themes and
   at large text; selection/cancel creates no ink. Depends on shared eraser
   radius policy and UI measurement; device usability remains unproved.
-- **U3. Gesture shortcuts (awaiting #31 and #32, overlapping).** Two-finger tap
+- **U3. Gesture shortcuts (done: #31 with #32's checks).** Two-finger tap
   = undo, three-finger tap = redo.
   Scope a completed short tap recognizer, never early edits. Proof: no undo
   during pinch/pan, canceled contacts or palm suppression; intentional taps
@@ -3458,7 +3511,7 @@ unless it says measured.
   #31 is a second implementation of the same recognizer (two-finger tap undo,
   three-finger tap redo); integrate one and carry the other's regressions.
   B-quick-scale, B32 and F23 add tap/gesture paths that must not fire it.
-- **U4. Export feedback (Open awaiting #34; Share remains open).** After saving,
+- **U4. Export feedback (Open done: #34; Share remains open).** After saving,
   "Open" and "Share" actions on the "PDF saved" notice use the existing U8 slot.
   Scope a compact follow-up
   choice if both are needed. Proof: correct export URI, permission failures
@@ -3466,13 +3519,13 @@ unless it says measured.
   Recorded Open uses ACTION_VIEW/read grant and excludes Asterinked from the
   chooser. Existing Share grants the draft-copy URI, not automatically the
   chosen export destination; verify R-export-destination-identity before wiring it.
-- **U6. Undo scope (awaiting #29).** Undo is per page; after turning the page
+- **U6. Undo scope (done: #29, on #44's storage).** Undo is per page; after turning the page
   the last edit
   elsewhere is out of reach. Consider global chronological undo that jumps
   back, or first label where the next undo applies. Choose/document the scope
   before changing behavior. Proof: undo targets the advertised page across
-  turns and restored sessions. Depends on awaiting P-history; retain per-page
-  semantics until that separate product decision.
+  turns and restored sessions. Landed with P-history; undo is now one
+  chronological document history.
   #29 implements document-wide chronological undo that turns to the edited
   page (with T3's undo part); merging it is that product decision. It and
   #44 (P-history) both rewrite `InkHistory`, so integrate one onto the other.
@@ -3493,14 +3546,14 @@ unless it says measured.
     removed: after idling 600 ms, `pageAt(view centre)` lies within that
     stroke's bounds plus or minus 40 units; removing a visible stroke does not
     pan.
-- **U7 (rest). Haptics (page/undo/redo implementation awaiting #46).** Tool,
+- **U7 (rest). Haptics (page/undo/redo done: #46).** Tool,
   colour, width and finger-mode changes tick (#23). Recorded #46 adds
   `HapticFeedbackConstants.CLOCK_TICK` on valid turns/undo/redo, invalid turns
   silent. Preserve it; remaining verification covers short successful feedback,
   respect opt-out/system settings. Proof: no tick on disabled/failed actions,
   service accessibility remains independent. Depends on device evaluation.
 - **U9. Without a stylus, finger or mouse input on the page does nothing and
-  nothing explains why (awaiting #58).**
+  nothing explains why (done: #58).**
   - **Why:** Severity high, unverified (UX review). The first run defaults to
     InputMode.PEN (MainActivity.kt:129). On a phone or Chromebook without a
     stylus, a finger or mouse (TOOL_TYPE_MOUSE) drag on the page shifts it a few
@@ -3540,7 +3593,7 @@ unless it says measured.
     stylus gives TOUCH, a stylus gives PEN, a stored pref always wins. Device: a
     phone without a pen and a Chromebook with a mouse. **Effort:** M.
 - **U10. Notices swallow the first pen stroke, and tool hints repeat on every
-  switch (awaiting #62).**
+  switch (done: #62).**
   - **Why:** Severity medium, unverified (visual, UX and aesthetics reviews
     merged). Choosing Highlighter or Eraser, or toggling finger drawing, shows a
     hint notice across the bottom of the page for at least 3 s, longer with
@@ -3711,7 +3764,7 @@ unless it says measured.
   V18 (swatch edge), V19-V22 (dialogs, field, disabled thumb), V31 (eraser
   ring), V33 (splash) and V35 (system contrast setting); T4 lists the
   screenshot states that would show them.
-- **V36. Dark-theme notices are light cards over the always-white page (awaiting
+- **V36. Dark-theme notices are light cards over the always-white page (done:
   #59).** (The 2026-10-06 review's V17.)
   - **Why:** Severity medium, unverified (aesthetics review, editor-error.png).
     values-night flips inverse_surface to #E9EBEF, like a snackbar, but the
@@ -3743,7 +3796,7 @@ unless it says measured.
     notice onto a white bitmap; a card pixel beside the icon has relative
     luminance below 0.1, and the stroke pixel at the card edge differs from
     white. **Effort:** S.
-- **V19. Dialog buttons inherit the platform's 88dp minimum width (awaiting
+- **V19. Dialog buttons inherit the platform's 88dp minimum width (done:
   #59).**
   - **Why:** Severity low, unverified (visual review). DialogButton's parent,
     Widget.Material.Button.Borderless.Colored, sets minWidth 88dp. In
@@ -3762,7 +3815,7 @@ unless it says measured.
     right edge differs by at most 8dp between the page dialog and the replace
     dialog. Regenerate dialog-page.png and dialog-replace.png. **Effort:** S.
 - **V20. Positive dialog buttons are brand red everywhere, so the destructive
-  one gets no distinct signal (awaiting #59).**
+  one gets no distinct signal (done: #59).**
   - **Why:** Severity low, unverified (aesthetics review). DialogButton.Positive
     applies accent to every positive button (styles.xml:32, 51-53): "Go" (plain
     navigation) and "Open another" (throws away an unexported draft) look
@@ -3786,7 +3839,7 @@ unless it says measured.
     prompt whose positive colour is `getColor(R.color.accent)`. Regenerate
     dialog-page, dialog-replace and dialog-replace-dark. **Effort:** S.
 - **V21. The Go to page field looks like an error while its value is valid
-  (awaiting #59).**
+  (done: #59).**
   - **Why:** Severity low, unverified (visual and aesthetics reviews merged;
     dialog-page.png). The dialog opens with a valid "3" focused and selected:
     focus draws a 2dp accent (#D3111C) stroke, the selection highlight comes
@@ -3818,7 +3871,7 @@ unless it says measured.
     text isShown. `total.top + total.baseline == field.top + field.baseline`
     within 1px. Regenerate dialog-page.png: the selected "3" sits on a grey
     block, not a pink one. **Effort:** S.
-- **V22. The disabled tool thumb renders darker than its track (awaiting #59).**
+- **V22. The disabled tool thumb renders darker than its track (done: #59).**
   - **Why:** Severity low, unverified (visual review, editor-busy.png). While
     busy the selected Pen thumb renders as (221,222,226) inside a (244,245,249)
     track, darker than its surroundings, so it reads as a pressed hollow rather
@@ -4096,16 +4149,15 @@ unless it says measured.
 ## 7. Delightful and quirky ideas
 
 Proposals, not confirmed defects or measured demand. Earlier seeds remain
-below with descriptive stable IDs. D-next is already awaiting merge above;
-U2 is the same item as D-preview. Basic hover, loader, night, focus and flip
-implementations are recorded on awaiting branches above; their acceptance
-and remaining slices stay here. Do not start duplicate base implementations.
+below with descriptive stable IDs. D-next is done (#41);
+U2 is the same item as D-preview. Hover, the loading
+loader and the straight-line slice landed (#35, #53, #64); night, focus and
+flip were closed (#49, #51, #52). Remaining acceptance and slices stay here.
 The 2026-10-06 review's D1 (directional page slide) and D2 (hold to snap)
 are merged into D-flip and D-straight, its F21 (lasso plan) into D-lasso;
-its new ideas are D6-D9 at the end of this section. Hover now also awaits
-#35, and the straight-line slice of D-straight awaits #64.
+its new ideas are D6-D9 at the end of this section.
 
-### D-focus / D-4. Focus mode with a discoverable escape (base awaiting #51)
+### D-focus / D-4. Focus mode with a discoverable escape (open; #51 closed without an escape)
 - **Evidence:** V16's measured compact writing space; original hide-chrome seed.
 - **Scope:** Deliberate toggle hides top/bottom chrome; retain one accessible
   48dp escape, stable paper mapping and Back-to-exit. Left/right edge taps
@@ -4120,7 +4172,7 @@ its new ideas are D6-D9 at the end of this section. Hover now also awaits
   policy on device; depends on R-rtl-swipe and existing focus state, not a new
   independently implemented mode. #51's base long-press Fit is still unmerged.
 
-### D-preview / U2 / N35. Hover nib and eraser preview (awaiting #39 and #35, overlapping)
+### D-preview / U2 / N35. Hover nib and eraser preview (done: #35; #39 closed)
 - **Evidence:** Hover-capable pens can report `onHoverEvent`; no device proof yet.
 - **Scope:** Lightweight ring at transformed real hover position, current
   colour/width or eraser radius; never commit points. Clear on exit/page/detach.
@@ -4142,7 +4194,7 @@ its new ideas are D6-D9 at the end of this section. Hover now also awaits
   before gating. Test: a mouse button event while hovering leaves the ring
   unchanged, a stylus button event updates it.
 
-### D-straight / D-shape. QuickShape / hold-to-straighten (line slice awaiting #64)
+### D-straight / D-shape. QuickShape / hold-to-straighten (line slice done: #64)
 - **Evidence:** Original line-snap seed; highlighter is the narrower first slice.
 - **#64 (line slice):** resting the pen 600 ms after at least 24dp of travel
   straightens the stroke from its start; moving then drags the end; works
@@ -4282,10 +4334,10 @@ its new ideas are D6-D9 at the end of this section. Hover now also awaits
 - **Proof:** Last-note erase/undo updates list; repeat export creates exactly
   one summary and source-page/rotation targeting stays unchanged.
 - **Depends:** D-next's ink-page derivation and document-service append support.
-  D-next-note is the source alias for both this summary and awaiting #41's
+  D-next-note is the source alias for both this summary and #41's
   navigation; the summary is not implemented merely because navigation is.
 
-### D-flip / D-5 / N42. Small page-turn animation (base awaiting #52)
+### D-flip / D-5 / N42. Small page-turn animation (#52 closed: unproven)
 - **Evidence:** Original micro-animation seed; no measured navigation benefit.
 - **Scope:** Brief cached-preview transition, disabled for reduced motion;
   pen contact ends it immediately and never animates the input transform.
@@ -4323,7 +4375,7 @@ its new ideas are D6-D9 at the end of this section. Hover now also awaits
   with highlights and watch for jank or wrong highlights during the fade.
   Effort: S.
 
-### D-night / D-3. Night reading with honest export (base awaiting #49)
+### D-night / D-3. Night reading with honest export (#49 closed: failed layout)
 - **Evidence:** Dark chrome exists but PDF paper remains original; original seed.
 - **Scope:** Reversible page-display/inverting colour matrix, contrast-adjusted
   displayed ink only; clearly state exports retain original colours.
@@ -4413,7 +4465,7 @@ its new ideas are D6-D9 at the end of this section. Hover now also awaits
 - **Depends:** B-stylus-secondary, B-pen-takeover, rendered eraser and grouped
   history transactions. Resolve device event behavior before implementation.
 
-### D-loader / D-1 / N41. Draw the brand asterisk with ink (bases awaiting #48/#53)
+### D-loader / D-1 / N41. Draw the brand asterisk with ink (loading done: #53; #48 closed)
 - **Evidence:** Original welcome/loading seed; the red asterisk and pressure
   taper already define the identity, animation benefit is unmeasured.
 - **Scope:** Cached asterisk strokes reveal in sequence on welcome/loading;
@@ -4583,7 +4635,7 @@ items from the 2026-10-06 review; the refuted-claims list closes this section.
 - **T2.** `EditorViewModelPagingTest`: pin the prefetch order (previous page
   before next page, so the next page survives a one-preview cache; deferred
   from #13's review), for example with a size-limited fake cache.
-- **T3, awaiting #44 and #29 (undo part), overlapping.** Model-level
+- **T3, done: #29 and #44 (undo part), combined.** Model-level
   add/erase/undo/redo coverage now verifies
   dirty flags, page isolation, replacement, autosave, ordering and identity.
   Keep it when integrating history/eraser; do not add duplicate implementation tests.
@@ -4679,7 +4731,7 @@ items from the 2026-10-06 review; the refuted-claims list closes this section.
   to add again. Test exact modifier combinations, unintended extra modifiers,
   physical Enter, IME Go, invalid destinations, cancellation and dialog focus.
   Robolectric key tests plus physical keyboard/IME check; coordinate with
-  B-page-dialog and awaiting D-next, preserve ordinary text-entry behavior.
+  B-page-dialog and D-next (#41), preserve ordinary text-entry behavior.
   Arrow-key page navigation from the original F8 proposal remains unfinished;
   define focus/modifier behavior before adding it. #41 covers IME Go and invalid
   destinations, so reuse those tests rather than duplicating them.
@@ -4876,7 +4928,7 @@ items from the 2026-10-06 review; the refuted-claims list closes this section.
   `MainActivity.kt:276-299,558-559` leaves counter width unrestricted. Measure
   `9999 / 10000` at 200% text alongside three 48dp actions, RTL and insets;
   if overlap occurs, bound visual width while retaining accessible full position.
-- **R-page-counter-label, addressed by awaiting #41.** Baseline counter has
+- **R-page-counter-label, addressed by #41 (done).** Baseline counter has
   only a position description/tooltip. #41 supplies a button role and explicit
   navigation-purpose description, verified structurally. Real TalkBack activation
   remains a device check, not further unimplemented UI work.
@@ -5035,7 +5087,35 @@ was established by the October review or by branch JVM/structural benchmarks:
 
 | ID | What | Where |
 |---|---|---|
-| B-notice-wrap | Notice action layout uses framework WRAP_CONTENT constants and compiles | Main `d9a9bef`; equivalent open #55 / `aa36354` |
+| B-notice-wrap | Notice action layout uses framework WRAP_CONTENT constants and compiles | Main `d9a9bef`; #55 closed as a duplicate / `aa36354` |
+| B8, N25 | A broken draft is set aside once; read and inspection failures keep it; a failed preview restores ink and retries | #25, tests from #24 |
+| B15, B19, B20 (rest), P11 | Named round join; finite widths at decode, draw and export; detach cancels zoom; one multiply state per page | #26, #27 |
+| B14 | Page transform computed synchronously before input | #50 |
+| B21 | A resting palm on the bars no longer clicks them while the pen writes | #56 |
+| B22 | Reopening the same PDF keeps its draft, page and history | #57 |
+| B26 | A highlighter tap survives export in PDFium viewers | #60 |
+| B27 | Settings changed mid-stroke apply from the next stroke | #63 |
+| B34 (NO_PAGES) | Pages counted from the walked tree | #25 |
+| B-session-worker | Document work serialized across editor lifetimes | #40 |
+| B-atomic-commit | Checked draft commit before pruning sources | #42 |
+| B-eraser-geometry, B-eraser-sweep, P-eraser, N27 | Eraser hits rendered, swept geometry | #43 |
+| B-storage-recovery-effect, N1, U4 (Open), U8 (rest) | Typed notice actions, 48dp action, landed export reported apart from draft failure, Open after save | #34 |
+| G5 | Data extraction rules with cloud backup off | #28 |
+| G9(a) | AES strength kept without top-level /Length | #33 |
+| F6, D-2 | Save writes back to the remembered destination | #38 |
+| U2, D-preview, N35 (pen) | Hover ring, highlighter preview and eraser ring | #35 |
+| U3 | Two-finger undo, three-finger redo | #31, checks from #32 |
+| U6, P-history, T3 | One chronological undo history stored as deltas | #29, #44 |
+| U7 (rest), N2 | Page turn and undo ticks, one-time gesture hint, unused keys pass on | #46, #27 |
+| U9 | Finger drawing first without a stylus | #58 |
+| U10 | The pen writes through notices; tool hints show twice | #62 |
+| U13, F-presets (per tool) | Pen and highlighter keep their own colour and width | #61 |
+| V10 (writing) | The page pill steps aside while writing | #36 |
+| V-swatch-contrast, V18, V19–V22, V36 | Swatch edges at 3:1, dark notices, dialog buttons, page field, disabled thumb | #30, #59 |
+| D-next, F3 (note navigation), N33, R-page-counter-label | Jump to previous/next page with notes | #41 |
+| D-straight (line slice) | Hold to straighten | #64 |
+| D-loader (loading), N41 (loading) | The loading screen draws the asterisk | #53 |
+| T5 | Restore/open ordering test without sleeps | #37 |
 | B1 | Owner-restricted encrypted PDFs open and keep restrictions on export | #12 |
 | B2 (message) | Clear message for password-protected PDFs | #12 |
 | B3 | Plain-language errors instead of exception text | #12 |
@@ -5077,7 +5157,7 @@ work remains an audit of existing chrome, separate from page-display inversion.
 
 | Retained IDs | Canonical entry/status |
 |---|---|
-| N1 | Export outcome versus draft failure; implementation awaiting #34 |
+| N1 | Export outcome versus draft failure; done in #34 |
 | N2 | Hidden/disabled key consumption; #27 and recorded #46 overlap; T-keyboard remains |
 | N21 | B-pen-takeover: margin contact must not falsely latch writing ownership |
 | N22 | B-pending-pdf: confirmation must resolve latest incoming URI, plus dismissal processing |
@@ -5085,25 +5165,25 @@ work remains an audit of existing chrome, separate from page-display inversion.
 | N24 | Persist viewport across rotation with document/page identity |
 | N25 | B8/#24: missing savedInk preserves notes as unexported; historical-schema claim unproved |
 | N26 | Near-fit motion risk; exact-fit 12dp wiggle claim refuted by clamp math |
-| N27 | P-eraser/B-eraser-geometry/B-eraser-sweep; implementation awaiting #43 |
+| N27 | P-eraser/B-eraser-geometry/B-eraser-sweep; done in #43 |
 | N28 | Hardware ink-layer raster tradeoff; physical proof before caching changes |
 | N29 | P-live-chunks/P10: sample-tail allocation, profile before optimization |
 | N32 | B12: localized page-aware tool/mode description |
-| N33, D-next-note | D-next/F3 navigation awaiting #41; D-summary remains a separate export feature |
+| N33, D-next-note | D-next/F3 navigation done in #41; D-summary remains a separate export feature |
 | N34 | Automatic temporary chrome fade while writing; share V10/D-focus state |
-| N35 | D-preview/U2 pen hover awaiting #39; finger-size affordance remains open |
+| N35 | D-preview/U2 pen hover done in #35 (#39 closed); finger-size affordance remains open |
 | N36, N37 | F16 bookmarks/text search through document services |
 | N38 | F-presets per-InkKind preferences, foundation for D-palette |
 | N39 | Transient zoom percentage/quick defined 100% reset |
 | N40 | D-replay schema timing; coordinate G6/P5/N25 |
-| N41, D-1 | D-loader: loading awaiting #53, welcome awaiting #48; pressure-taper polish open |
-| N42, D-5 | D-flip: base fade awaiting #52; translate/reduced-motion proof retained |
+| N41, D-1 | D-loader: loading done in #53; welcome stays static (#48 closed); pressure-taper polish open |
+| N42, D-5 | D-flip: #52 closed; translate/reduced-motion proof retained |
 | N44 | D-eyedropper: preview-Bitmap sampling, long-press swatch seed |
 | N45 | D-stamps: verify glyph-rendering route before selecting over vector ink |
 | N46, D-scribble-erase | D-scribble: finished-stroke tail-analysis hook |
-| D-2 | F6: overlapping quick-save implementations awaiting #38/#47 |
-| D-3 | D-night display transform awaiting #49; exported semantics remain original |
-| D-4 | D-focus base awaiting #51; safe escape/input acceptance retained |
+| D-2 | F6: quick save done in #38; #47 closed |
+| D-3 | D-night display transform open (#49 closed); exported semantics remain original |
+| D-4 | D-focus open (#51 closed); safe escape/input acceptance retained |
 | D-shape | D-straight QuickShape, distinct from F14 pressure curve |
 | D-snap-highlight | D-text-snap glyph-box highlighting |
 | D-margin-mag | D-magnifier, dependent on P8 sharp zoom |

@@ -15,6 +15,9 @@
     <color name="on_surface_disabled">#611B1F27</color>
     <color name="outline">#C3C9D3</color>
     <color name="outline_variant">#E0E3E9</color>
+    <!-- Edge of an ink swatch that blends into the bar (see ChoiceDot): at
+         least 3:1 against it, as a control boundary needs. -->
+    <color name="swatch_edge">@color/on_surface_variant</color>
     <color name="ripple">#1F1B1F27</color>
     <color name="shadow">#331B1F27</color>
 
@@ -27,9 +30,14 @@
     <color name="accent_container">#FDE7E8</color>
     <color name="on_accent_container">#A00C15</color>
 
-    <!-- Notices use the inverse surface, like a snackbar. -->
+    <!-- Notices are a dark card in both themes: they float over the bottom of
+         the always-white page, where a light card would vanish. At night a
+         hairline edge separates the card from the dark canvas. -->
     <color name="inverse_surface">#262A33</color>
     <color name="inverse_on_surface">#F2F3F6</color>
     <color name="notice_success">#7DDA95</color>
     <color name="notice_error">#FF9298</color>
+    <!-- A notice action keeps the brand red, softened to read on the dark bar. -->
+    <color name="notice_action">#FFB8BB</color>
+    <color name="notice_edge">#00000000</color>
 </resources>

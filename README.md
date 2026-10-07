@@ -10,18 +10,28 @@ Pen-based PDF annotation for Android 10 and newer.
 1. **Open PDF** through Android's document picker, or open or share a PDF to
    Asterinked from another app (Files, email, a browser download).
 2. Write with a stylus. Pressure changes line width; fingers pan and pinch to zoom.
-   Pick ink colour and pen width in the tool bar at the bottom; they stay as you
-   left them.
+   Rest the pen still at the end of a stroke to straighten it into a line;
+   keep it down and move to place the line's end. Short strokes, and loops that
+   end near where they started, stay as drawn.
+   A stylus that hovers previews where the nib will land: a ring for the pen
+   and the eraser, a tinted dot for the highlighter.
+   Pick ink colour and pen width in the tool bar at the bottom; the pen and the
+   highlighter each keep their own, as you left them.
 3. Switch between pen, highlighter and eraser in the tool bar. Highlights
    multiply with the page, so the text stays readable on screen and in the
    export. The eraser removes whole strokes; a stylus side button erases too.
-   Turn on the hand icon to write with a finger. Undo and redo sit at the left
-   of the tool bar.
-4. Change pages with the arrows on the page pill (tap the page number to jump),
-   then **Save copy** to export the whole document, or tap the share icon to send
-   an annotated copy straight to another app. Sharing does not mark notes as
-   exported. With a keyboard: Ctrl+Z, Ctrl+Shift+Z, Ctrl+S, Ctrl+O, Page Up
-   and Page Down.
+   Turn on the hand icon to write with a finger; without a stylus it starts on.
+   Undo and redo sit at the left of the tool bar; undo reaches your last edit on
+   any page and turns back to it. A two-finger tap on the page undoes, a
+   three-finger tap redoes.
+4. Change pages with the arrows on the page pill, which steps aside while you
+   write and returns after a short pause; tap the page number to jump to a page
+   or to the previous or next page with notes. **Save copy** exports the whole
+   document; once it has a file, **Save** writes back to it, and a long press
+   saves a copy elsewhere. After saving, **Open** shows the copy in your PDF
+   viewer. The share icon sends an annotated copy straight to another app;
+   sharing does not mark notes as exported. With a keyboard: Ctrl+Z,
+   Ctrl+Shift+Z, Ctrl+S, Ctrl+O, Page Up and Page Down.
 
 The app follows the system's dark theme and text size; the PDF page stays white.
 
@@ -31,8 +41,9 @@ accumulate duplicate ink. The imported file stays untouched unless you explicitl
 choose it as an export destination through a document provider.
 
 The current PDF and completed strokes are stored privately on the device and
-restored after reopening. Opening another PDF replaces that draft; export notes
-you want to keep first. Drafts are not cloud-synced or included in Android backups.
+restored after reopening. Opening the same PDF again keeps its notes; opening
+another PDF replaces that draft, so export notes you want to keep first. Cloud backups are disabled. Some Android devices may
+transfer the draft and pen settings to a new phone.
 
 ## Build
 

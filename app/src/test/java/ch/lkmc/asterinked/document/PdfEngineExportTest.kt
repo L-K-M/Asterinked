@@ -4,6 +4,8 @@ import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.cos.COSArray
+import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
@@ -228,6 +230,50 @@ class PdfEngineExportTest {
         }
     }
 
+    // Down and up at one spot gives two equal samples. A path that only repeats
+    // its point paints nothing in PDFium (Chrome, Android viewers), so the
+    // tap must be one zero-length line.
+    @Test
+    fun export_aHighlighterTapIsOneZeroLengthLine() {
+        val source = sourcePdf()
+        val dest = tmp("highlight-tap")
+        val tap = InkPoint(120f, 200f, 1f)
+        engine.export(source, dest, mapOf(0 to listOf(InkStroke(listOf(tap, tap), 0xFFFFE45C.toInt(), 12f, InkKind.HIGHLIGHTER))))
+
+        val contents = contentsOf(dest, 0)
+        assertEquals(1, countOf(contents, " m\n"))
+        assertEquals("One lineTo, not a repeated point", 1, countOf(contents, " l\n"))
+        val ends = Regex("(\\S+) (\\S+) [ml]\n").findAll(contents).map { it.groupValues[1] to it.groupValues[2] }.toList()
+        assertEquals("The line returns to its start", ends[0], ends[1])
+    }
+
+    @Test
+    fun export_highlightsShareOneMultiplyState() {
+        val source = sourcePdf()
+        val dest = tmp("highlights")
+        val markers = List(3) { line ->
+            InkStroke(listOf(InkPoint(80f, 90f + line * 20f, 1f), InkPoint(300f, 90f + line * 20f, 1f)), 0xFFFFE45C.toInt(), 12f, InkKind.HIGHLIGHTER)
+        }
+        engine.export(source, dest, mapOf(0 to markers))
+
+        assertEquals("Three highlights are stroked", 3, countOf(contentsOf(dest, 0), " gs"))
+        PDDocument.load(dest).use { doc ->
+            assertEquals("One graphics state serves every highlight", 1, doc.getPage(0).resources.extGStateNames.count())
+        }
+    }
+
+    @Test
+    fun export_penOnlyPageAddsNoGraphicsState() {
+        val source = sourcePdf()
+        val dest = tmp("pen-only")
+        engine.export(source, dest, mapOf(0 to listOf(stroke(80f, 90f, 300f, 90f))))
+
+        assertEquals("Pen ink needs no graphics state", 0, countOf(contentsOf(dest, 0), " gs"))
+        PDDocument.load(dest).use { doc ->
+            assertEquals(0, doc.getPage(0).resources.extGStateNames.count())
+        }
+    }
+
     @Test
     fun export_highlightsSitUnderPenInkWhateverTheirOrder() {
         val source = sourcePdf()
@@ -239,6 +285,27 @@ class PdfEngineExportTest {
         // The editor draws highlights under all pen ink, so the export must too.
         val contents = contentsOf(dest, 0)
         assertTrue("Highlight drawn before pen ink", contents.indexOf(" gs") in 0 until contents.indexOf("1 0 0 RG"))
+    }
+
+    // /Count claims a page the tree does not hold; the page list is what the
+    // editor shows, so an empty one must be refused rather than opened.
+    @Test
+    fun inspect_refusesAPageTreeWithoutPages() {
+        val source = tmp("no-kids")
+        PDDocument().use { doc ->
+            doc.addPage(PDPage())
+            doc.documentCatalog.cosObject.getCOSDictionary(COSName.PAGES).setItem(COSName.KIDS, COSArray())
+            doc.save(source)
+        }
+
+        val problem = try {
+            engine.inspect(source)
+            null
+        } catch (error: DocumentException) {
+            error.problem
+        }
+
+        assertEquals(DocumentProblem.NO_PAGES, problem)
     }
 
     @Test

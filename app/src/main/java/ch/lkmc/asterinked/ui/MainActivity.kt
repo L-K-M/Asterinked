@@ -17,12 +17,15 @@ import android.transition.Fade
 import android.transition.TransitionManager
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.KeyboardShortcutGroup
 import android.view.KeyboardShortcutInfo
 import android.view.Menu
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -41,12 +44,14 @@ import androidx.core.content.edit
 import androidx.core.graphics.Insets
 import androidx.core.os.BundleCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.core.view.updatePaddingRelative
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.ink.InkKind
 import java.io.File
+import java.util.EnumMap
 
 /*
  * The editor is one screen in three states (welcome, loading, editing):
@@ -71,6 +76,7 @@ internal class MainActivity : ComponentActivity() {
     private val model: EditorViewModel by viewModels()
     private val settings by lazy { getSharedPreferences(SETTINGS, MODE_PRIVATE) }
     private val ui by lazy { Components(this) }
+    private val palmGuard = PalmGuard()
     private lateinit var root: ViewGroup
     private lateinit var topBar: View
     private lateinit var title: TextView
@@ -99,21 +105,58 @@ internal class MainActivity : ComponentActivity() {
     private var screen: Screen? = null
     private var systemBars = Insets.NONE
     private var mode = InputMode.PEN
-    private var colorIndex = DEFAULT_COLOR
-    private var widthIndex = DEFAULT_WIDTH
     private var kind = InkKind.PEN
+    // Each ink kind keeps its own colour and width, so a graphite pen and a
+    // yellow highlighter stay as they are when switching between them.
+    private val colorIndices = EnumMap<InkKind, Int>(InkKind::class.java)
+    private val widthIndices = EnumMap<InkKind, Int>(InkKind::class.java)
+    private var colorIndex: Int
+        get() = colorIndices.getValue(kind)
+        set(value) { colorIndices[kind] = value }
+    private var widthIndex: Int
+        get() = widthIndices.getValue(kind)
+        set(value) { widthIndices[kind] = value }
     private var tool = InkTool.PEN
+    // A pen that ever touched or hovered over the page (kept across launches)
+    // means panning with a finger is deliberate. The finger hint shows once per
+    // session at most.
+    private var stylusSeen = false
+    private var fingerHintShown = false
+    // Someone who ever used the hand button knows it; also kept across launches.
+    private var handButtonUsed = false
     // A PDF handed over by another app, waiting until the editor is idle so the
     // unsaved-notes check sees the restored draft.
     private var incoming: Uri? = null
     private var confirming: AlertDialog? = null
     private var pageDialog: AlertDialog? = null
+    private var lastDestination: Uri? = null
+
+    // A grant taken for a file whose export then failed is not tracked by
+    // lastDestination; hold it until the outcome is known so it can be given back.
+    private var unclaimedGrant: Uri? = null
+    private var pillHidden = false
+    private var shownPageKey: String? = null
+    private val showPill = Runnable { showPagePill() }
+    private var pageDialogSource: File? = null
 
     private val openPdf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(model::open)
     }
     private val savePdf = registerForActivityResult(ActivityResultContracts.CreateDocument(PDF_MIME)) { uri ->
-        uri?.let(model::export)
+        uri?.let {
+            // The grant dies with the process unless the provider lets us keep it;
+            // only a kept grant earns the draft its remembered destination.
+            try {
+                contentResolver.takePersistableUriPermission(it,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            } catch (_: SecurityException) {
+                // Some providers persist a subset of the flags; write is the
+                // one Save needs, so keep at least that when possible.
+                runCatching { contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+            }
+            unclaimedGrant = it
+            model.export(it)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -124,17 +167,32 @@ internal class MainActivity : ComponentActivity() {
         window.isNavigationBarContrastEnforced = false
         super.onCreate(savedInstanceState)
         // Pen settings persist across launches, not only across recreation.
-        colorIndex = settings.getInt(COLOR_KEY, DEFAULT_COLOR).coerceIn(COLORS.indices)
-        widthIndex = settings.getInt(WIDTH_KEY, DEFAULT_WIDTH).coerceIn(WIDTHS.indices)
-        mode = InputMode.entries.firstOrNull { it.name == settings.getString(MODE_KEY, null) } ?: InputMode.PEN
+        // Both tools shared the pen's keys before; the others start from them once.
+        val sharedColor = settings.getInt(COLOR_KEY, DEFAULT_COLOR)
+        val sharedWidth = settings.getInt(WIDTH_KEY, DEFAULT_WIDTH)
+        for (kind in InkKind.entries) {
+            colorIndices[kind] = settings.getInt(colorKey(kind), sharedColor).coerceIn(colorsOf(kind).indices)
+            widthIndices[kind] = settings.getInt(widthKey(kind), sharedWidth).coerceIn(widthsOf(kind).indices)
+        }
+        mode = initialInputMode(settings.getString(MODE_KEY, null), stylusAttached())
+        stylusSeen = settings.getBoolean(STYLUS_SEEN_KEY, false)
+        handButtonUsed = settings.getBoolean(HAND_BUTTON_USED_KEY, false)
         kind = InkKind.entries.firstOrNull { it.name == settings.getString(KIND_KEY, null) } ?: InkKind.PEN
         // The eraser is a momentary tool: it survives rotation, but a new launch writes.
         tool = savedInstanceState?.getString(TOOL_KEY)?.let { InkTool.valueOf(it) } ?: InkTool.PEN
+        fingerHintShown = savedInstanceState?.getBoolean(FINGER_HINT_KEY) ?: false
         incoming = savedInstanceState?.let { BundleCompat.getParcelable(it, INCOMING_KEY, Uri::class.java) }
         buildLayout()
         configurePen()
         if (savedInstanceState == null) receive(intent)
         model.state.observe(this, ::show)
+    }
+
+    // The activity sees every pointer before the framework splits them between
+    // the page and the bars, which is what tells a resting palm from a tap.
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        palmGuard.track(event)
+        return super.dispatchTouchEvent(event)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -145,6 +203,8 @@ internal class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        pagePill.removeCallbacks(showPill)
+        pagePill.animate().cancel()
         confirming?.dismiss()
         pageDialog?.dismiss()
         super.onDestroy()
@@ -152,6 +212,7 @@ internal class MainActivity : ComponentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(TOOL_KEY, tool.name)
+        outState.putBoolean(FINGER_HINT_KEY, fingerHintShown)
         incoming?.let { outState.putParcelable(INCOMING_KEY, it) }
         super.onSaveInstanceState(outState)
     }
@@ -166,7 +227,9 @@ internal class MainActivity : ComponentActivity() {
             KeyEvent.KEYCODE_O -> open
             else -> return super.onKeyShortcut(keyCode, event)
         }
-        if (target.isShown && target.isEnabled) target.performClick()
+        // Leave keys for a hidden or disabled action to the rest of the system.
+        if (!target.isShown || !target.isEnabled) return super.onKeyShortcut(keyCode, event)
+        target.performClick()
         return true
     }
 
@@ -176,8 +239,8 @@ internal class MainActivity : ComponentActivity() {
             KeyEvent.KEYCODE_PAGE_DOWN -> next
             else -> return super.onKeyDown(keyCode, event)
         }
-        if (target.isShown && target.isEnabled) target.performClick()
-        return true
+        if (!target.isShown || !target.isEnabled) return super.onKeyDown(keyCode, event)
+        return target.performClick()
     }
 
     override fun onProvideKeyboardShortcuts(data: MutableList<KeyboardShortcutGroup>, menu: Menu?, deviceId: Int) {
@@ -199,8 +262,13 @@ internal class MainActivity : ComponentActivity() {
 
         workspace = FrameLayout(this)
         page = InkPageView(this).apply {
+            onWritingChanged = ::writingChanged
             onTurnPage = ::turnPage
             onErase = model::eraseStrokes
+            onUndo = { tapHistory(undo) }
+            onRedo = { tapHistory(redo) }
+            onStylusSeen = ::rememberStylus
+            onFingerDragInPenMode = ::explainFingerDrag
         }
         workspace.addView(page, FrameLayout.LayoutParams(MATCH, MATCH))
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -221,6 +289,9 @@ internal class MainActivity : ComponentActivity() {
         loading = buildLoading()
         workspace.addView(loading, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
         notice = NoticeBar(this)
+        // A notice an unread error suppressed stays pending in the state; the
+        // error's own dismissal re-renders and surfaces it — no polling needed.
+        notice.onDismissed = { model.state.value?.let(::show) }
         workspace.addView(notice, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
             setMargins(ui.dp(Space.L), 0, ui.dp(Space.L), ui.dp(Space.L))
         })
@@ -228,6 +299,8 @@ internal class MainActivity : ComponentActivity() {
 
         toolBar = buildToolBar()
         column.addView(toolBar, LinearLayout.LayoutParams(MATCH, WRAP))
+        // A hand resting on the bars while the pen writes must not press them.
+        for (bar in listOf(topBar, toolBar, pagePill)) controls(bar).forEach(palmGuard::protect)
         root = column
         ViewCompat.setOnApplyWindowInsetsListener(column) { _, insets ->
             systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
@@ -265,9 +338,22 @@ internal class MainActivity : ComponentActivity() {
         // With very large text on a phone the label would leave no room for the
         // file name; the action keeps its graphite weight as an icon.
         val crowded = resources.configuration.fontScale >= LARGE_FONT_SCALE && resources.configuration.screenWidthDp < SAVE_LABEL_MIN_WIDTH_DP
-        val saveCopy = { launchPicker { savePdf.launch(exportName()) } }
-        save = if (crowded) ui.primaryIconButton(R.drawable.ic_save, R.string.save_copy, saveCopy)
-            else ui.primaryButton(R.string.save_copy, ButtonSize.REGULAR, action = saveCopy)
+        // One tap writes back to the remembered file; a long press opens the
+        // picker to save a copy somewhere else.
+        val saveOrPick = {
+            val remembered = model.state.value?.draft?.destination
+            if (remembered != null) model.export(remembered) else launchPicker { savePdf.launch(exportName()) }
+        }
+        save = if (crowded) ui.primaryIconButton(R.drawable.ic_save, R.string.save_copy, saveOrPick)
+            else ui.primaryButton(R.string.save_copy, ButtonSize.REGULAR, action = saveOrPick)
+        val saveAs = { launchPicker { savePdf.launch(exportName()) } }
+        save.setOnLongClickListener { saveAs(); true }
+        // A long press is invisible to TalkBack unless it is a labelled action;
+        // the name stays distinct from the button's own label in both states.
+        ViewCompat.replaceAccessibilityAction(save, AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_LONG_CLICK,
+            getString(R.string.save_as)) { _, _ ->
+            if (save.isEnabled) { saveAs(); true } else false
+        }
         bar.addView(save, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = ui.dp(Space.XS) })
         return bar
     }
@@ -281,13 +367,11 @@ internal class MainActivity : ComponentActivity() {
         }
         previous = ui.iconButton(R.drawable.ic_previous, R.string.previous) { turnPage(-1) }
         pill.addView(previous, square())
-        counter = ui.text(TextStyle.COUNTER).apply {
+        counter = ui.textButton(R.string.go_to_page, TextStyle.COUNTER) { askForPage() }.apply {
             gravity = Gravity.CENTER
             minWidth = ui.dp(COUNTER_MIN_WIDTH_DP)
             setPadding(ui.dp(Space.XS), 0, ui.dp(Space.XS), 0)
-            background = ui.ripple(content = null, mask = ui.rounded(Color.WHITE, Radius.SMALL))
             tooltipText = getString(R.string.go_to_page)
-            setOnClickListener { askForPage() }
         }
         pill.addView(counter, LinearLayout.LayoutParams(WRAP, ui.dp(Size.TOUCH)))
         next = ui.iconButton(R.drawable.ic_next, R.string.next) { turnPage(1) }
@@ -304,8 +388,8 @@ internal class MainActivity : ComponentActivity() {
     // Measured controls and available width choose the rows, so narrow windows
     // and system insets never squeeze or clip the touch targets.
     private fun buildToolBar(): View {
-        undo = ui.iconButton(R.drawable.ic_undo, R.string.undo) { model.undo() }
-        redo = ui.iconButton(R.drawable.ic_redo, R.string.redo) { model.redo() }
+        undo = ui.iconButton(R.drawable.ic_undo, R.string.undo) { model.undo(); tick() }
+        redo = ui.iconButton(R.drawable.ic_redo, R.string.redo) { model.redo(); tick() }
         tools = SegmentedControl(this)
         for (choice in ToolChoice.entries) {
             tools.addView(ui.segment(choice.icon, choice.chosenIcon, choice.label, choice.ordinal) { selectTool(choice) }, square())
@@ -444,16 +528,13 @@ internal class MainActivity : ComponentActivity() {
 
     private fun buildLoading(): View = column().apply {
         gravity = Gravity.CENTER_HORIZONTAL
-        addView(ProgressBar(context).apply {
-            isIndeterminate = true
-            indeterminateTintList = ColorStateList.valueOf(ui.color(R.color.accent))
-        }, LinearLayout.LayoutParams(ui.dp(Size.SPINNER), ui.dp(Size.SPINNER)))
+        addView(AsteriskLoader(context), LinearLayout.LayoutParams(ui.dp(Size.MARK), ui.dp(Size.MARK)))
         addView(ui.text(TextStyle.CAPTION, getString(R.string.opening)), spaced(Space.M))
     }
 
     private fun configurePen() {
         val highlighting = kind == InkKind.HIGHLIGHTER
-        // The same colour and width choices pick a highlighter tint and a line-height width.
+        // The same swatches and dots show highlighter tints and line-height widths.
         val colors = if (highlighting) HIGHLIGHT_COLORS else COLORS
         val names = if (highlighting) HIGHLIGHT_NAMES else COLOR_NAMES
         tools.select(currentTool().ordinal)
@@ -475,11 +556,32 @@ internal class MainActivity : ComponentActivity() {
         page.configure(mode, colors[colorIndex], width, kind, model::addStroke)
         page.tool = tool
         settings.edit {
-            putInt(COLOR_KEY, colorIndex)
-            putInt(WIDTH_KEY, widthIndex)
+            for ((kind, index) in colorIndices) putInt(colorKey(kind), index)
+            for ((kind, index) in widthIndices) putInt(widthKey(kind), index)
             putString(MODE_KEY, mode.name)
             putString(KIND_KEY, kind.name)
         }
+    }
+
+    private fun colorsOf(kind: InkKind) = when (kind) {
+        InkKind.PEN -> COLORS
+        InkKind.HIGHLIGHTER -> HIGHLIGHT_COLORS
+    }
+
+    private fun widthsOf(kind: InkKind) = when (kind) {
+        InkKind.PEN -> WIDTHS
+        InkKind.HIGHLIGHTER -> HIGHLIGHT_WIDTHS
+    }
+
+    // The pen keeps the keys both tools used before.
+    private fun colorKey(kind: InkKind) = when (kind) {
+        InkKind.PEN -> COLOR_KEY
+        InkKind.HIGHLIGHTER -> HIGHLIGHT_COLOR_KEY
+    }
+
+    private fun widthKey(kind: InkKind) = when (kind) {
+        InkKind.PEN -> WIDTH_KEY
+        InkKind.HIGHLIGHTER -> HIGHLIGHT_WIDTH_KEY
     }
 
     private fun currentTool(): ToolChoice = when {
@@ -500,11 +602,26 @@ internal class MainActivity : ComponentActivity() {
         }
         tick()
         configurePen()
-        choice.hint?.let(::hint)
+        choice.hint?.let { toolHint(choice, it) }
+    }
+
+    // A tool hint teaches its gesture; after two showings it only covers the
+    // page. Only showings that happened count. The finger-mode hint always
+    // shows, since it changes what touches do.
+    private fun toolHint(choice: ToolChoice, message: Int) {
+        val key = HINT_SHOWN_KEY_PREFIX + choice.name
+        val shown = settings.getInt(key, 0)
+        if (shown >= TOOL_HINT_SHOWINGS) return
+        if (notice.show(getString(message), Tone.INFO)) settings.edit { putInt(key, shown + 1) }
     }
 
     private fun toggleFingerDrawing() {
         mode = if (mode == InputMode.TOUCH) InputMode.PEN else InputMode.TOUCH
+        // Whoever uses the hand button needs no hint pointing to it.
+        if (!handButtonUsed) {
+            handButtonUsed = true
+            settings.edit { putBoolean(HAND_BUTTON_USED_KEY, true) }
+        }
         tick()
         configurePen()
         // The mode changes what fingers do; say so once, where the user is looking.
@@ -526,15 +643,61 @@ internal class MainActivity : ComponentActivity() {
         configurePen()
     }
 
+    // Finger taps go through the buttons, like the keyboard shortcuts. The
+    // buttons tick, so undoing a hard-to-see dot is still felt.
+    private fun tapHistory(button: View) {
+        if (button.isEnabled) button.performClick()
+    }
+
     private fun tick() {
         root.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
     }
 
+    // Grants are finite (~128 per app), so a replaced destination gives its
+    // back; either flag may be missing if the provider persisted only write.
+    private fun releaseGrant(uri: Uri) {
+        for (flag in intArrayOf(Intent.FLAG_GRANT_WRITE_URI_PERMISSION, Intent.FLAG_GRANT_READ_URI_PERMISSION)) {
+            runCatching { contentResolver.releasePersistableUriPermission(uri, flag) }
+        }
+    }
+
     private fun hint(message: Int) = notice.show(getString(message), Tone.INFO)
+
+    // Any device input source that reports a stylus: built-in pens and paired
+    // ones alike. Some screens report one without a pen in reach, which is why
+    // explainFingerDrag exists.
+    private fun stylusAttached(): Boolean = InputDevice.getDeviceIds().any { id ->
+        InputDevice.getDevice(id)?.supportsSource(InputDevice.SOURCE_STYLUS) == true
+    }
+
+    private fun rememberStylus() {
+        if (stylusSeen) return
+        stylusSeen = true
+        settings.edit { putBoolean(STYLUS_SEEN_KEY, true) }
+    }
+
+    // Pen mode on a device that has never shown a pen: the finger only nudges
+    // the page, so say once per session how to write with it.
+    private fun explainFingerDrag() {
+        if (stylusSeen || handButtonUsed || fingerHintShown) return
+        // An error on screen holds the hint back; the next drag offers it again.
+        fingerHintShown = hint(R.string.finger_drag_hint)
+    }
+
+    // Gestures do the navigating; tell a new user once, then get out of the way.
+    private fun maybeHintGestures() {
+        if (settings.getBoolean(GESTURE_HINT_KEY, false)) return
+        // Existing installs get the hint once after updating too, deliberately.
+        // Persisted only once it showed, so an error on screen cannot consume it unseen.
+        if (hint(if (mode == InputMode.PEN) R.string.input_hint else R.string.touch_hint)) {
+            settings.edit { putBoolean(GESTURE_HINT_KEY, true) }
+        }
+    }
 
     private fun show(state: EditorState) {
         val draft = state.draft
         val ready = draft != null && !state.busy
+        if (pageDialogSource != draft?.source || state.busy) pageDialog?.dismiss()
         showScreen(when {
             draft != null -> Screen.EDITOR
             state.busy -> Screen.LOADING
@@ -546,6 +709,26 @@ internal class MainActivity : ComponentActivity() {
 
         open.isEnabled = !state.busy
         save.isEnabled = ready
+        // A replaced or cleared destination drops the grant we took for it;
+        // the last one survives on purpose — it is the quick-save target.
+        val destination = draft?.destination
+        if (destination != lastDestination) {
+            lastDestination?.let(::releaseGrant)
+            lastDestination = destination
+        }
+        // An export that never claimed its picked file (a failed first save or
+        // save-as) leaves the grant orphaned; give it back once the dust settles.
+        unclaimedGrant?.let { staged ->
+            when {
+                staged == destination -> unclaimedGrant = null
+                !state.busy -> { unclaimedGrant = null; releaseGrant(staged) }
+            }
+        }
+        // Once a destination is remembered the button writes back to it; until
+        // then every save goes through the picker.
+        val quickLabel = if (draft?.destination == null) R.string.save_copy else R.string.save
+        (save as? Button)?.setText(quickLabel)
+        save.contentDescription = getString(quickLabel)
         share.isEnabled = ready
         undo.isEnabled = ready && state.canUndo
         redo.isEnabled = ready && state.canRedo
@@ -556,23 +739,41 @@ internal class MainActivity : ComponentActivity() {
         (listOf(fingerDrawing) + swatches + widths).forEach { it.isEnabled = ready }
         if (draft != null) {
             counter.text = getString(R.string.page_position, draft.page + 1, state.pages.size)
-            counter.contentDescription = getString(R.string.page_count, draft.page + 1, state.pages.size)
+            counter.contentDescription = getString(R.string.page_navigation_description, draft.page + 1, state.pages.size)
             counter.isEnabled = ready && state.pages.size > 1
+            val pageKey = "${draft.source.name}:${draft.page}"
+            if (shownPageKey != pageKey) {
+                shownPageKey = pageKey
+                pagePill.removeCallbacks(showPill)
+                showPagePill()
+            }
         }
 
         page.show(state)
         state.message?.let {
-            val actionLabel = if (it.text.contains("couldn\u2019t be stored")) getString(R.string.save_copy) else null
-            val action = if (actionLabel != null) {
-                { launchPicker { savePdf.launch(exportName()) } }
-            } else null
-            notice.show(it.text, it.tone, actionLabel, action)
-            model.acknowledgeMessage()
+            val action = when (it.action) {
+                MessageAction.SAVE_COPY -> NoticeAction(getString(R.string.save_copy)) { launchPicker { savePdf.launch(exportName()) } }
+                null -> null
+            }
+            // A suppressed notice stays pending: the blocking error's dismissal
+            // re-renders and surfaces it instead of dropping it unseen.
+            if (notice.show(it.text, it.tone, action)) model.acknowledgeMessage()
         }
         state.shared?.let {
             model.acknowledgeShare()
             sendToShareSheet(it)
         }
+        state.exported?.let {
+            // Same rule: if an unread error suppressed the flash, exported stays
+            // set and the error's dismissal offers Open the moment it clears.
+            if (notice.show(getString(R.string.pdf_saved), Tone.SUCCESS,
+                    NoticeAction(getString(R.string.open)) { openExported(it) })) {
+                model.acknowledgeExport()
+            }
+        }
+        // Only into an empty notice bar, so no message replaces it unseen; a
+        // dismissed notice renders again and offers it then.
+        if (ready && notice.shown == null) maybeHintGestures()
         // Cleared only once the user decides, so a rotation during the prompt asks
         // again; a newer PDF that arrived meanwhile stays pending.
         val uri = incoming
@@ -592,15 +793,32 @@ internal class MainActivity : ComponentActivity() {
         screen = next
         val editing = next == Screen.EDITOR
         listOf(topBar, toolBar, pagePill).forEach { it.visibility = if (editing) View.VISIBLE else View.GONE }
+        if (editing) {
+            showPagePill()
+        } else {
+            pagePill.removeCallbacks(showPill)
+            pagePill.animate().cancel()
+            pillHidden = false
+            shownPageKey = null
+        }
         // Invisible rather than gone, so the page keeps its size for the editor.
         page.visibility = if (editing) View.VISIBLE else View.INVISIBLE
         welcome.visibility = if (next == Screen.WELCOME) View.VISIBLE else View.GONE
         loading.visibility = if (next == Screen.LOADING) View.VISIBLE else View.GONE
         workspace.setBackgroundColor(ui.color(if (editing) R.color.canvas else R.color.surface))
         if (next == Screen.LOADING) {
-            // Restoring a draft is usually instant; only a slow load shows the spinner.
+            // Restoring a draft is usually instant; only a slow load shows the
+            // loader. The caption replaces the progress bar for accessibility,
+            // so announce it once the screen is up.
             loading.alpha = 0f
             loading.animate().alpha(1f).setStartDelay(Motion.LOADING_DELAY).setDuration(Motion.SHORT).start()
+            // A fast restore can leave LOADING before the post runs: only
+            // announce while the screen is still up.
+            loading.post {
+                if (loading.visibility == View.VISIBLE) {
+                    loading.announceForAccessibility(getString(R.string.opening))
+                }
+            }
         }
         applyInsets()
     }
@@ -658,14 +876,65 @@ internal class MainActivity : ComponentActivity() {
         } ?: incoming
     }
 
+    // The pill covers the bottom of the page, where notes often go: it steps
+    // aside while the pen or eraser is down and returns shortly after the
+    // stroke ends, or at once when the page changes.
+    private fun writingChanged(state: WritingState) {
+        pagePill.removeCallbacks(showPill)
+        // showScreen runs before page.show cancels an active stroke.
+        if (screen != Screen.EDITOR) return
+
+        if (state == WritingState.ACTIVE) hidePagePill() else pagePill.postDelayed(showPill, PILL_RETURN_MS)
+    }
+
+    private fun hidePagePill() {
+        if (pillHidden) return
+
+        pillHidden = true
+        pagePill.animate().cancel()
+        pagePill.animate().alpha(0f).setDuration(Motion.SHORT).setInterpolator(Motion.EASING)
+            // Invisible, not just transparent: a see-through pill would still eat touches.
+            .withEndAction { if (screen == Screen.EDITOR && pillHidden) pagePill.visibility = View.INVISIBLE }.start()
+    }
+
+    private fun showPagePill() {
+        if (screen != Screen.EDITOR) return
+
+        pillHidden = false
+        pagePill.animate().cancel()
+        pagePill.visibility = View.VISIBLE
+        pagePill.animate().alpha(1f).setDuration(Motion.SHORT).setInterpolator(Motion.EASING).start()
+    }
+
     private fun turnPage(delta: Int) {
-        model.state.value?.draft?.let { model.goToPage(it.page + delta) }
+        val state = model.state.value ?: return
+        val draft = state.draft ?: return
+        val next = draft.page + delta
+        // Only a turn that will happen earns the tick; the pill buttons are
+        // disabled at the ends, but swipes and hardware keys come through here.
+        if (state.busy || next !in state.pages.indices) return
+        tick()
+        model.goToPage(next)
     }
 
     private fun askForPage() {
         val state = model.state.value ?: return
         val draft = state.draft ?: return
-        pageDialog = showPageDialog(this, ui, draft.page, state.pages.size, model::goToPage)
+        if (state.busy || pageDialog?.isShowing == true) return
+
+        // Read current draft ink only; navigation never needs PDF parsing or thumbnails.
+        val annotated = state.pages.indices.filter { draft.ink[it].orEmpty().isNotEmpty() }
+        pageDialogSource = draft.source
+        pageDialog = showPageDialog(this, ui, draft.page, state.pages.size, annotated) { destination ->
+            if (model.state.value?.draft?.source == draft.source) model.goToPage(destination)
+        }.apply {
+            setOnDismissListener { dismissed ->
+                if (pageDialog !== dismissed) return@setOnDismissListener
+
+                pageDialog = null
+                pageDialogSource = null
+            }
+        }
     }
 
     private fun requestOpen() {
@@ -678,13 +947,35 @@ internal class MainActivity : ComponentActivity() {
             open()
             return
         }
-        confirming = AlertDialog.Builder(this)
+        // Opening another PDF discards the unexported notes, so the confirm is red.
+        confirming = AlertDialog.Builder(this, R.style.AlertDialogTheme_Destructive)
             .setTitle(R.string.open_another).setMessage(R.string.unsaved_prompt)
             .setNegativeButton(R.string.keep_editing) { _, _ -> keep() }
             .setPositiveButton(R.string.open_anyway) { _, _ -> open() }
             .setOnCancelListener { keep() }
             .setOnDismissListener { confirming = null }
             .show()
+    }
+
+    // The flag (with the ClipData copy as belt-and-braces) grants the chosen
+    // viewer read access; EXTRA_EXCLUDE_COMPONENTS keeps Asterinked out of the
+    // sheet so the copy cannot be mistaken for a document to annotate.
+    private fun openExported(uri: Uri) {
+        val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, PDF_MIME)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        // A chooser always resolves, so it never throws for a missing viewer:
+        // ask the package manager first, excluding ourselves.
+        @Suppress("DEPRECATION") // ResolveInfoFlags only exists on API 33+.
+        val viewers = packageManager.queryIntentActivities(view, 0)
+            .filterNot { it.activityInfo.packageName == packageName }
+        if (viewers.isEmpty()) {
+            notice.show(getString(R.string.no_viewer), Tone.ERROR)
+            return
+        }
+        view.clipData = ClipData.newRawUri(uri.lastPathSegment ?: exportName(), uri)
+        val chooser = Intent.createChooser(view, getString(R.string.open_title))
+            .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(ComponentName(this, MainActivity::class.java)))
+        launchPicker(R.string.no_viewer) { startActivity(chooser) }
     }
 
     private fun sendToShareSheet(file: File) {
@@ -702,10 +993,16 @@ internal class MainActivity : ComponentActivity() {
 
     private fun exportName(): String = model.state.value?.draft?.exportName ?: DEFAULT_EXPORT_NAME
 
-    private fun launchPicker(action: () -> Unit) {
+    private fun launchPicker(failure: Int = R.string.no_picker, action: () -> Unit) {
         try { action() } catch (_: ActivityNotFoundException) {
-            notice.show(getString(R.string.no_picker), Tone.ERROR)
+            notice.show(getString(failure), Tone.ERROR)
         }
+    }
+
+    // Every clickable view, including any inside a clickable container.
+    private fun controls(view: View): List<View> = buildList {
+        if (view.isClickable) add(view)
+        if (view is ViewGroup) for (index in 0 until view.childCount) addAll(controls(view.getChildAt(index)))
     }
 
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -731,9 +1028,17 @@ internal class MainActivity : ComponentActivity() {
         const val SETTINGS = "pen"
         const val COLOR_KEY = "penColor"
         const val WIDTH_KEY = "penWidth"
+        const val HIGHLIGHT_COLOR_KEY = "highlightColor"
+        const val HIGHLIGHT_WIDTH_KEY = "highlightWidth"
         const val MODE_KEY = "inputMode"
         const val KIND_KEY = "inkKind"
+        const val GESTURE_HINT_KEY = "hintedGestures"
         const val TOOL_KEY = "inkTool"
+        const val STYLUS_SEEN_KEY = "stylusSeen"
+        const val HAND_BUTTON_USED_KEY = "handButtonUsed"
+        const val FINGER_HINT_KEY = "fingerHintShown"
+        const val HINT_SHOWN_KEY_PREFIX = "hintShown_"
+        const val TOOL_HINT_SHOWINGS = 2
         const val INCOMING_KEY = "incomingPdf"
         // Matches android:authorities="${'$'}{applicationId}.files" in the manifest.
         const val FILE_AUTHORITY_SUFFIX = ".files"
@@ -748,6 +1053,8 @@ internal class MainActivity : ComponentActivity() {
         const val SAVE_LABEL_MIN_WIDTH_DP = 680
         // Phones in landscape: a lower top bar leaves more height for the page.
         const val COMPACT_HEIGHT_DP = 480
+        // The page pill returns this long after a stroke ends.
+        const val PILL_RETURN_MS = 1_500L
         // Android's "largest" text sizes start around 1.5x.
         const val LARGE_FONT_SCALE = 1.5f
 
@@ -762,6 +1069,15 @@ internal class MainActivity : ComponentActivity() {
         val HIGHLIGHT_WIDTHS = floatArrayOf(8f, 12f, 18f)
     }
 }
+
+/**
+ * The first launch writes with a finger unless a stylus is attached: in pen
+ * mode a finger only pans, which looks broken without a pen. A saved choice
+ * always wins. A pen paired after the first launch does not switch modes;
+ * the hand button does.
+ */
+internal fun initialInputMode(saved: String?, stylusAttached: Boolean): InputMode =
+    InputMode.entries.firstOrNull { it.name == saved } ?: if (stylusAttached) InputMode.PEN else InputMode.TOUCH
 
 /** The line under the title; a document without any notes is not "all exported". */
 internal fun EditorState.statusText(): Int? {

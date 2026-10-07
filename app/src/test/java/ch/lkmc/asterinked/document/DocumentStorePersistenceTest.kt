@@ -1,5 +1,7 @@
 package ch.lkmc.asterinked.document
 
+import android.content.Intent
+import android.net.Uri
 import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
@@ -15,7 +17,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [29, 35])
 class DocumentStorePersistenceTest {
 
     private val app get() = RuntimeEnvironment.getApplication()
@@ -86,6 +88,28 @@ class DocumentStorePersistenceTest {
     }
 
     @Test
+    fun aDestinationOnlySurvivesWhileItsWriteGrantDoes() {
+        val store = DocumentStore(app)
+        val dir = File(app.filesDir, "documents").apply { mkdirs() }
+        val source = File(dir, "dest.pdf").apply { writeBytes(byteArrayOf(7)) }
+        val uri = Uri.parse("content://test/picked.pdf")
+
+        // Without a persisted grant nothing is written: a stale destination
+        // would resurrect as a Save button that cannot work.
+        store.saveDraft(Draft(source, "d.pdf", destination = uri))
+        assertNull(store.restore()?.destination)
+        assertEquals(false, File(dir, "draft.json").readText().contains("destination"))
+
+        app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        store.saveDraft(Draft(source, "d.pdf", destination = uri))
+        assertEquals(uri, store.restore()?.destination)
+
+        // A grant the user revoked later drops the destination on read.
+        app.contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        assertNull(store.restore()?.destination)
+    }
+
+    @Test
     fun saveAndRestore_cleanDraftStaysClean() {
         val store = DocumentStore(app)
         val dir = File(app.filesDir, "documents").apply { mkdirs() }
@@ -93,5 +117,25 @@ class DocumentStorePersistenceTest {
         val ink = mapOf(0 to listOf(InkStroke(listOf(InkPoint(1f, 1f, 1f)), 1, 1f)))
         store.saveDraft(Draft(source, "c.pdf", ink = ink, savedInk = ink))
         assertEquals(false, store.restore()!!.dirty)
+    }
+
+    @Test
+    fun restore_sanitizesCorruptStrokeWidths() {
+        val store = DocumentStore(app)
+        val dir = File(app.filesDir, "documents").apply { mkdirs() }
+        val source = File(dir, "widths.pdf").apply { writeBytes(byteArrayOf(3)) }
+        val stroke = InkStroke(listOf(InkPoint(1f, 1f, 1f)), 1, 2f)
+        store.saveDraft(Draft(source, "w.pdf", ink = mapOf(0 to listOf(stroke, stroke))))
+
+        // org.json refuses NaN/Infinity at parse time (such drafts take the
+        // broken-draft path), but zero and negative widths parse fine.
+        val points = """[[1,1,1]]"""
+        File(dir, "draft.json").writeText(
+            """{"source":"${source.name}","name":"w.pdf","page":0,""" +
+                """"ink":{"0":[{"color":1,"width":0,"points":$points},""" +
+                """{"color":1,"width":-3,"points":$points},{"color":1,"width":5,"points":$points}]},"savedInk":{}}""",
+        )
+        val widths = DocumentStore(app).restore()!!.ink.getValue(0).map { it.width }
+        assertEquals(listOf(2.2f, 2.2f, 5f), widths)
     }
 }

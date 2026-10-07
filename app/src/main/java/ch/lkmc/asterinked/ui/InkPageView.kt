@@ -8,12 +8,17 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PointF
 import android.graphics.RectF
 import android.graphics.RenderNode
+import android.os.Handler
+import android.os.Looper
 import android.view.GestureDetector
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.animation.DecelerateInterpolator
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.document.PageSpec
@@ -28,12 +33,15 @@ import ch.lkmc.asterinked.ink.InkStrokeBuilder
 import java.util.Collections
 import java.util.IdentityHashMap
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.min
 
 internal enum class InputMode { PEN, TOUCH }
 
 /** What a writing gesture does. The stylus eraser end and side button always erase. */
 internal enum class InkTool { PEN, ERASER }
+
+internal enum class WritingState { IDLE, ACTIVE }
 
 internal class InkPageView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
@@ -51,6 +59,7 @@ internal class InkPageView(context: Context) : View(context) {
         setShadowLayer(SHADOW_RADIUS_DP * density, 0f, SHADOW_OFFSET_DP * density, SHADOW_COLOR)
     }
     private val pageRect = RectF()
+    private var pageScale = 0f
     private var preview: Bitmap? = null
     private var spec: PageSpec? = null
     private var strokes = emptyList<InkStroke>()
@@ -69,15 +78,35 @@ internal class InkPageView(context: Context) : View(context) {
     private val inkLayer = RenderNode("committedInkLayer").apply { setUseCompositingLayer(true, null) }
     private val recordedLayerRect = RectF()
     private var inkNodeStale = true
-    private val eraser = InkEraser()
+    private val eraser = InkEraser(geometryCache::cachedSegments)
     private val erasing: MutableSet<InkStroke> = Collections.newSetFromMap(IdentityHashMap())
     private val eraserRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = Color.argb(160, 60, 70, 80) }
     private var eraserAt: InkPoint? = null
+    // Where a hovering stylus would land, in page units; null while it is away or down.
+    private var hoverAt: InkPoint? = null
+    // The pen itself asks to erase: its eraser end or a held side button.
+    private var hoverPenErases = false
+    private val hoverRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val hoverHalo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = HOVER_HALO_COLOR }
+    private val hoverMarker = Paint(Paint.ANTI_ALIAS_FLAG).apply { blendMode = BlendMode.MULTIPLY }
     private var activeErasing = false
+    // Hold to straighten: a pen that rests still for HOLD_MS after drawing at
+    // least MIN_LINE_DP turns its stroke into a straight line from where it
+    // started, with a tick; until it lifts, moving drags the line's end.
+    //
+    //     ~~~~~~~~~~~~~~~~   (rest)   ----------------   (drag)   -----------\
+    //
+    // A loop that ends near its start stays as drawn.
+    private val hold = Handler(Looper.getMainLooper())
+    private val straighten = Runnable { straightenLine() }
+    private var holdAnchor: InkPoint? = null
+    private var linePressure: Float? = null
+    private var lineEnd: InkPoint? = null
     private var activePointer = NO_POINTER
     private var activeColor = Color.BLACK
     private var activeWidth = DEFAULT_WIDTH
     private var activeKind = InkKind.PEN
+    private var activeOnStroke: (InkStroke) -> Unit = {}
     private var pageKey: String? = null
     private var documentKey: String? = null
     private var zoom = 1f
@@ -88,6 +117,9 @@ internal class InkPageView(context: Context) : View(context) {
     private var lastFocusY = 0f
     private var gestureScaled = false
     private var penGesture = false
+    private var fingerGesture = FingerGesture.TAP
+    private var fingerDownX = 0f
+    private var fingerDownY = 0f
     private var zoomAnimator: ValueAnimator? = null
     private var inputMode = InputMode.PEN
     private var inkColor = Color.rgb(25, 38, 46)
@@ -98,6 +130,10 @@ internal class InkPageView(context: Context) : View(context) {
     private val pageMargin = PAGE_MARGIN_DP * density
     private val swipeDistance = SWIPE_DISTANCE_DP * density
     private val swipeVelocity = SWIPE_VELOCITY_DP * density
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+
+    /** Reports accepted writing/erasing gestures, including cancellation. */
+    var onWritingChanged: (WritingState) -> Unit = {}
 
     /** Called with +1 or -1 when a finger swipes the page at fit zoom in pen mode. */
     var onTurnPage: (Int) -> Unit = {}
@@ -105,16 +141,37 @@ internal class InkPageView(context: Context) : View(context) {
     /** Receives the strokes one erase gesture removed, once the gesture ends. */
     var onErase: (Collection<InkStroke>) -> Unit = {}
 
+    /** Called when two fingers tap the page. */
+    var onUndo: () -> Unit = {}
+
+    /** Called when three fingers tap the page. */
+    var onRedo: () -> Unit = {}
+
+    private val fingerTaps = FingerTaps(touchSlop.toFloat())
+
+
+    /** Called whenever a stylus or its eraser end touches or hovers over the page. */
+    var onStylusSeen: () -> Unit = {}
+
+    /**
+     * Called when one finger (or a mouse) drags in pen mode without zooming or
+     * turning the page. Without a stylus that only nudges the page, so the
+     * screen seems to ignore the user.
+     */
+    var onFingerDragInPenMode: () -> Unit = {}
+
+    // Like configure(), a new tool applies from the next stroke; a resting
+    // pen's ring shows the new tool at once.
     var tool = InkTool.PEN
         set(value) {
-            if (field == value) return
-            cancelStroke()
             field = value
+            if (hoverAt != null) invalidate()
         }
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
             gestureScaled = true
+            fingerGesture = FingerGesture.OTHER
             cancelZoomAnimation()
             return true
         }
@@ -130,6 +187,7 @@ internal class InkPageView(context: Context) : View(context) {
         // only if no scale happened, keeps that gesture working.
         override fun onDoubleTapEvent(e: MotionEvent): Boolean {
             if (inputMode != InputMode.PEN || e.actionMasked != MotionEvent.ACTION_UP || gestureScaled) return false
+            fingerGesture = FingerGesture.OTHER
             animateZoom(if (zoom > FIT_ZOOM_TOLERANCE) 1f else DOUBLE_TAP_ZOOM, e.x, e.y)
             return true
         }
@@ -140,6 +198,7 @@ internal class InkPageView(context: Context) : View(context) {
             val distance = e2.x - start.x
             val horizontal = abs(velocityX) >= abs(velocityY) * SWIPE_DIRECTION_RATIO
             if (!horizontal || abs(velocityX) < swipeVelocity || abs(distance) < swipeDistance) return false
+            fingerGesture = FingerGesture.OTHER
             onTurnPage(if (distance < 0) 1 else -1)
             return true
         }
@@ -151,13 +210,16 @@ internal class InkPageView(context: Context) : View(context) {
         isFocusable = true
     }
 
+    // New settings apply from the next stroke. The other hand may tap a
+    // colour, width or tool while the pen is down; the stroke in progress
+    // finishes with the colour, width, kind and eraser state it started with.
     fun configure(mode: InputMode, color: Int, width: Float, kind: InkKind = InkKind.PEN, onStroke: (InkStroke) -> Unit) {
-        cancelStroke()
         inputMode = mode
         inkColor = color
         inkWidth = width
         inkKind = kind
         this.onStroke = onStroke
+        if (hoverAt != null) invalidate()
     }
 
     fun show(state: EditorState) {
@@ -167,6 +229,8 @@ internal class InkPageView(context: Context) : View(context) {
         if (pageKey != key) {
             cancelStroke()
             cancelZoomAnimation()
+            // A pen held still sends no hover; its old spot means nothing here.
+            hoverAt = null
             if (document != null && document == documentKey) {
                 // Keep the zoom and column across page turns; start at the page top.
                 alignTopPending = true
@@ -182,6 +246,7 @@ internal class InkPageView(context: Context) : View(context) {
         isEnabled = !state.busy && draft != null
         preview = state.preview
         spec = draft?.let { state.pages[it.page] }
+        updatePageTransform()
         val nextStrokes = draft?.ink?.get(draft.page).orEmpty()
         if (nextStrokes !== strokes) {
             strokes = nextStrokes
@@ -198,20 +263,17 @@ internal class InkPageView(context: Context) : View(context) {
         animateZoom(1f, width / 2f, height / 2f)
     }
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        updatePageTransform()
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val page = spec ?: return
-        val fit = fitScale(page)
-        if (fit <= 0f) return
-        val scale = fit * zoom
-        val pageWidth = page.displayWidth * scale
-        val pageHeight = page.displayHeight * scale
-        if (alignTopPending) {
-            panY = maxPan(pageHeight, height)
-            alignTopPending = false
-        }
-        clampPan()
-        pageRect.set((width - pageWidth) / 2f + panX, (height - pageHeight) / 2f + panY, (width + pageWidth) / 2f + panX, (height + pageHeight) / 2f + panY)
+        val scale = pageScale
+        if (scale <= 0f) return
+
         // A page still rendering is drawn blank so its ink and the pen work at once.
         canvas.drawRect(pageRect, pageShadow)
         preview?.let { canvas.drawBitmap(it, null, pageRect, bitmapPaint) }
@@ -239,14 +301,73 @@ internal class InkPageView(context: Context) : View(context) {
             drawInk(canvas, activeColor, live.settled)
             drawInk(canvas, activeColor, live.tail)
         }
-        eraserAt?.let {
-            eraserRing.strokeWidth = resources.displayMetrics.density / scale
-            canvas.drawCircle(it.x, it.y, eraserRadius(), eraserRing)
-        }
+        eraserAt?.let { drawEraserRing(canvas, it, scale) }
+        hoverAt?.takeIf { isEnabled && liveStroke == null && eraserAt == null }?.let { drawHover(canvas, it, scale) }
         canvas.restore()
     }
 
+    private fun drawEraserRing(canvas: Canvas, at: InkPoint, scale: Float) {
+        eraserRing.strokeWidth = density / scale
+        canvas.drawCircle(at.x, at.y, eraserRadius(), eraserRing)
+    }
+
+    // The ring is as wide as the line at full pressure, but never smaller than a
+    // few dp on screen; a pale halo keeps it visible over ink of its own colour.
+    // A light highlighter tint would vanish as a ring, so it previews the mark.
+    private fun drawHover(canvas: Canvas, at: InkPoint, scale: Float) {
+        if (hoverPenErases || tool == InkTool.ERASER) {
+            drawEraserRing(canvas, at, scale)
+            return
+        }
+        val radius = maxOf(inkWidth / 2f, HOVER_MIN_RADIUS_DP * density / scale)
+        if (inkKind == InkKind.HIGHLIGHTER) {
+            hoverMarker.color = inkColor
+            canvas.drawCircle(at.x, at.y, radius, hoverMarker)
+            return
+        }
+        val line = HOVER_LINE_DP * density / scale
+        hoverHalo.strokeWidth = line * 3f
+        canvas.drawCircle(at.x, at.y, radius, hoverHalo)
+        hoverRing.color = inkColor
+        hoverRing.strokeWidth = line
+        canvas.drawCircle(at.x, at.y, radius, hoverRing)
+    }
+
+    // Styluses that report hover show where the nib will land, since the glass
+    // between nib and pixels makes that spot hard to judge. Finger hover is
+    // TalkBack's explore-by-touch and is left to the framework.
+    override fun onHoverEvent(event: MotionEvent): Boolean {
+        val tool = event.getToolType(0)
+        if (tool != MotionEvent.TOOL_TYPE_STYLUS && tool != MotionEvent.TOOL_TYPE_ERASER) return super.onHoverEvent(event)
+
+        // Hover reaches the view before contact, so a pen is noticed even
+        // before it writes.
+        onStylusSeen()
+        val shown = hoverAt
+        val hovering = event.actionMasked == MotionEvent.ACTION_HOVER_ENTER || event.actionMasked == MotionEvent.ACTION_HOVER_MOVE
+        hoverAt = if (hovering && isEnabled && pageRect.contains(event.x, event.y)) pagePoint(event.x, event.y, 1f) else null
+        hoverPenErases = penErases(event)
+        if (shown != null || hoverAt != null) invalidate()
+        return true
+    }
+
+    // A side-button press or release while the pen hovers arrives here, not as
+    // a hover event, so the ring would keep the old tool until the pen moved.
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        val button = event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS || event.actionMasked == MotionEvent.ACTION_BUTTON_RELEASE
+        if (!button || hoverAt == null) return super.onGenericMotionEvent(event)
+
+        hoverPenErases = penErases(event)
+        invalidate()
+        return true
+    }
+
+    private fun penErases(event: MotionEvent): Boolean =
+        event.getToolType(0) == MotionEvent.TOOL_TYPE_ERASER || event.buttonState and STYLUS_BUTTONS != 0
+
     override fun onDetachedFromWindow() {
+        cancelZoomAnimation()
+        hold.removeCallbacks(straighten)
         super.onDetachedFromWindow()
         inkNode.discardDisplayList()
         inkLayer.discardDisplayList()
@@ -302,14 +423,21 @@ internal class InkPageView(context: Context) : View(context) {
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (!isEnabled || spec == null) return false
         val action = event.actionMasked
+        // Seen before anything else consumes the event: in touch-ink mode the
+        // first finger starts a stroke, which the second finger cancels.
+        when (fingerTaps.track(event)) {
+            UNDO_FINGERS -> onUndo()
+            REDO_FINGERS -> onRedo()
+        }
+        // Cancellation releases ownership even when layout cannot accept input.
         if (action == MotionEvent.ACTION_CANCEL) {
             cancelStroke()
             scaleDetector.onTouchEvent(event)
             gestureDetector.onTouchEvent(event)
             return true
         }
+        if (!isEnabled || spec == null || pageRect.isEmpty) return false
         if (action == MotionEvent.ACTION_DOWN) penGesture = false
 
         // Track the pen by pointer ID: a palm may become pointer index zero.
@@ -337,16 +465,22 @@ internal class InkPageView(context: Context) : View(context) {
         val index = event.actionIndex
         val stylus = event.getToolType(index) == MotionEvent.TOOL_TYPE_STYLUS
         val eraserEnd = event.getToolType(index) == MotionEvent.TOOL_TYPE_ERASER
-        if (stylus || eraserEnd) penGesture = true
+        if (stylus || eraserEnd) {
+            penGesture = true
+            onStylusSeen()
+        }
         if ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) &&
             (stylus || eraserEnd || (inputMode == InputMode.TOUCH && event.pointerCount == 1))) {
             if (pageRect.contains(event.getX(index), event.getY(index))) {
+                hoverAt = null
                 activePointer = event.getPointerId(index)
                 activeColor = inkColor
                 activeWidth = inkWidth
                 activeKind = inkKind
+                activeOnStroke = onStroke
                 activeErasing = eraserEnd || tool == InkTool.ERASER || (stylus && event.buttonState and STYLUS_BUTTONS != 0)
                 if (stylus || eraserEnd) requestUnbufferedDispatch(event)
+                onWritingChanged(WritingState.ACTIVE)
                 track(event, index)
                 parent?.requestDisallowInterceptTouchEvent(true)
                 return true
@@ -363,14 +497,38 @@ internal class InkPageView(context: Context) : View(context) {
         }
         // Pan before scaling: the pinch then zooms around where the fingers are now.
         followFingers(event)
+        trackFingerGesture(event)
         scaleDetector.onTouchEvent(event)
         gestureDetector.onTouchEvent(event)
+        // After the detectors, which mark a zoom or page turn on this same UP.
+        if (action == MotionEvent.ACTION_UP && fingerGesture == FingerGesture.DRAG && inputMode == InputMode.PEN) {
+            onFingerDragInPenMode()
+        }
         return true
     }
 
-    // The page follows the centroid of the fingers, so a pinch also pans, two
-    // fingers pan in touch-ink mode, and lifting one finger never makes the page
-    // jump to where the remaining finger is.
+    private fun trackFingerGesture(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                // Only a finger or a mouse is someone trying to write without a pen.
+                val tool = event.getToolType(event.actionIndex)
+                val writer = tool == MotionEvent.TOOL_TYPE_FINGER || tool == MotionEvent.TOOL_TYPE_MOUSE
+                fingerGesture = if (writer) FingerGesture.TAP else FingerGesture.OTHER
+                fingerDownX = event.x
+                fingerDownY = event.y
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> fingerGesture = FingerGesture.OTHER
+            MotionEvent.ACTION_MOVE -> {
+                val moved = hypot(event.x - fingerDownX, event.y - fingerDownY) > touchSlop
+                if (fingerGesture == FingerGesture.TAP && moved) fingerGesture = FingerGesture.DRAG
+            }
+        }
+    }
+
+    // The page follows the centroid of the fingers, so a pinch also pans and
+    // lifting one finger never makes the page jump to where the remaining
+    // finger is. In touch-ink mode a second finger cancels the stroke the
+    // first one started (see onTouchEvent), then both fingers pan.
     private fun followFingers(event: MotionEvent) {
         val lifting = if (event.actionMasked == MotionEvent.ACTION_POINTER_UP) event.actionIndex else -1
         var sumX = 0f
@@ -389,7 +547,7 @@ internal class InkPageView(context: Context) : View(context) {
         if (event.actionMasked == MotionEvent.ACTION_MOVE) {
             panX += focusX - lastFocusX
             panY += focusY - lastFocusY
-            clampPan()
+            updatePageTransform()
             invalidate()
         }
         lastFocusX = focusX
@@ -402,23 +560,38 @@ internal class InkPageView(context: Context) : View(context) {
         val ratio = zoom / previous
         panX = (panX - focusX + width / 2f) * ratio + focusX - width / 2f
         panY = (panY - focusY + height / 2f) * ratio + focusY - height / 2f
-        clampPan()
+        updatePageTransform()
         invalidate()
     }
 
     private fun fitScale(page: PageSpec): Float =
         min((width - pageMargin * 2) / page.displayWidth, (height - pageMargin * 2) / page.displayHeight)
 
-    // Clamp as soon as pan or zoom changes, not only when a frame is drawn, so
-    // gestures never build on an out-of-range pan between frames.
-    private fun clampPan() {
-        val page = spec ?: return
-        val scale = fitScale(page) * zoom
-        if (scale <= 0f) return
+    // Publish one transform after every page, size, pan or zoom change, so input
+    // before the next frame uses the same placement and scale as drawing.
+    private fun updatePageTransform() {
+        pageRect.setEmpty()
+        pageScale = 0f
+        val page = spec
+        val fit = page?.let { fitScale(it) } ?: 0f
+        if (page == null || fit <= 0f) {
+            // A contact cannot survive losing its page coordinate space.
+            cancelStroke()
+            return
+        }
+
+        val scale = fit * zoom
         val pageWidth = page.displayWidth * scale
         val pageHeight = page.displayHeight * scale
+        if (alignTopPending) {
+            panY = maxPan(pageHeight, height)
+            alignTopPending = false
+        }
         panX = panX.coerceIn(-maxPan(pageWidth, width), maxPan(pageWidth, width))
         panY = panY.coerceIn(-maxPan(pageHeight, height), maxPan(pageHeight, height))
+
+        pageScale = scale
+        pageRect.set((width - pageWidth) / 2f + panX, (height - pageHeight) / 2f + panY, (width + pageWidth) / 2f + panX, (height + pageHeight) / 2f + panY)
     }
 
     private fun animateZoom(target: Float, focusX: Float, focusY: Float) {
@@ -439,15 +612,66 @@ internal class InkPageView(context: Context) : View(context) {
     override fun performClick(): Boolean { super.performClick(); return true }
 
     private fun track(event: MotionEvent, index: Int) {
-        if (activeErasing) eraseAlong(event, index) else addSamples(event, index)
+        if (activeErasing) {
+            eraseAlong(event, index)
+            return
+        }
+        addSamples(event, index)
+        followHold()
+    }
+
+    private fun followHold() {
+        val last = points.lastOrNull() ?: return
+        if (linePressure != null) {
+            reshapeLine(last)
+            return
+        }
+        // Moving past the slop restarts the wait; resting lets it run out.
+        val anchor = holdAnchor
+        if (anchor != null && distance(anchor, last) <= dpOnPage(HOLD_SLOP_DP)) return
+        holdAnchor = last
+        hold.removeCallbacks(straighten)
+        hold.postDelayed(straighten, HOLD_MS)
+    }
+
+    private fun straightenLine() {
+        val first = points.firstOrNull() ?: return
+        if (liveStroke == null || activeErasing || distance(first, points.last()) < dpOnPage(MIN_LINE_DP)) return
+
+        // One even pressure, so the line keeps the stroke's weight without a taper.
+        linePressure = points.map { it.pressure }.average().toFloat()
+        performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        reshapeLine(points.last())
+    }
+
+    private fun reshapeLine(end: InkPoint) {
+        val pressure = linePressure ?: return
+        // Dragged back onto its start, the line would shrink to a dot: keep the last one.
+        val start = points.first()
+        val target = if (distance(start, end) > dpOnPage(HOLD_SLOP_DP)) end else lineEnd ?: return
+        lineEnd = target
+        points = mutableListOf(start.copy(pressure = pressure), target.copy(pressure = pressure))
+        liveStroke = InkStrokeBuilder(activeWidth).also { builder -> points.forEach(builder::add) }
+        invalidate()
+    }
+
+    private fun dpOnPage(dp: Float): Float {
+        if (pageScale <= 0f) return 0f
+        return dp * density / pageScale
+    }
+
+    private fun distance(a: InkPoint, b: InkPoint): Float = hypot(a.x - b.x, a.y - b.y)
+
+    // Screen pixels to page units; null before the page is laid out.
+    private fun pagePoint(x: Float, y: Float, pressure: Float): InkPoint? {
+        if (pageScale <= 0f) return null
+        val point = InkPoint((x - pageRect.left) / pageScale, (y - pageRect.top) / pageScale, pressure)
+        return point.takeIf { it.x.isFinite() && it.y.isFinite() }
     }
 
     private fun eraseAlong(event: MotionEvent, index: Int) {
-        val page = spec ?: return
         fun erase(x: Float, y: Float) {
-            val point = InkPoint((x - pageRect.left) / pageRect.width() * page.displayWidth,
-                (y - pageRect.top) / pageRect.height() * page.displayHeight, 1f)
-            if (!point.x.isFinite() || !point.y.isFinite()) return
+            val point = pagePoint(x, y, 1f) ?: return
             val candidates = strokes.filter { it !in erasing }
             // The cached ink must be re-recorded without the newly hidden strokes.
             if (erasing.addAll(eraser.hits(candidates, eraserAt, point, eraserRadius()))) inkNodeStale = true
@@ -466,20 +690,15 @@ internal class InkPageView(context: Context) : View(context) {
 
     // A constant size on screen: zooming in makes the eraser more precise on the page.
     private fun eraserRadius(): Float {
-        val page = spec ?: return 0f
-        return ERASER_RADIUS_DP * resources.displayMetrics.density * page.displayWidth / pageRect.width()
+        if (pageScale <= 0f) return 0f
+        return ERASER_RADIUS_DP * density / pageScale
     }
 
     private fun addSamples(event: MotionEvent, index: Int) {
-        val page = spec ?: return
         fun add(x: Float, y: Float, pressure: Float) {
-            val point = InkPoint((x - pageRect.left) / pageRect.width() * page.displayWidth,
-                (y - pageRect.top) / pageRect.height() * page.displayHeight,
-                if (event.getToolType(index) == MotionEvent.TOOL_TYPE_STYLUS) pressure else TOUCH_PRESSURE)
-            if (point.x.isFinite() && point.y.isFinite()) {
-                points.add(point)
-                (liveStroke ?: InkStrokeBuilder(activeWidth).also { liveStroke = it }).add(point)
-            }
+            val point = pagePoint(x, y, if (event.getToolType(index) == MotionEvent.TOOL_TYPE_STYLUS) pressure else TOUCH_PRESSURE) ?: return
+            points.add(point)
+            (liveStroke ?: InkStrokeBuilder(activeWidth).also { liveStroke = it }).add(point)
         }
         // Historical samples retain curves during fast writing and batched input.
         for (history in 0 until event.historySize) {
@@ -492,14 +711,19 @@ internal class InkPageView(context: Context) : View(context) {
     private fun finishStroke() {
         val stroke = InkStroke(points.toList(), activeColor, activeWidth, activeKind)
         // The live builder already smoothed these exact samples with this width:
-        // activeWidth is fixed when a stroke starts, and configure() cancels any
-        // live stroke before the pen settings change.
+        // activeWidth is fixed when a stroke starts and outlasts any settings
+        // change during it.
         liveStroke?.let { geometryCache.seed(stroke, it.segments()) }
         cancelStroke()
-        onStroke(stroke)
+        activeOnStroke(stroke)
     }
 
     private fun cancelStroke() {
+        hold.removeCallbacks(straighten)
+        holdAnchor = null
+        linePressure = null
+        lineEnd = null
+        val wasWriting = activePointer != NO_POINTER
         points = mutableListOf()
         liveStroke = null
         // Strokes hidden by a cancelled erase must be drawn again.
@@ -509,6 +733,7 @@ internal class InkPageView(context: Context) : View(context) {
         eraserAt = null
         activeErasing = false
         activePointer = NO_POINTER
+        if (wasWriting) onWritingChanged(WritingState.IDLE)
         parent?.requestDisallowInterceptTouchEvent(false)
         invalidate()
     }
@@ -524,7 +749,7 @@ internal class InkPageView(context: Context) : View(context) {
 
     private fun drawHighlight(canvas: Canvas, color: Int, width: Float, path: Path) {
         highlighter.color = color
-        highlighter.strokeWidth = width
+        highlighter.strokeWidth = InkGeometry.strokeWidth(width)
         canvas.drawPath(path, highlighter)
     }
 
@@ -541,8 +766,84 @@ internal class InkPageView(context: Context) : View(context) {
 
     private fun maxPan(pageSize: Float, viewSize: Int): Float = ((pageSize - viewSize) / 2f + pageMargin).coerceAtLeast(0f)
 
+    /**
+     * Recognizes a quick tap with several fingers: every finger lands and lifts
+     * within [MAX_TAP_MS] of the first touch without moving past the touch
+     * slop. Each fingertip is checked by pointer ID, in batched samples and
+     * where it lifts: a centroid misses fingers moving in opposite directions.
+     * A stylus, a pointer the system cancelled (a palm), a drag or a pinch
+     * rules it out.
+     */
+    private class FingerTaps(private val slop: Float) {
+        private val starts = HashMap<Int, PointF>()
+        private var fingers = 0
+        private var lifted = false
+        private var ruledOut = false
+
+        /** Returns the number of fingers when [event] completes a tap, otherwise null. */
+        fun track(event: MotionEvent): Int? {
+            val action = event.actionMasked
+            if (action == MotionEvent.ACTION_DOWN) {
+                starts.clear()
+                fingers = 0
+                lifted = false
+                ruledOut = false
+            }
+            if (action == MotionEvent.ACTION_CANCEL || event.flags and MotionEvent.FLAG_CANCELED != 0) ruledOut = true
+            when (action) {
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> land(event, event.actionIndex)
+                MotionEvent.ACTION_MOVE -> for (index in 0 until event.pointerCount) checkMoved(event, index)
+                MotionEvent.ACTION_POINTER_UP -> lift(event, event.actionIndex)
+                MotionEvent.ACTION_UP -> {
+                    lift(event, event.actionIndex)
+                    val quick = event.eventTime - event.downTime <= MAX_TAP_MS
+                    if (!ruledOut && quick && fingers >= UNDO_FINGERS) return fingers
+                }
+            }
+            return null
+        }
+
+        // All fingers land before any lifts: one landing again is not a tap.
+        private fun land(event: MotionEvent, index: Int) {
+            fingers++
+            if (event.getToolType(index) != MotionEvent.TOOL_TYPE_FINGER || fingers > REDO_FINGERS || lifted) ruledOut = true
+            starts[event.getPointerId(index)] = PointF(event.getX(index), event.getY(index))
+        }
+
+        // Some digitizers report a finger's last movement only as it lifts.
+        private fun lift(event: MotionEvent, index: Int) {
+            checkMoved(event, index)
+            starts.remove(event.getPointerId(index))
+            lifted = true
+        }
+
+        private fun checkMoved(event: MotionEvent, index: Int) {
+            val start = starts[event.getPointerId(index)] ?: return
+            for (sample in 0 until event.historySize) {
+                if (moved(start, event.getHistoricalX(index, sample), event.getHistoricalY(index, sample))) ruledOut = true
+            }
+            if (moved(start, event.getX(index), event.getY(index))) ruledOut = true
+        }
+
+        private fun moved(start: PointF, x: Float, y: Float) = hypot(x - start.x, y - start.y) > slop
+    }
+
+    /** What a gesture without the pen has done so far. */
+    private enum class FingerGesture {
+        /** One pointer, still within the touch slop. */
+        TAP,
+        /** One pointer that moved, and nothing else happened. */
+        DRAG,
+        /** A second finger, a zoom or a page turn. */
+        OTHER,
+    }
+
     private companion object {
         const val NO_POINTER = -1
+        const val UNDO_FINGERS = 2
+        const val REDO_FINGERS = 3
+        // Longer than a one-finger tap: several fingers rarely land at once.
+        const val MAX_TAP_MS = 300L
         const val DEFAULT_WIDTH = 2.2f
         const val TOUCH_PRESSURE = 0.65f
         const val MAX_ZOOM = 5f
@@ -554,6 +855,13 @@ internal class InkPageView(context: Context) : View(context) {
         const val SWIPE_VELOCITY_DP = 600f
         const val SWIPE_DIRECTION_RATIO = 1.5f
         const val ERASER_RADIUS_DP = 10f
+        // Longer than a pause between letters; short enough to feel deliberate.
+        const val HOLD_MS = 600L
+        const val HOLD_SLOP_DP = 3f
+        const val MIN_LINE_DP = 24f
+        const val HOVER_MIN_RADIUS_DP = 4f
+        const val HOVER_LINE_DP = 1.5f
+        val HOVER_HALO_COLOR = Color.argb(150, 255, 255, 255)
         // Most pens report the side button as primary; older S Pens report secondary.
         const val STYLUS_BUTTONS = MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_SECONDARY
         const val SHADOW_RADIUS_DP = 6f

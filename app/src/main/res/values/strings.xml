@@ -1,7 +1,9 @@
 <resources>
     <string name="app_name">Asterinked</string>
     <string name="open_pdf">Open PDF</string>
+    <string name="save">Save</string>
     <string name="save_copy">Save copy</string>
+    <string name="save_as">Save to another file</string>
     <string name="share">Share</string>
     <string name="share_title">Share annotated PDF</string>
     <string name="undo">Undo</string>
@@ -17,14 +19,24 @@
     <string name="welcome_body">Open a PDF and write directly on its pages. Save a copy with your handwriting included.</string>
     <string name="welcome_caption">You can also open a PDF in Asterinked from Files, email or your browser.</string>
     <string name="opening">Opening…</string>
-    <string name="input_hint">Pen writes · Swipe to turn pages · Double-tap to zoom</string>
-    <string name="touch_hint">Finger or pen writes · Two fingers pan and zoom</string>
+    <string name="input_hint">Pen writes · Swipe to turn pages · Double-tap to zoom · Tap with two fingers to undo, three to redo</string>
+    <string name="touch_hint">Finger or pen writes · Two fingers pan and zoom · Tap with two fingers to undo, three to redo</string>
+    <string name="finger_drag_hint">Fingers move the page. To write with a finger, turn on the hand button.</string>
     <string name="eraser_hint">Drag across strokes to erase them</string>
     <string name="highlight_hint">Drag across text to highlight it</string>
     <string name="working">Working…</string>
     <string name="page_count">Page %1$d of %2$d</string>
     <string name="page_position">%1$d / %2$d</string>
     <string name="go_to_page">Go to page</string>
+    <string name="page_navigation_description">Page %1$d of %2$d. Go to page or notes</string>
+    <string name="previous_note">Previous note</string>
+    <string name="next_note">Next note</string>
+    <string name="previous_note_page">Previous note: page %1$d</string>
+    <string name="next_note_page">Next note: page %1$d</string>
+    <plurals name="annotated_pages">
+        <item quantity="one">%d page with notes</item>
+        <item quantity="other">%d pages with notes</item>
+    </plurals>
     <string name="go">Go</string>
     <string name="page_number">Page</string>
     <string name="of_pages">of %1$d</string>
@@ -34,6 +46,8 @@
     <string name="unsaved_prompt">This PDF has notes you haven’t exported. Opening another PDF replaces the current draft.</string>
     <string name="keep_editing">Keep editing</string>
     <string name="open_anyway">Open another</string>
+    <string name="already_open">This PDF is already open.</string>
+    <string name="already_open_with_notes">This PDF is already open. Your notes are still here.</string>
     <string name="unsaved">Unexported notes</string>
     <string name="saved">All notes exported</string>
     <string name="black">Graphite</string>
@@ -46,6 +60,9 @@
     <string name="medium">Medium</string>
     <string name="bold">Bold</string>
     <string name="no_picker">No document picker is available on this device.</string>
+    <string name="no_viewer">No PDF viewer is available on this device.</string>
+    <string name="open">Open</string>
+    <string name="open_title">Open annotated PDF</string>
     <string name="pdf_saved">PDF saved.</string>
     <string name="notes_not_saved">Your latest notes couldn’t be stored on this device. Save a PDF copy now.</string>
     <string name="error_source_unreadable">Couldn’t read this file. The app that provides it may not allow access. Try downloading it first.</string>

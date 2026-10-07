@@ -30,6 +30,9 @@ import java.time.Duration
 class InkPageViewGestureTest {
     private val strokes = mutableListOf<InkStroke>()
     private val turns = mutableListOf<Int>()
+    private val taps = mutableListOf<String>()
+    private var drags = 0
+    private var stylusSightings = 0
     private var clock = 1_000L
 
     @Test fun twoFingersPanInTouchMode() {
@@ -107,6 +110,125 @@ class InkPageViewGestureTest {
         assertEquals(before.x, pageAt(view, 300f, 400f).x, 0.01f)
     }
 
+    @Test fun twoFingerTapUndoesAndThreeFingerTapRedoes() {
+        val view = pageView(InputMode.PEN)
+        val fit = unitsPer100px(view)
+
+        tap(view, 2)
+        tap(view, 3)
+
+        assertEquals(listOf("undo", "redo"), taps)
+        assertTrue("A tap neither inks nor turns the page", strokes.isEmpty() && turns.isEmpty())
+        assertEquals("A tap does not zoom", fit, unitsPer100px(view), 0.01f)
+    }
+
+    @Test fun aFourthFingerRulesTheTapOut() {
+        val view = pageView(InputMode.PEN)
+
+        tap(view, 4)
+
+        assertTrue(taps.isEmpty() && strokes.isEmpty())
+    }
+
+    @Test fun twoFingerTapUndoesWithoutInkingInTouchMode() {
+        val view = pageView(InputMode.TOUCH)
+
+        tap(view, 2)
+
+        assertEquals(listOf("undo"), taps)
+        assertTrue("The first finger's dot is dropped", strokes.isEmpty())
+    }
+
+    @Test fun threeFingerTapRedoesWithoutInkingInTouchMode() {
+        val view = pageView(InputMode.TOUCH)
+
+        tap(view, 3)
+
+        assertEquals(listOf("redo"), taps)
+        assertTrue("The first finger's dot is dropped", strokes.isEmpty())
+    }
+
+    @Test fun aTapSurvivesJitterAfterOneFingerLifts() {
+        val view = pageView(InputMode.PEN)
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 260f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_MOVE, listOf(finger(0, 261f)))
+        send(view, MotionEvent.ACTION_UP, listOf(finger(0, 261f)))
+
+        assertEquals(listOf("undo"), taps)
+    }
+
+    // Some digitizers report a finger's last movement only as it lifts.
+    @Test fun movementReportedOnlyOnReleaseIsNotATap() {
+        val view = pageView(InputMode.PEN)
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 260f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(finger(0, 260f), finger(1, 420f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_UP, listOf(finger(0, 260f)))
+
+        assertTrue(taps.isEmpty())
+    }
+
+    // The centroid and span of two fingers that swap places do not change.
+    @Test fun fingersMovingInOppositeDirectionsAreNotATap() {
+        val view = pageView(InputMode.PEN)
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 260f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_MOVE, listOf(finger(0, 340f), finger(1, 260f)))
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(finger(0, 340f), finger(1, 260f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_UP, listOf(finger(0, 340f)))
+
+        assertTrue(taps.isEmpty())
+    }
+
+    // The system cancels a pointer it decided was a palm.
+    @Test fun aCancelledFingerIsNotATap() {
+        val view = pageView(InputMode.PEN)
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 260f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1, flags = MotionEvent.FLAG_CANCELED)
+        send(view, MotionEvent.ACTION_UP, listOf(finger(0, 260f)))
+
+        assertTrue(taps.isEmpty())
+    }
+
+    @Test fun aCancelledGestureIsNotATap() {
+        val view = pageView(InputMode.PEN)
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 260f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_CANCEL, listOf(finger(0, 260f), finger(1, 340f)))
+
+        assertTrue(taps.isEmpty())
+    }
+
+    // A finger that lifts and lands again while another rests is not a clean
+    // two-finger tap, and must not count as a third finger.
+    @Test fun aFingerThatLandsAgainIsNotATap() {
+        val view = pageView(InputMode.PEN)
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 260f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_UP, listOf(finger(0, 260f)))
+
+        assertTrue(taps.isEmpty())
+    }
+
+    @Test fun pinchesHoldsAndPenGesturesAreNotTaps() {
+        val view = pageView(InputMode.PEN)
+
+        pinch(view, 200f to 400f, 100f to 500f)
+        tap(view, 2, holdMillis = 600)
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f), finger(1, 400f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f), finger(1, 400f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f)))
+
+        assertTrue(taps.isEmpty())
+    }
+
     @Test fun pinchFollowsTheFingers() {
         val view = pageView(InputMode.PEN)
         pinch(view, 200f to 400f, 100f to 500f)
@@ -170,6 +292,65 @@ class InkPageViewGestureTest {
         assertTrue(turns.isEmpty())
     }
 
+    @Test fun onlyFingersAndMiceAreReportedAsDrags() {
+        val view = pageView(InputMode.PEN)
+        slowDrag(view, MotionEvent.TOOL_TYPE_UNKNOWN)
+        slowDrag(view, MotionEvent.TOOL_TYPE_STYLUS)
+        assertEquals("An unknown tool or a pen is no finger looking for ink", 0, drags)
+    }
+
+    @Test fun aOneFingerDragInPenModeIsReported() {
+        val view = pageView(InputMode.PEN)
+        slowDrag(view, MotionEvent.TOOL_TYPE_FINGER)
+        assertEquals("A finger drag", 1, drags)
+        slowDrag(view, MotionEvent.TOOL_TYPE_MOUSE)
+        assertEquals("A mouse drag counts like a finger", 2, drags)
+        assertTrue("Too slow to turn the page", turns.isEmpty())
+    }
+
+    @Test fun zoomingTurningAndTappingAreNotReportedAsDrags() {
+        val view = pageView(InputMode.PEN)
+        swipe(view, from = 450f, to = 150f) // at fit zoom: turns the page
+        clock += 1_000
+        pinch(view, 200f to 400f, 100f to 500f)
+        clock += 1_000
+        doubleTap(view, 300f, 400f)
+        clock += 1_000
+        doubleTap(view, 300f, 400f)
+        clock += 1_000
+        drag(view, listOf(260f to 400f, 340f to 400f), dx = 60f)
+        clock += 1_000
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 300f)))
+        send(view, MotionEvent.ACTION_UP, listOf(finger(0, 300f)))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
+        assertEquals("The swipe turned the page", listOf(1), turns)
+        assertEquals(0, drags)
+
+        view.configure(InputMode.TOUCH, Color.BLACK, 2f) { strokes.add(it) }
+        clock += 1_000
+        slowDrag(view, MotionEvent.TOOL_TYPE_FINGER)
+        assertEquals("A finger inks in touch mode", 1, strokes.size)
+        assertEquals(0, drags)
+    }
+
+    @Test fun stylusContactAndHoverAreReported() {
+        val view = pageView(InputMode.PEN)
+        hover(view, MotionEvent.TOOL_TYPE_FINGER, InputDevice.SOURCE_TOUCHSCREEN)
+        hover(view, MotionEvent.TOOL_TYPE_MOUSE, InputDevice.SOURCE_MOUSE)
+        slowDrag(view, MotionEvent.TOOL_TYPE_FINGER)
+        assertEquals("Fingers, TalkBack hover and mice are not pens", 0, stylusSightings)
+
+        hover(view, MotionEvent.TOOL_TYPE_STYLUS, InputDevice.SOURCE_STYLUS)
+        assertTrue("A hovering pen", stylusSightings > 0)
+        stylusSightings = 0
+        hover(view, MotionEvent.TOOL_TYPE_ERASER, InputDevice.SOURCE_STYLUS)
+        assertTrue("A hovering eraser end", stylusSightings > 0)
+        stylusSightings = 0
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 400f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 400f)))
+        assertTrue("A pen on the page", stylusSightings > 0)
+    }
+
     @Test fun zoomSurvivesPageTurnButNotANewDocument() {
         val view = pageView(InputMode.PEN)
         val fit = unitsPer100px(view)
@@ -186,6 +367,10 @@ class InkPageViewGestureTest {
     private fun pageView(mode: InputMode) = InkPageView(RuntimeEnvironment.getApplication()).apply {
         configure(mode, Color.BLACK, 2f) { strokes.add(it) }
         onTurnPage = { turns.add(it) }
+        onUndo = { taps.add("undo") }
+        onRedo = { taps.add("redo") }
+        onFingerDragInPenMode = { drags++ }
+        onStylusSeen = { stylusSightings++ }
         show(state(page = 0))
         layout(0, 0, 600, 800)
         redraw(this)
@@ -257,18 +442,54 @@ class InkPageViewGestureTest {
         redraw(view)
     }
 
+    // Fingers land one after another, then lift one after another, in place.
+    private fun tap(view: InkPageView, fingers: Int, holdMillis: Long = 60) {
+        val all = List(fingers) { finger(it, 200f + it * 120f) }
+        send(view, MotionEvent.ACTION_DOWN, all.take(1))
+        for (count in 2..fingers) send(view, MotionEvent.ACTION_POINTER_DOWN, all.take(count), actionIndex = count - 1)
+        clock += holdMillis
+        for (count in fingers downTo 2) send(view, MotionEvent.ACTION_POINTER_UP, all.take(count), actionIndex = count - 1)
+        send(view, MotionEvent.ACTION_UP, all.take(1))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
+        redraw(view)
+    }
+
+    // Too slow to fling, so it neither turns the page nor counts as a swipe.
+    private fun slowDrag(view: InkPageView, tool: Int) {
+        val at = { x: Float -> Pointer(0, tool, x, 400f) }
+        send(view, MotionEvent.ACTION_DOWN, listOf(at(300f)))
+        for (step in 1..4) {
+            clock += 100
+            send(view, MotionEvent.ACTION_MOVE, listOf(at(300f + 15f * step)))
+        }
+        send(view, MotionEvent.ACTION_UP, listOf(at(360f)))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
+        redraw(view)
+    }
+
+    // Through the generic-motion dispatch, as the window delivers hover.
+    private fun hover(view: InkPageView, tool: Int, source: Int) {
+        for (action in listOf(MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE, MotionEvent.ACTION_HOVER_EXIT)) {
+            clock += 4
+            val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = tool })
+            val coordinates = arrayOf(MotionEvent.PointerCoords().apply { x = 300f; y = 400f })
+            val event = MotionEvent.obtain(clock, clock, action, 1, properties, coordinates, 0, 0, 1f, 1f, 0, 0, source, 0)
+            try { view.dispatchGenericMotionEvent(event) } finally { event.recycle() }
+        }
+    }
+
     private fun finger(id: Int, x: Float) = Pointer(id, MotionEvent.TOOL_TYPE_FINGER, x, 400f)
 
     private var downTime = 0L
 
-    private fun send(view: InkPageView, action: Int, pointers: List<Pointer>, actionIndex: Int = 0) {
+    private fun send(view: InkPageView, action: Int, pointers: List<Pointer>, actionIndex: Int = 0, flags: Int = 0) {
         if (action == MotionEvent.ACTION_DOWN) downTime = clock
         clock += 4
         val properties = pointers.map { MotionEvent.PointerProperties().apply { id = it.id; toolType = it.tool } }.toTypedArray()
         val coordinates = pointers.map { MotionEvent.PointerCoords().apply { x = it.x; y = it.y; pressure = 0.6f } }.toTypedArray()
         val source = if (pointers.any { it.tool == MotionEvent.TOOL_TYPE_STYLUS }) InputDevice.SOURCE_STYLUS else InputDevice.SOURCE_TOUCHSCREEN
         val masked = action or (actionIndex shl MotionEvent.ACTION_POINTER_INDEX_SHIFT)
-        val event = MotionEvent.obtain(downTime, clock, masked, pointers.size, properties, coordinates, 0, 0, 1f, 1f, 0, 0, source, 0)
+        val event = MotionEvent.obtain(downTime, clock, masked, pointers.size, properties, coordinates, 0, 0, 1f, 1f, 0, 0, source, flags)
         try { view.onTouchEvent(event) } finally { event.recycle() }
     }
 

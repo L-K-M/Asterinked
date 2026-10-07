@@ -170,10 +170,26 @@ internal class Components(private val context: Context) {
         setOnClickListener { action() }
     }
 
+    /** A quiet secondary action with a button role and a full-size touch target. */
+    fun textButton(@StringRes label: Int, style: TextStyle = TextStyle.LABEL, action: () -> Unit): Button = Button(context).apply {
+        setText(label)
+        setTextAppearance(style.appearance)
+        isAllCaps = false
+        minWidth = dp(Size.TOUCH)
+        minimumWidth = dp(Size.TOUCH)
+        minHeight = dp(Size.TOUCH)
+        minimumHeight = dp(Size.TOUCH)
+        setTextColor(ColorStateList(DISABLED_OR_DEFAULT, intArrayOf(color(R.color.on_surface_disabled), color(R.color.on_surface))))
+        background = ripple(content = null, mask = rounded(color(R.color.on_surface), Radius.SMALL))
+        setPadding(dp(Space.XS), 0, dp(Space.XS), 0)
+        stateListAnimator = null
+        setOnClickListener { action() }
+    }
+
     /** An ink colour or pen width at [position] in its row, announced as one of a set. */
     fun choice(@StringRes label: Int, position: Int, action: () -> Unit): ChoiceDot = ChoiceDot(context).apply {
         ringColor = color(R.color.on_surface)
-        outlineColor = color(R.color.outline)
+        outlineColor = color(R.color.swatch_edge)
         backdrop = color(R.color.surface)
         background = ripple(content = null, mask = disc(Size.BUTTON))
         describe(label)

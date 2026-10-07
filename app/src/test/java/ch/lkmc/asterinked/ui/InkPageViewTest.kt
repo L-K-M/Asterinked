@@ -10,14 +10,17 @@ import ch.lkmc.asterinked.document.PageSpec
 import ch.lkmc.asterinked.ink.InkKind
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
+import android.os.Looper
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
+import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -51,6 +54,148 @@ class InkPageViewTest {
         send(view, MotionEvent.ACTION_CANCEL, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 180f, 180f)))
         assertTrue(strokes.isEmpty())
     }
+
+    // The other hand may tap a colour, width or tool while the pen is down;
+    // the stroke being written finishes as it started.
+    @Test fun changingSettingsMidStrokeKeepsTheStroke() {
+        val strokes = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, strokes)
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 200f, 300f)))
+
+        view.configure(InputMode.PEN, Color.RED, 4f) { strokes.add(it) }
+        view.tool = InkTool.ERASER
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 250f, 300f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 300f)))
+
+        val stroke = strokes.single()
+        assertEquals("The colour it started with", Color.BLACK, stroke.color)
+        assertEquals(2f, stroke.width, 0.001f)
+        assertEquals("Every sample, before and after the change", 4, stroke.points.size)
+    }
+
+    @Test fun choosingTheEraserMidStrokeErasesNothing() {
+        val (view, _) = pageWithInk(InputMode.PEN)
+        val erased = mutableListOf<InkStroke>()
+        view.onErase = { erased.addAll(it) }
+
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 200f, 250f)))
+        view.tool = InkTool.ERASER
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 200f, 350f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 200f, 450f)))
+
+        assertTrue("Crossing ink with the pen down erases nothing", erased.isEmpty())
+        assertEquals("The stroke completes", 1, strokes.size)
+    }
+
+    @Test fun choosingThePenMidEraseDrawsNothing() {
+        val (view, drawn) = pageWithInk(InputMode.PEN)
+        val erased = mutableListOf<InkStroke>()
+        view.onErase = { erased.addAll(it) }
+        view.tool = InkTool.ERASER
+
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 200f, 280f)))
+        view.tool = InkTool.PEN
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 200f, 300f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 200f, 320f)))
+
+        assertEquals("The erase finishes as an erase", listOf(drawn[0]), erased)
+        assertTrue(strokes.isEmpty())
+    }
+
+    @Test fun holdingThePenStillStraightensTheStroke() {
+        val strokes = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, strokes)
+        wavyLine(view)
+
+        hold()
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 350f, 300f)))
+
+        val line = strokes.single().points
+        assertEquals("A straight line from start to end", 2, line.size)
+        assertEquals(page(150f), line.first().x, 0.5f)
+        assertEquals(page(350f), line.last().x, 0.5f)
+        assertEquals("Level, like the wave's ends", line.first().y, line.last().y, 0.5f)
+    }
+
+    @Test fun afterTheSnapThePenDragsTheLineEnd() {
+        val strokes = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, strokes)
+        wavyLine(view)
+        hold()
+
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 400f, 500f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 400f, 500f)))
+
+        val line = strokes.single().points
+        assertEquals(2, line.size)
+        assertEquals(page(400f), line.last().x, 0.5f)
+    }
+
+    @Test fun theNextStrokeAfterASnapIsFreehand() {
+        val strokes = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, strokes)
+        wavyLine(view)
+        hold()
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 350f, 300f)))
+
+        wavyLine(view)
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 350f, 300f)))
+        hold()
+
+        assertTrue("No leftover line or timer reshapes it", strokes.last().points.size > 2)
+    }
+
+    @Test fun draggingTheEndBackOntoTheStartKeepsTheLine() {
+        val strokes = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, strokes)
+        wavyLine(view)
+        hold()
+
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+
+        val line = strokes.single().points
+        assertEquals("Not a dot at the start", page(350f), line.last().x, 0.5f)
+    }
+
+    @Test fun writingWithoutAPauseOrAShortTickStaysAsDrawn() {
+        val strokes = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, strokes)
+        wavyLine(view)
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 350f, 300f)))
+        assertTrue("No pause: freehand", strokes.removeAt(0).points.size > 2)
+
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 155f, 304f)))
+        hold()
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 155f, 304f)))
+        assertTrue("Too short to straighten", strokes.single().points.size > 2)
+    }
+
+    @Test fun theEraserNeverStraightens() {
+        val (view, _) = pageWithInk(InputMode.PEN)
+        view.tool = InkTool.ERASER
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 100f, 300f)))
+        send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 100f, 450f)))
+        hold()
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 100f, 450f)))
+        assertTrue("A held eraser draws no line", strokes.isEmpty())
+    }
+
+    // Screen x to page units in the 600x800 test view with a 400-wide page (fit 1.293, margin 12).
+    private fun page(screenX: Float) = (screenX - (600f - 400f * FIT) / 2f) / FIT
+
+    // A wave from (150, 300) to (350, 300), as handwriting would draw an underline.
+    private fun wavyLine(view: InkPageView) {
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f, 300f)))
+        for (step in 1..10) {
+            val y = 300f + if (step % 2 == 0) 6f else -6f
+            send(view, MotionEvent.ACTION_MOVE, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 150f + 20f * step, if (step == 10) 300f else y)))
+        }
+    }
+
+    private fun hold() = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(HOLD_MS))
 
     @Test fun pageStillRenderingTakesInkRightAway() {
         val strokes = mutableListOf<InkStroke>()
@@ -95,6 +240,96 @@ class InkPageViewTest {
         // the historical sample would be a straight line at y = 300.
         assertTrue("Live stroke bends through the historical sample", darkPixelsNear(view, 250, 262))
         assertFalse("Live stroke is not a straight line", darkPixelsNear(view, 250, 300))
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun aHoveringStylusShowsWhereTheNibWillLand() {
+        val blue = Color.rgb(32, 85, 184)
+        val view = pageView(InputMode.PEN, mutableListOf()).apply { configure(InputMode.PEN, blue, 2f) {} }
+
+        hover(view, MotionEvent.ACTION_HOVER_MOVE, 300f, 400f)
+        assertTrue("A ring in the ink colour", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+
+        hover(view, MotionEvent.ACTION_HOVER_EXIT, 300f, 400f)
+        assertFalse("Gone once the pen leaves", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun hoveringWithTheEraserShowsTheEraserInstead() {
+        val view = pageView(InputMode.PEN, mutableListOf()).apply { configure(InputMode.PEN, Color.rgb(32, 85, 184), 2f) {} }
+        view.tool = InkTool.ERASER
+
+        hover(view, MotionEvent.ACTION_HOVER_MOVE, 300f, 400f)
+
+        assertFalse("No ink ring", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+        assertTrue("The eraser ring, 10dp out", pixelsNear(view, 310, 400, reach = 2) { Color.red(it) < 200 })
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun noHoverRingWhileTheEditorIsBusyOrOffThePage() {
+        val view = pageView(InputMode.PEN, mutableListOf()).apply { configure(InputMode.PEN, Color.rgb(32, 85, 184), 2f) {} }
+        hover(view, MotionEvent.ACTION_HOVER_MOVE, 30f, 30f)
+        assertFalse("Outside the page", pixelsNear(view, 30, 30) { Color.blue(it) > 150 && Color.red(it) < 100 })
+
+        view.show(EditorState(Draft(File("test.pdf"), "test.pdf"), listOf(PageSpec(0f, 0f, 400f, 600f, 0)), page, busy = true))
+        hover(view, MotionEvent.ACTION_HOVER_MOVE, 300f, 400f)
+        assertFalse("While busy", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun aPenHeldStillLosesItsRingWhenThePageChanges() {
+        val blue = Color.rgb(32, 85, 184)
+        val view = pageView(InputMode.PEN, mutableListOf()).apply { configure(InputMode.PEN, blue, 2f) {} }
+        hover(view, MotionEvent.ACTION_HOVER_MOVE, 300f, 400f)
+
+        view.show(EditorState(Draft(File("test.pdf"), "test.pdf", page = 1), List(2) { PageSpec(0f, 0f, 400f, 600f, 0) }, page, busy = false))
+
+        assertFalse("The old spot means nothing on the new page", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun theSideButtonSwitchesTheRingWhileThePenHovers() {
+        val view = pageView(InputMode.PEN, mutableListOf()).apply { configure(InputMode.PEN, Color.rgb(32, 85, 184), 2f) {} }
+        hover(view, MotionEvent.ACTION_HOVER_MOVE, 300f, 400f)
+
+        hover(view, MotionEvent.ACTION_BUTTON_PRESS, 300f, 400f, MotionEvent.BUTTON_STYLUS_PRIMARY)
+
+        assertFalse("No ink ring while the button erases", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+        assertTrue("The eraser ring instead", pixelsNear(view, 310, 400, reach = 2) { Color.red(it) < 200 })
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun theRingFollowsAToolChangeWhileThePenRests() {
+        val view = pageView(InputMode.PEN, mutableListOf()).apply { configure(InputMode.PEN, Color.rgb(32, 85, 184), 2f) {} }
+        hover(view, MotionEvent.ACTION_HOVER_MOVE, 300f, 400f)
+
+        view.tool = InkTool.ERASER
+
+        assertFalse("No ink ring once the eraser is picked", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+        assertTrue("The eraser ring instead", pixelsNear(view, 310, 400, reach = 2) { Color.red(it) < 200 })
+
+        view.tool = InkTool.PEN
+        assertTrue("The ink ring again", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+    }
+
+    // Hover events go to onHoverEvent; button presses while hovering are other
+    // generic motion events, as the framework dispatches them.
+    private fun hover(view: InkPageView, action: Int, x: Float, y: Float, buttons: Int = 0) {
+        val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_STYLUS })
+        val coordinates = arrayOf(MotionEvent.PointerCoords().apply { this.x = x; this.y = y })
+        val event = MotionEvent.obtain(0, 10, action, 1, properties, coordinates, 0, buttons, 1f, 1f, 0, 0, InputDevice.SOURCE_STYLUS, 0)
+        try {
+            if (action == MotionEvent.ACTION_BUTTON_PRESS || action == MotionEvent.ACTION_BUTTON_RELEASE) view.onGenericMotionEvent(event)
+            else view.onHoverEvent(event)
+        } finally {
+            event.recycle()
+        }
+    }
+
+    private fun pixelsNear(view: InkPageView, x: Int, y: Int, reach: Int = 6, matches: (Int) -> Boolean): Boolean {
+        val image = Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(image))
+        return (-reach..reach).any { dy -> (-reach..reach).any { dx -> matches(image.getPixel(x + dx, y + dy)) } }
     }
 
     private val page: Bitmap = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
@@ -162,6 +397,47 @@ class InkPageViewTest {
         send(view, MotionEvent.ACTION_CANCEL, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 200f, 320f)))
 
         assertTrue(erased.isEmpty())
+    }
+
+    @Test fun firstEraseReusesDisplayedGeometryAcrossCancelledGestures() {
+        var reads = 0
+        fun countedStroke(y: Float, kind: InkKind = InkKind.PEN): InkStroke {
+            val pressure = if (kind == InkKind.HIGHLIGHTER) 0f else 1f
+            val samples = listOf(InkPoint(100f, y, pressure), InkPoint(300f, y, pressure))
+            val counted = object : AbstractList<InkPoint>() {
+                override val size get() = samples.size
+                override fun get(index: Int): InkPoint { reads++; return samples[index] }
+            }
+            return InkStroke(counted, Color.BLACK, if (kind == InkKind.HIGHLIGHTER) 12f else 2f, kind)
+        }
+        val pen = countedStroke(300f)
+        val equalPen = pen.copy()
+        val highlight = countedStroke(300f, InkKind.HIGHLIGHTER)
+        val displayed = listOf(pen, equalPen, highlight) + List(61) { countedStroke(100f + it) }
+        val erased = mutableListOf<InkStroke>()
+        val view = pageView(InputMode.PEN, mutableListOf()).apply {
+            onErase = { erased.addAll(it) }
+            tool = InkTool.ERASER
+            show(EditorState(Draft(File("test.pdf"), "test.pdf", ink = mapOf(0 to displayed)),
+                listOf(PageSpec(0f, 0f, 400f, 600f, 0)), page, busy = false))
+            // Establish pageRect before input, independently of the stale-transform bug.
+            draw(Canvas(Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888)))
+        }
+        assertTrue("Displayed geometry was computed before contact", reads > 0)
+        reads = 0
+
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 400f)))
+        assertEquals("First contact must reuse all displayed geometry, including bounds rejects", 0, reads)
+        send(view, MotionEvent.ACTION_CANCEL, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 400f)))
+        assertTrue(erased.isEmpty())
+
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 400f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 400f)))
+        assertEquals("Reset must release gesture metadata without discarding renderer geometry", 0, reads)
+        assertEquals(3, erased.size)
+        assertSame(pen, erased[0])
+        assertSame(equalPen, erased[1])
+        assertSame(highlight, erased[2])
     }
 
     private val strokes = mutableListOf<InkStroke>()
@@ -267,4 +543,11 @@ class InkPageViewTest {
     }
 
     private data class Pointer(val id: Int, val tool: Int, val x: Float, val y: Float)
+
+    private companion object {
+        // Fit scale of a 400x600 page in a 600x800 view with 12px margins.
+        const val FIT = (800f - 24f) / 600f
+        // Longer than the pen has to rest before the stroke straightens.
+        const val HOLD_MS = 700L
+    }
 }

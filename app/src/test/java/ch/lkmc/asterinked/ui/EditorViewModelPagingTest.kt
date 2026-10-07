@@ -1,12 +1,8 @@
 package ch.lkmc.asterinked.ui
 
-import android.graphics.Bitmap
-import android.net.Uri
 import android.os.Looper
-import ch.lkmc.asterinked.document.DocumentOperations
-import ch.lkmc.asterinked.document.Draft
-import ch.lkmc.asterinked.document.OpenDocument
-import ch.lkmc.asterinked.document.PageSpec
+import android.net.Uri
+import androidx.lifecycle.ViewModelStore
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import org.junit.Assert.assertEquals
@@ -20,9 +16,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import java.io.File
-import java.util.concurrent.AbstractExecutorService
-import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -95,6 +88,134 @@ class EditorViewModelPagingTest {
         assertEquals(3, documents.saved.single().ink[0]!!.size)
     }
 
+    @Test fun clearingDrainsQueuedInkAndClosesTheServiceBeforeWorkerTermination() {
+        settle()
+        documents.saved.clear()
+        model.goToPage(5)
+        repeat(3) { model.addStroke(stroke()) }
+        val clearedState = state
+
+        clearModel()
+
+        assertTrue("Injected executors remain session-owned", worker.isShutdown)
+        assertFalse("Close must follow the queued writes", documents.closed)
+        assertFalse(worker.isTerminated)
+        worker.runAll()
+        idleMain()
+
+        assertEquals(3, documents.saved.single().ink.getValue(5).size)
+        assertEquals("Cleared queued previews must be skipped", listOf(0, 1), documents.rendered)
+        assertTrue(documents.closed)
+        assertTrue(worker.isTerminated)
+        assertSame("Cleared callbacks cannot update the editor", clearedState, state)
+    }
+
+    @Test fun postedRenderAndSaveErrorsAreSuppressedAfterClear() {
+        settle()
+        documents.failSaves = true
+        documents.renderFailures += 5
+        model.goToPage(5)
+        worker.runAll() // The errors are posted to main, but have not landed yet.
+        val clearedState = state
+
+        clearModel()
+        worker.runAll()
+        idleMain()
+
+        assertSame(clearedState, state)
+        assertNull(state.message)
+        assertTrue(documents.closed)
+    }
+
+    @Test fun aCompletedRestoreCannotPublishAfterClear() {
+        worker.runAll() // Restore has completed, but its main-thread post is pending.
+        val clearedState = state
+
+        clearModel()
+        worker.runAll()
+        idleMain()
+
+        assertSame(clearedState, state)
+        assertTrue(documents.closed)
+        assertEquals("Suppressed restore must not queue prefetch", listOf(0), documents.rendered)
+    }
+
+    @Test fun anExportRemembersItsDestination() {
+        settle()
+        model.addStroke(stroke())
+        settle()
+        val destination = Uri.parse("content://test/saved.pdf")
+
+        model.export(destination)
+        settle()
+
+        assertEquals(destination, state.draft!!.destination)
+        assertEquals(state.draft!!.ink, state.draft!!.savedInk)
+        assertEquals(listOf(destination), documents.exportedTo)
+
+        // The remembered place takes the next save without asking again.
+        model.addStroke(stroke())
+        model.export(destination)
+        settle()
+        assertEquals(listOf(destination, destination), documents.exportedTo)
+    }
+
+    @Test fun aDestinationThatStoppedTakingWritesIsForgotten() {
+        settle()
+        model.addStroke(stroke())
+        settle()
+        val destination = Uri.parse("content://test/saved.pdf")
+        model.export(destination)
+        settle()
+        assertEquals(destination, state.draft!!.destination)
+
+        // The provider revoked the grant or deleted the file: the next write
+        // fails, the destination is dropped, and Save asks for a file again.
+        documents.failExports = true
+        model.export(destination)
+        settle()
+
+        assertNull(state.draft!!.destination)
+        assertEquals(listOf(destination), documents.exportedTo)
+        assertTrue(state.message != null)
+        // The clearing is written back: a stale grant cannot resurrect the dead
+        // target on the next restore.
+        assertNull(documents.saved.last().destination)
+    }
+    private fun clearModel() = ViewModelStore().apply { put("editor", model) }.clear()
+
+    @Test fun undoReachesTheLastEditAfterAPageTurnAndShowsItsPage() {
+        settle()
+        model.addStroke(stroke())
+        model.goToPage(3)
+        assertTrue("Undo is offered on a page without ink", state.canUndo)
+
+        model.undo()
+
+        assertEquals("Undo turns back to the edited page", 0, state.draft!!.page)
+        assertTrue(state.draft!!.ink[0].orEmpty().isEmpty())
+        assertTrue(state.canRedo)
+        model.goToPage(3)
+        model.redo()
+        assertEquals(0, state.draft!!.page)
+        assertEquals(1, state.draft!!.ink[0]!!.size)
+        settle()
+        assertSame("The page it turned to is rendered", documents.cachedPreview(state.draft!!), state.preview)
+        assertEquals("The turn is saved like any other", 0, documents.saved.last().page)
+    }
+
+    @Test fun undoOnTheVisiblePageStaysThere() {
+        settle()
+        model.goToPage(2)
+        model.addStroke(stroke())
+        model.addStroke(stroke())
+
+        model.undo()
+
+        assertEquals(2, state.draft!!.page)
+        assertEquals(1, state.draft!!.ink[2]!!.size)
+    }
+
     private fun stroke() = InkStroke(listOf(InkPoint(10f, 10f, 0.5f), InkPoint(20f, 20f, 0.5f)), 0, 2f)
 
     private fun idleMain() = shadowOf(Looper.getMainLooper()).idle()
@@ -104,56 +225,5 @@ class EditorViewModelPagingTest {
             worker.runAll()
             idleMain()
         }
-    }
-
-    private class QueueExecutor : AbstractExecutorService() {
-        private val tasks = ArrayDeque<Runnable>()
-        private var shutdown = false
-
-        fun runAll() {
-            while (tasks.isNotEmpty()) tasks.removeFirst().run()
-        }
-
-        override fun execute(command: Runnable) {
-            tasks.addLast(command)
-        }
-
-        override fun shutdown() {
-            shutdown = true
-        }
-
-        override fun shutdownNow(): MutableList<Runnable> = tasks.toMutableList().also { shutdown = true }
-        override fun isShutdown() = shutdown
-        override fun isTerminated() = shutdown && tasks.isEmpty()
-        override fun awaitTermination(timeout: Long, unit: TimeUnit) = true
-    }
-
-    private class FakeDocuments(pageCount: Int) : DocumentOperations {
-        private val source = File("fake.pdf")
-        private val pages = List(pageCount) { PageSpec(0f, 0f, 400f, 600f, 0) }
-        private val cache = mutableMapOf<Int, Bitmap>()
-        val rendered = mutableListOf<Int>()
-        val saved = mutableListOf<Draft>()
-
-        override fun restore(): OpenDocument {
-            val draft = Draft(source, "fake.pdf")
-            return OpenDocument(draft, pages, render(draft))
-        }
-
-        override fun render(draft: Draft): Bitmap = cache.getOrPut(draft.page) {
-            rendered += draft.page
-            Bitmap.createBitmap(4, 6, Bitmap.Config.ARGB_8888)
-        }
-
-        override fun cachedPreview(draft: Draft): Bitmap? = cache[draft.page]
-
-        override fun saveDraft(draft: Draft) {
-            saved += draft
-        }
-
-        override fun open(uri: Uri): OpenDocument = throw UnsupportedOperationException()
-        override fun export(draft: Draft, destination: Uri) = throw UnsupportedOperationException()
-        override fun share(draft: Draft): File = throw UnsupportedOperationException()
-        override fun close() = Unit
     }
 }

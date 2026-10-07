@@ -1,5 +1,6 @@
 package ch.lkmc.asterinked.ui
 
+import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.graphics.Bitmap
@@ -7,8 +8,10 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.net.Uri
 import android.os.Looper
 import android.view.View
+import android.widget.EditText
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -17,6 +20,8 @@ import ch.lkmc.asterinked.ui.EditorScreens.descendants
 import ch.lkmc.asterinked.ui.EditorScreens.editing
 import ch.lkmc.asterinked.ui.EditorScreens.publish
 import ch.lkmc.asterinked.ui.EditorScreens.settle
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,7 +48,8 @@ class UiScreenshotTest {
     @Before
     fun startClean() {
         File(app.filesDir, "documents").deleteRecursively()
-        app.getSharedPreferences("pen", Context.MODE_PRIVATE).edit().clear().commit()
+        // The one-time gesture hint would cover every editor screen; editorFirstUse shows it.
+        app.getSharedPreferences("pen", Context.MODE_PRIVATE).edit().clear().putBoolean(GESTURE_HINT_KEY, true).commit()
     }
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
@@ -58,6 +64,12 @@ class UiScreenshotTest {
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun editorPhone() = shoot("editor-phone") { publish(it, editing()) }
 
+    @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
+    fun editorFirstUse() = shoot("editor-first-use") {
+        app.getSharedPreferences("pen", Context.MODE_PRIVATE).edit().remove(GESTURE_HINT_KEY).commit()
+        publish(it, editing())
+    }
+
     @Test @Config(qualifiers = "w360dp-h640dp-port-notnight-xhdpi")
     fun editorSmallPhone() = shoot("editor-small-phone") { publish(it, editing()) }
 
@@ -69,6 +81,20 @@ class UiScreenshotTest {
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
     fun editorPhoneDark() = shoot("editor-phone-dark") { publish(it, editing()) }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
+    fun editorWriting() = shoot("editor-writing", settleMillis = 400) {
+        publish(it, editing())
+        descendants(it.window.decorView).filterIsInstance<InkPageView>().single()
+            .onWritingChanged(WritingState.ACTIVE)
+    }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
+    fun editorWritingDark() = shoot("editor-writing-dark", settleMillis = 400) {
+        publish(it, editing())
+        descendants(it.window.decorView).filterIsInstance<InkPageView>().single()
+            .onWritingChanged(WritingState.ACTIVE)
+    }
 
     @Test @Config(qualifiers = "w891dp-h411dp-land-notnight-xhdpi")
     fun editorPhoneLandscape() = shoot("editor-phone-landscape") { publish(it, editing()) }
@@ -89,7 +115,9 @@ class UiScreenshotTest {
     }
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
-    fun editorSaved() = shoot("editor-saved") { publish(it, editing(exported = true)) }
+    fun editorSaved() = shoot("editor-saved") {
+        publish(it, editing(exported = true, destination = Uri.parse("content://test/saved.pdf")))
+    }
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun editorBusy() = shoot("editor-busy") { publish(it, editing().copy(busy = true)) }
@@ -100,20 +128,38 @@ class UiScreenshotTest {
         click(it, R.string.highlighter)
     }
 
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
+    fun editorHighlighterDark() = shoot("editor-highlighter-dark") {
+        publish(it, editing())
+        click(it, R.string.highlighter)
+    }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
+    fun editorBlueInkDark() = shoot("editor-blue-ink-dark") {
+        publish(it, editing())
+        click(it, R.string.blue)
+    }
+
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun editorError() = shoot("editor-error") {
         publish(it, editing().copy(message = EditorMessage(app.getString(R.string.error_source_unreadable), Tone.ERROR)))
     }
 
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
+    fun editorErrorDark() = shoot("editor-error-dark") {
+        publish(it, editing().copy(message = EditorMessage(app.getString(R.string.error_source_unreadable), Tone.ERROR)))
+    }
+
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun editorSuccess() = shoot("editor-success") {
-        publish(it, editing(exported = true).copy(message = EditorMessage(app.getString(R.string.pdf_saved), Tone.SUCCESS)))
+        publish(it, editing(exported = true).copy(exported = android.net.Uri.parse("content://test/saved.pdf")))
     }
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun dialogReplace() = shoot("dialog-replace") {
         publish(it, editing())
         click(it, R.string.open_pdf)
+        assertEquals("Replacing unexported notes is the one red confirm", app.getColor(R.color.accent), positiveButton().currentTextColor)
     }
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
@@ -125,8 +171,49 @@ class UiScreenshotTest {
     @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
     fun dialogGoToPage() = shoot("dialog-page") {
         publish(it, editing())
-        descendants(it.window.decorView).first { view -> view.tooltipText == app.getString(R.string.go_to_page) }.performClick()
+        openPageDialog(it)
+        assertEquals("Plain navigation stays graphite", app.getColor(R.color.on_surface), positiveButton().currentTextColor)
     }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
+    fun dialogNotes() = shoot("dialog-notes", arrange = ::openNoteNavigation)
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
+    fun dialogNotesDark() = shoot("dialog-notes-dark", arrange = ::openNoteNavigation)
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
+    fun dialogNotesLargeFont() {
+        RuntimeEnvironment.setFontScale(2f)
+        shoot("dialog-notes-large-font", arrange = ::openNoteNavigation)
+    }
+
+    @Test @Config(qualifiers = "w680dp-h360dp-land-notnight-xhdpi")
+    fun dialogNotesCompactLandscape() = shoot("dialog-notes-landscape", arrange = ::openNoteNavigation)
+
+    private fun openNoteNavigation(activity: MainActivity) {
+        val state = editing()
+        val draft = state.draft!!
+        val strokes = draft.ink.getValue(draft.page)
+        publish(activity, state.copy(draft = draft.copy(ink = draft.ink + (0 to strokes) + (7 to strokes))))
+        descendants(activity.window.decorView).first { it.tooltipText == app.getString(R.string.go_to_page) }.performClick()
+    }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night-xhdpi")
+    fun dialogGoToPageDark() = shoot("dialog-page-dark") {
+        publish(it, editing())
+        openPageDialog(it)
+    }
+
+    // Only an out-of-range number turns the field's edge accent.
+    @Test @Config(qualifiers = "w411dp-h891dp-port-notnight-xhdpi")
+    fun dialogGoToPageOutOfRange() = shoot("dialog-page-invalid") {
+        publish(it, editing())
+        openPageDialog(it)
+        descendants(ShadowDialog.getLatestDialog().window!!.decorView).filterIsInstance<EditText>().single().setText("40")
+        assertFalse("Go waits for a page of this document", positiveButton().isEnabled)
+    }
+
+    private fun positiveButton() = (ShadowDialog.getLatestDialog() as AlertDialog).getButton(AlertDialog.BUTTON_POSITIVE)
 
     private fun shoot(name: String, settleMillis: Long = 0, arrange: (MainActivity) -> Unit) {
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
@@ -193,7 +280,14 @@ class UiScreenshotTest {
         settle()
     }
 
+    private fun openPageDialog(activity: MainActivity) {
+        descendants(activity.window.decorView).first { it.tooltipText == app.getString(R.string.go_to_page) }.performClick()
+        settle()
+    }
+
     private companion object {
+        // MainActivity's preference for the gesture hint it shows once.
+        const val GESTURE_HINT_KEY = "hintedGestures"
         const val STATUS_DP = 24
         const val NAV_DP = 24
         const val DIALOG_MARGIN_DP = 40

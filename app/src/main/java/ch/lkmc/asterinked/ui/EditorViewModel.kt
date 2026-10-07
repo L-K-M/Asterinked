@@ -12,18 +12,19 @@ import androidx.lifecycle.MutableLiveData
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.document.DocumentProblem
 import ch.lkmc.asterinked.document.DocumentOperations
-import ch.lkmc.asterinked.document.DocumentService
+import ch.lkmc.asterinked.document.DocumentSession
 import ch.lkmc.asterinked.document.Draft
 import ch.lkmc.asterinked.document.OpenDocument
+import ch.lkmc.asterinked.document.OpenResult
 import ch.lkmc.asterinked.document.PageSpec
 import ch.lkmc.asterinked.document.toProblem
 import ch.lkmc.asterinked.ink.InkHistory
 import ch.lkmc.asterinked.ink.InkStroke
+import ch.lkmc.asterinked.ink.PageInk
 import java.io.File
 import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
@@ -39,18 +40,27 @@ internal data class EditorState(
     val message: EditorMessage? = null,
     /** An annotated copy ready for the share sheet; acknowledge once handed over. */
     val shared: File? = null,
+    /** Where the last export landed; acknowledge once the notice is shown. */
+    val exported: Uri? = null,
 )
 
+/** What a notice's action button does when the message offers one. */
+internal enum class MessageAction { SAVE_COPY }
+
 /** Something to tell the user once; [tone] says whether it went well. */
-internal data class EditorMessage(val text: String, val tone: Tone)
+internal data class EditorMessage(val text: String, val tone: Tone, val action: MessageAction? = null)
 
-internal class EditorViewModel internal constructor(
+internal class EditorViewModel private constructor(
     application: Application,
-    private val service: DocumentOperations,
-    private val worker: ExecutorService,
+    private val session: DocumentSession,
 ) : AndroidViewModel(application) {
-    constructor(application: Application) : this(application, DocumentService(application), Executors.newSingleThreadExecutor())
+    constructor(application: Application) : this(application, DocumentSession.process(application))
 
+    internal constructor(application: Application, service: DocumentOperations, worker: ExecutorService) :
+        this(application, DocumentSession.owned(service, worker))
+
+    private val service = session.operations
+    private val worker = session.worker
     private val main = Handler(Looper.getMainLooper())
     // Page the user is on, readable from the worker so queued renders of pages
     // already flipped past are skipped.
@@ -80,25 +90,23 @@ internal class EditorViewModel internal constructor(
             return
         }
         if (current.busy) return
-        perform({ service.open(uri) }) {
-            history.clear()
-            show(it)
+        // Read on the main thread; the worker only gets this snapshot.
+        val shown = current.draft
+        perform({ service.open(uri, shown) }) { result ->
+            when (result) {
+                is OpenResult.Opened -> {
+                    history.clear()
+                    show(result.document)
+                }
+                is OpenResult.AlreadyOpen -> keep(result.draft)
+            }
         }
     }
 
-    // Turns instantly: a prefetched preview shows at once; otherwise the page is
-    // drawn blank with its ink until the render lands, and writing can start
-    // right away. Nothing is disabled while a page renders.
     fun goToPage(page: Int) {
         val draft = current.draft ?: return
         if (current.busy || page !in current.pages.indices || page == draft.page) return
-        val next = draft.copy(page = page)
-        visiblePage.set(page)
-        val preview = service.cachedPreview(next)
-        publish(withHistory(current.copy(draft = next, preview = preview)))
-        saveDraft(next)
-        if (preview == null) renderVisible(next)
-        prefetchAround(next)
+        showPage(draft.copy(page = page))
     }
 
     fun addStroke(stroke: InkStroke) {
@@ -119,18 +127,17 @@ internal class EditorViewModel internal constructor(
         if (remaining.size != strokes.size) edit(draft, strokes, remaining)
     }
 
+    /** Undoes the last edit in the document, turning to its page if needed. */
     fun undo() {
         val draft = current.draft ?: return
         if (current.busy) return
-        val strokes = history.undo(draft.page, draft.ink[draft.page].orEmpty()) ?: return
-        changeInk(draft.copy(ink = draft.ink + (draft.page to strokes)))
+        history.undo(draft.page, draft.ink)?.let { applyHistory(draft, it) }
     }
 
     fun redo() {
         val draft = current.draft ?: return
         if (current.busy) return
-        val strokes = history.redo(draft.page, draft.ink[draft.page].orEmpty()) ?: return
-        changeInk(draft.copy(ink = draft.ink + (draft.page to strokes)))
+        history.redo(draft.ink)?.let { applyHistory(draft, it) }
     }
 
     fun export(uri: Uri) {
@@ -140,9 +147,23 @@ internal class EditorViewModel internal constructor(
         }
         val draft = current.draft ?: return
         if (current.busy) return
-        val saved = draft.copy(savedInk = draft.ink)
-        perform({ service.export(draft, uri); service.saveDraft(saved) }) {
-            publish(current.copy(draft = saved, busy = false, message = EditorMessage(text(R.string.pdf_saved), Tone.SUCCESS)))
+        val saved = draft.copy(savedInk = draft.ink, destination = uri)
+        perform({ service.export(draft, uri) }, failed = { error ->
+            // A retry of the remembered target that can no longer be written
+            // is a dead end: forget it so the next Save asks for a new file.
+            if (draft.destination == uri && error.toProblem(DocumentProblem.UNEXPECTED) == DocumentProblem.DESTINATION_UNWRITABLE) {
+                val cleared = current.draft?.copy(destination = null)
+                publish(current.copy(draft = cleared))
+                // Persist the clearing too: a grant that outlives the file would
+                // otherwise resurrect the dead target on the next restore.
+                cleared?.let { saveDraft(it) }
+            }
+        }) {
+            // The copy exists even if recording the draft fails below: mark it
+            // exported anyway and let saveDraft report its own failure, rolling
+            // the marker back so the notes stay flagged unbacked.
+            publish(current.copy(draft = saved, busy = false, exported = uri))
+            saveDraft(saved, draft.savedInk)
         }
     }
 
@@ -160,6 +181,10 @@ internal class EditorViewModel internal constructor(
         publish(current.copy(shared = null))
     }
 
+    fun acknowledgeExport() {
+        publish(current.copy(exported = null))
+    }
+
     fun acknowledgeMessage() {
         publish(current.copy(message = null))
     }
@@ -169,7 +194,37 @@ internal class EditorViewModel internal constructor(
     private fun show(document: OpenDocument) {
         visiblePage.set(document.draft.page)
         publish(withHistory(EditorState(document.draft, document.pages, document.preview, busy = false)))
+        // A restored page that failed to render shows blank with its ink; try again.
+        if (document.preview == null) renderVisible(document.draft)
         prefetchAround(document.draft)
+    }
+
+    // The same PDF again, say tapped once more in Files: ink, page, preview and
+    // undo history stay, and only the name follows the file.
+    private fun keep(draft: Draft) {
+        val renamed = draft.name != current.draft?.name
+        val hasNotes = draft.ink.values.any { it.isNotEmpty() }
+        val notice = EditorMessage(text(if (hasNotes) R.string.already_open_with_notes else R.string.already_open), Tone.INFO)
+        publish(withHistory(current.copy(draft = draft, busy = false, message = notice)))
+        if (renamed) saveDraft(draft)
+    }
+
+    // An edit on another page is shown on its page, so the user sees what changed.
+    private fun applyHistory(draft: Draft, change: PageInk) {
+        val edited = draft.copy(ink = draft.ink + (change.page to change.strokes))
+        if (change.page == draft.page) changeInk(edited) else showPage(edited.copy(page = change.page))
+    }
+
+    // Turns instantly: a prefetched preview shows at once; otherwise the page is
+    // drawn blank with its ink until the render lands, and writing can start
+    // right away. Nothing is disabled while a page renders.
+    private fun showPage(next: Draft) {
+        visiblePage.set(next.page)
+        val preview = service.cachedPreview(next)
+        publish(withHistory(current.copy(draft = next, preview = preview)))
+        saveDraft(next)
+        if (preview == null) renderVisible(next)
+        prefetchAround(next)
     }
 
     private fun edit(draft: Draft, before: List<InkStroke>, after: List<InkStroke>) {
@@ -179,7 +234,7 @@ internal class EditorViewModel internal constructor(
 
     private fun withHistory(state: EditorState): EditorState {
         val draft = state.draft ?: return state.copy(canUndo = false, canRedo = false)
-        return state.copy(canUndo = history.canUndo(draft.page, draft.ink[draft.page].orEmpty()), canRedo = history.canRedo(draft.page))
+        return state.copy(canUndo = history.canUndo(draft.page, draft.ink), canRedo = history.canRedo())
     }
 
     private fun changeInk(draft: Draft) {
@@ -191,7 +246,7 @@ internal class EditorViewModel internal constructor(
     // Every change queues a write; whichever runs first persists the newest draft
     // (immutable snapshots) and the rest find nothing left to do. A burst of
     // strokes or page turns therefore costs one write, not one per change.
-    private fun saveDraft(draft: Draft) {
+    private fun saveDraft(draft: Draft, restoreSavedInk: Map<Int, List<InkStroke>>? = null) {
         unsavedDraft.set(draft)
         worker.execute {
             val latest = unsavedDraft.getAndSet(null) ?: return@execute
@@ -199,7 +254,19 @@ internal class EditorViewModel internal constructor(
                 service.saveDraft(latest)
             } catch (error: Exception) {
                 Log.w(TAG, "Draft could not be saved", error)
-                main.post { if (!cleared) publish(current.copy(message = EditorMessage(text(R.string.notes_not_saved), Tone.ERROR))) }
+                main.post {
+                    if (cleared) return@post
+                    // The file still holds the previous notes: put the marker back
+                    // so the draft does not claim strokes that never reached it.
+                    // A different open document is untouched — never blank it.
+                    val restored = current.draft?.takeIf { it.source == latest.source }
+                        ?.let { if (restoreSavedInk != null) it.copy(savedInk = restoreSavedInk) else it }
+                    // Offer Save copy only when the failed draft is still on
+                    // screen — otherwise the action would export the wrong file.
+                    val action = if (restored != null) MessageAction.SAVE_COPY else null
+                    publish(current.copy(draft = restored ?: current.draft,
+                        message = EditorMessage(text(R.string.notes_not_saved), Tone.ERROR, action)))
+                }
             }
         }
     }
@@ -224,12 +291,14 @@ internal class EditorViewModel internal constructor(
         for (page in listOf(draft.page - 1, draft.page + 1)) {
             if (page !in current.pages.indices) continue
             worker.execute {
-                if (abs(page - visiblePage.get()) <= 1) runCatching { service.render(draft.copy(page = page)) }
+                val visible = visiblePage.get()
+                if (visible == NO_PAGE || abs(page - visible) > 1) return@execute
+                runCatching { service.render(draft.copy(page = page)) }
             }
         }
     }
 
-    private fun <T> perform(work: () -> T, completed: () -> Unit = {}, success: (T) -> Unit) {
+    private fun <T> perform(work: () -> T, completed: () -> Unit = {}, failed: (Throwable) -> Unit = {}, success: (T) -> Unit) {
         publish(current.copy(busy = true, message = null))
         worker.execute {
             val result = runCatching(work)
@@ -237,6 +306,7 @@ internal class EditorViewModel internal constructor(
                 if (cleared) return@post
                 result.fold(success) { error ->
                     publish(current.copy(busy = false, message = messageFor(error)))
+                    failed(error)
                 }
                 completed()
             }
@@ -246,7 +316,11 @@ internal class EditorViewModel internal constructor(
     // Users see what went wrong and what to do; the raw exception goes to the log.
     private fun messageFor(error: Throwable): EditorMessage {
         Log.w(TAG, "Document operation failed", error)
-        return EditorMessage(text(error.toProblem(DocumentProblem.UNEXPECTED).userMessage), Tone.ERROR)
+        val problem = error.toProblem(DocumentProblem.UNEXPECTED)
+        // A draft-write failure leaves notes unbacked: offer the one action
+        // that preserves them.
+        val action = if (problem == DocumentProblem.DRAFT_NOT_SAVED) MessageAction.SAVE_COPY else null
+        return EditorMessage(text(problem.userMessage), Tone.ERROR, action)
     }
 
     private fun text(id: Int): String = getApplication<Application>().getString(id)
@@ -257,9 +331,8 @@ internal class EditorViewModel internal constructor(
 
     override fun onCleared() {
         cleared = true
-        // Queued draft writes still run before the renderer is released.
-        worker.execute { service.close() }
-        worker.shutdown()
+        visiblePage.set(NO_PAGE)
+        session.close()
     }
 
     private companion object {

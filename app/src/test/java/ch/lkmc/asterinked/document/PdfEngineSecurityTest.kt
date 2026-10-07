@@ -4,10 +4,12 @@ import android.net.Uri
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
+import com.tom_roush.pdfbox.pdmodel.encryption.PDEncryption
 import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.text.PDFTextStripper
@@ -22,6 +24,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.File
+import java.util.Locale
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -69,6 +72,62 @@ class PdfEngineSecurityTest {
         PDDocument.load(exported).use { assertFalse(it.isEncrypted) }
     }
 
+    @Test fun aesV2WithoutTopLevelLengthKeepsItsStrengthAndPermissions() {
+        assertAesWithoutLength(AesWithoutLengthFixture.AESV2)
+    }
+
+    @Test fun aesV3WithoutTopLevelLengthKeepsItsStrengthAndPermissions() {
+        assertAesWithoutLength(AesWithoutLengthFixture.AESV3)
+    }
+
+    private fun assertAesWithoutLength(fixture: AesWithoutLengthFixture) {
+        val source = protectedPdf(user = "", keyLength = fixture.keyBits, aes = true) {
+            setCanPrint(false)
+            setCanExtractContent(false)
+            setCanFillInForm(false)
+        }
+        fixture.omitTopLevelLength(source)
+        val permissions = PDDocument.load(source).use { document ->
+            val encryption = document.encryption
+            assertTrue(document.isEncrypted)
+            assertFalse("Opens as user, not owner", document.currentAccessPermission.isOwnerPermission)
+            assertFalse("Top-level /Length is absent", encryption.cosObject.containsKey(COSName.LENGTH))
+            assertEquals("PDFBox's getter defaults to 40", PDEncryption.DEFAULT_LENGTH, encryption.length)
+            assertEquals(fixture.version, encryption.version)
+            assertEquals(fixture.revision, encryption.revision)
+            assertEquals(fixture.method, encryption.stdCryptFilterDictionary.cryptFilterMethod)
+            assertEquals(fixture.keyBits / Byte.SIZE_BITS, encryption.stdCryptFilterDictionary.length)
+            assertEquals("Actual decrypted key strength", fixture.keyBits, encryption.securityHandler.encryptionKey.size * Byte.SIZE_BITS)
+            assertEquals(encryption.permissions, document.currentAccessPermission.permissionBytes)
+            assertTrue(PDFTextStripper().getText(document).contains(SENTINEL))
+            encryption.permissions
+        }
+        assertEquals(1, engine.inspect(source).size)
+
+        val stroke = InkStroke(listOf(InkPoint(10f, 10f, 1f), InkPoint(60f, 40f, 1f)), 0, 2f)
+        for (strokes in listOf(listOf(stroke), emptyList())) {
+            val exported = file("exported-${fixture.name}")
+            engine.export(source, exported, mapOf(0 to strokes))
+
+            PDDocument.load(exported).use { document ->
+                val encryption = document.encryption
+                assertTrue(document.isEncrypted)
+                assertEquals("${fixture.name} keeps AES strength", fixture.keyBits, encryption.length)
+                assertEquals(fixture.version, encryption.version)
+                assertEquals(fixture.revision, encryption.revision)
+                assertEquals(fixture.method, encryption.stdCryptFilterDictionary.cryptFilterMethod)
+                assertEquals(fixture.keyBits, encryption.securityHandler.encryptionKey.size * Byte.SIZE_BITS)
+                assertEquals("All permission bits survive", permissions, encryption.permissions)
+                assertEquals(permissions, document.currentAccessPermission.permissionBytes)
+                assertTrue(PDFTextStripper().getText(document).contains(SENTINEL))
+                if (strokes.isEmpty()) return@use
+
+                val contents = document.getPage(0).contents.readBytes().toString(Charsets.ISO_8859_1)
+                assertTrue("Vector ink survives", contents.contains("\nS") || contents.contains(" S\n"))
+            }
+        }
+    }
+
     @Test fun pdfThatNeedsAPasswordIsReportedAsSuch() {
         assertProblem(DocumentProblem.PASSWORD_PROTECTED) { engine.inspect(protectedPdf(user = "secret")) }
     }
@@ -82,9 +141,9 @@ class PdfEngineSecurityTest {
         val documents = File(app.filesDir, "documents")
         val junk = file("junk").apply { writeText("not a pdf at all") }
 
-        assertProblem(DocumentProblem.NOT_A_PDF) { service.open(Uri.fromFile(junk)) }
-        assertProblem(DocumentProblem.PASSWORD_PROTECTED) { service.open(Uri.fromFile(protectedPdf(user = "secret"))) }
-        assertProblem(DocumentProblem.SOURCE_UNREADABLE) { service.open(Uri.fromFile(File(app.cacheDir, "missing.pdf"))) }
+        assertProblem(DocumentProblem.NOT_A_PDF) { service.open(Uri.fromFile(junk), current = null) }
+        assertProblem(DocumentProblem.PASSWORD_PROTECTED) { service.open(Uri.fromFile(protectedPdf(user = "secret")), current = null) }
+        assertProblem(DocumentProblem.SOURCE_UNREADABLE) { service.open(Uri.fromFile(File(app.cacheDir, "missing.pdf")), current = null) }
 
         assertTrue("Failed imports leave no private copy", documents.listFiles().orEmpty().none { it.extension == "pdf" })
     }
@@ -94,7 +153,7 @@ class PdfEngineSecurityTest {
         val documents = File(app.filesDir, "documents")
 
         // PDFBox parses nested arrays recursively; this depth overflows its stack.
-        assertProblem(DocumentProblem.NOT_A_PDF) { service.open(Uri.fromFile(deeplyNestedPdf(depth = 100_000))) }
+        assertProblem(DocumentProblem.NOT_A_PDF) { service.open(Uri.fromFile(deeplyNestedPdf(depth = 100_000)), current = null) }
 
         assertTrue("A failed import leaves no private copy", documents.listFiles().orEmpty().none { it.extension == "pdf" })
     }
@@ -142,7 +201,7 @@ class PdfEngineSecurityTest {
         obj("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Deep ${"[".repeat(depth)}${"]".repeat(depth)} >>")
         val xref = bytes.length
         bytes.append("xref\n0 ${offsets.size + 1}\n0000000000 65535 f \n")
-        offsets.forEach { bytes.append(String.format("%010d 00000 n \n", it)) }
+        offsets.forEach { bytes.append(String.format(Locale.ROOT, "%010d 00000 n \n", it)) }
         bytes.append("trailer << /Root 1 0 R /Size ${offsets.size + 1} >>\nstartxref\n$xref\n%%EOF\n")
         return file("deep").apply { writeText(bytes.toString(), Charsets.ISO_8859_1) }
     }

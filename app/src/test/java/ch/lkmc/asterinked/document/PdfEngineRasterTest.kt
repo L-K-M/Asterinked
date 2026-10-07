@@ -32,9 +32,11 @@ class PdfEngineRasterTest {
         val output = File("build/test-output/raster-proof").apply { mkdirs() }
         // name to (rotation, owner-restricted encryption, highlight across the text line)
         val cases = listOf(0, 90, 180, 270).map { "$it" to Triple(it, false, false) } +
-            ("encrypted" to Triple(0, true, false)) + ("highlight" to Triple(0, false, true))
+            ("encrypted" to Triple(0, true, false)) + ("highlight" to Triple(0, false, true)) +
+            AesWithoutLengthFixture.entries.map { "${it.name.lowercase()}-no-length" to Triple(0, true, false) }
         for ((name, options) in cases) {
             val (rotation, encrypted, highlight) = options
+            val aes = AesWithoutLengthFixture.entries.firstOrNull { name == "${it.name.lowercase()}-no-length" }
             val source = File(output, "source-$name.pdf")
             val exported = File(output, "export-$name.pdf")
             PDDocument().use { document ->
@@ -56,21 +58,34 @@ class PdfEngineRasterTest {
                 }
                 if (encrypted) {
                     // Opens without a password but forbids printing: the export must keep that.
-                    val permissions = AccessPermission().apply { setCanPrint(false) }
-                    document.protect(StandardProtectionPolicy("owner", "", permissions).apply { encryptionKeyLength = 128 })
+                    val permissions = AccessPermission().apply {
+                        setCanPrint(false)
+                        if (aes != null) {
+                            setCanExtractContent(false)
+                            setCanFillInForm(false)
+                        }
+                    }
+                    document.protect(StandardProtectionPolicy("owner", "", permissions).apply {
+                        encryptionKeyLength = aes?.keyBits ?: 128
+                        isPreferAES = aes != null
+                    })
                 }
                 document.save(source)
             }
+            aes?.omitTopLevelLength(source)
             val spec = engine.inspect(source).single()
             val x = spec.displayWidth * 0.23f
             val y = spec.displayHeight * 0.31f
             // The text baseline sits at user y=700: display y = 48 + 696 - 700 = 44, so a
             // 12-wide marker centred at y=40 covers the glyphs from baseline to cap height.
             val marker = InkStroke(listOf(InkPoint(30f, 40f, 1f), InkPoint(150f, 40f, .3f)), Color.rgb(255, 228, 92), 12f, InkKind.HIGHLIGHTER)
+            // A highlighter tap: down and up at one spot, on blank paper (verify_pdf.py's TAP_POSITION).
+            val tap = InkPoint(spec.displayWidth * 0.7f, spec.displayHeight * 0.8f, 1f)
+            val dot = InkStroke(listOf(tap, tap), Color.rgb(255, 228, 92), 12f, InkKind.HIGHLIGHTER)
             val ink = listOf(
                 InkStroke(listOf(InkPoint(x, y, 1f)), Color.RED, 10f),
                 InkStroke(listOf(InkPoint(x - 20f, y, .2f), InkPoint(x + 20f, y, 1f)), Color.RED, 5f),
-            ) + if (highlight) listOf(marker) else emptyList()
+            ) + if (highlight) listOf(marker, dot) else emptyList()
             engine.export(source, exported, mapOf(0 to ink))
             assertTrue(exported.length() > source.length())
         }

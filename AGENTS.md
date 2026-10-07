@@ -32,9 +32,23 @@ The adaptive icon's foreground webp files are generated; regenerate them from
 - Versions are pinned ONLY in `gradle/libs.versions.toml`. Never add an ad-hoc
   version to a build file; never restate catalog versions in docs.
 - `EditorViewModel` takes a `DocumentOperations` and an `ExecutorService`.
-  Model tests inject a fake and a queue-backed executor
-  (`EditorViewModelPagingTest`) to decide exactly when worker tasks and
-  main-thread posts run; `PdfRenderer` itself only runs on devices.
+  Model tests inject a fake and a queue-backed executor (`EditorDoubles.kt`)
+  to decide exactly when worker tasks and main-thread posts run;
+  `PdfRenderer` itself only runs on devices. Service tests feed a content
+  URI with `ShadowContentResolver.registerInputStream`; its display-name
+  query returns no cursor, so the import gets the default name.
+- Restore sets a draft it cannot decode (bad JSON, or its private source PDF
+  no longer exists) aside as `draft.broken.json`, replacing any earlier one,
+  so the next launch starts clean. Read and PDF inspection failures, which
+  may pass, keep the draft; a saved page past the end opens the last page; a failed
+  preview restores the ink on a blank page and is retried in the editor.
+- Production `DocumentSession`s share one process-owned FIFO worker. Clearing
+  an editor suppresses callbacks and skips queued previews, but drains writes
+  and closes its service before the next editor restores. Never shut down that
+  worker from an editor or use independent production queues: an old snapshot
+  can overwrite new ink and prune its source. Injected workers are session-owned
+  and terminate after queued writes and close. `EditorWorkerLifetimeTest` drives
+  two production sessions with controlled rendering and real draft storage.
 
 ## Toolchain quirks — don't "fix" these
 
@@ -55,10 +69,23 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   re-renders them with PDFium — independent of PDFBox — checking ink
   placement and preserved text/artwork at all four rotations, that an
   owner-restricted encrypted export stays encrypted without regaining print
-  permission, and that text stays dark under a multiply-blended highlighter
-  marker. It only works after `testDebugUnitTest` ran in the same checkout.
+  permission, that AESV2/AESV3 sources without top-level `/Length` retain AES
+  strength and all permission bits, that text stays dark under a
+  multiply-blended highlighter marker, and that a highlighter tap still leaves
+  a mark. It only works after `testDebugUnitTest` ran in the same checkout.
+- PDFBox's `PDEncryption.length` defaults to 40 when `/Length` is absent;
+  its loaded `securityHandler.keyLength` also stays at 40. Export strength
+  comes from security version / `StdCF` method, not those getters. Standard
+  crypt filter `/Length` uses bytes per ISO 32000, but PDFBox writes bits;
+  do not use it as the export key length. Missing-Length AES test fixtures
+  use equal-size whitespace edits so ciphertext and xref offsets stay intact.
+  V=4/R=4 RC4 (`CFM=V2`, `StdCF/Length=16`) without top-level `/Length`
+  opens in PDFium but fails PDFBox password validation before export.
 - The debug build carries `applicationIdSuffix ".debug"` (and `-debug` on
   versionName) so it can sit next to a release install on the same device.
+- `allowBackup=false` disables cloud backup; device transfer varies by OEM.
+  `data_extraction_rules.xml` allows only `files/documents` and `pen.xml`
+  for devices that transfer anyway. Do not promise universal migration.
 - `InkPageView` replays committed ink from cached `RenderNode`s only on
   hardware canvases. Robolectric draws in software, so JVM tests exercise the
   direct-draw fallback, and pixel assertions need `@GraphicsMode(NATIVE)`
@@ -68,6 +95,23 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   to the v0.1.0 algorithm, and the live `InkStrokeBuilder` must produce the
   same segments for every prefix. Changing stroke geometry changes every
   exported PDF, so do it deliberately and update that reference.
+- Eraser contact uses continuous swept capsules against those rendered
+  segments, with local pressure widths for pens and a constant
+  `InkGeometry.strokeWidth`-sanitized width for highlighters. Raw samples,
+  nominal pen widths and sampled probes are not equivalent. Cache and hit
+  results retain stroke identity; `InkEraser.reset()` releases the gesture cache.
+- `InkPageView` supplies `InkGeometryCache.cachedSegments` to reuse immutable
+  renderer geometry on first erase contact. The lookup never computes or
+  readmits absent strokes; `update()` drops removed/off-page entries. Eraser
+  reset releases gesture metadata and segment references, leaving renderer
+  entries intact. Highlighter widths override bounds/contact calculations
+  without copying or mutating shared segments; standalone erasers still smooth.
+- `AtomicFile.finishWrite` is not a checked commit: Android 29 ignores sync
+  errors and logs close errors; Android 35 also logs rename errors. Draft
+  writes use a separate `.new`, throwing `FileDescriptor.sync`, checked
+  close and same-directory rename before pruning PDFs. Keep AtomicFile's
+  `.bak` recovery and legacy JSON compatibility. `DocumentStoreCommitTest`
+  injects write, sync, close and rename failures on APIs 29 and 35.
 
 ## UI conventions
 
@@ -81,10 +125,26 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   Never hard-code a chrome colour: it breaks the dark theme. Ink and
   highlighter colours are document content and stay constants in
   `MainActivity`.
+- Brand red marks only what needs attention. A dialog's positive button is
+  graphite; a confirm that throws work away passes
+  `R.style.AlertDialogTheme_Destructive` to `AlertDialog.Builder` to turn it red.
+- A `GradientDrawable` whose stroke alpha differs from its fill alpha (a
+  transparent edge, say) reports a translucent outline and casts no elevation
+  shadow. Skip the stroke instead. Robolectric always reports outline alpha 0,
+  so this needs a device check.
 - Every tappable control is at least 48dp square; `MainActivityLayoutTest`
   enforces it, with no overlaps, on phone, landscape, tablet and 200% text.
+- Unselected swatches need 3:1 boundary contrast against the toolbar. Their
+  edge is the theme's `swatch_edge` (`on_surface_variant` by day, a mid grey
+  at night so graphite still reads as a filled dot); `outline` is too faint.
+  `ChoiceDotContrastTest` verifies rendered edges without changing ink colours.
 - The tool bar wraps from its measured, inset-adjusted width. Narrow phones
   need three rows to keep 48dp targets; `screenWidthDp` is not the usable width.
+- `InkPageView` updates its shared page rectangle and scale synchronously after
+  page, size, pan and zoom changes, including animation frames. Drawing and
+  input only consume that transform; no draw may be required before ink or erase.
+  An unavailable transform cancels active ink/erase. `ACTION_CANCEL` cleanup
+  precedes input eligibility checks.
 - `UiScreenshotTest` renders every screen state (light, dark, phone, tablet,
   large text, dialogs, notices) to `app/build/reports/screens/`. Look at the
   PNGs after any UI change; Robolectric cannot show a device, these can.
@@ -94,8 +154,20 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   `animate()` calls run.
 - Tests cannot open a real PDF (no PdfRenderer); `EditorScreens.publish`
   puts the activity into an editor state with a drawn stand-in page.
+- UI gesture tests using that stand-in must cancel their strokes, or replace
+  the stroke callback, to avoid asynchronously persisting a nonexistent PDF.
 - Messages to the user go through `NoticeBar`, not toasts: Android 12+ cuts
+  toasts to two lines. A notice can carry one action (`NoticeAction`), which
+  keeps it up for ten seconds instead of the tone's usual timeout.
+- The page-number button opens page and note navigation. Note destinations
+  come from current draft ink, skip empty pages and do not wrap at the ends.
+  Reopen the dialog to refresh destinations; document replacement dismisses it.
   toasts to two lines.
+- The loading spinner is `AsteriskLoader`: the brand mark strokes itself in
+  on a loop, gated by attach + aggregated visibility (visibility flags and
+  window visibility; scroll position and occlusion are not considered). Its faint ghost keeps captured frames non-blank; Robolectric
+  never dispatches `onVisibilityAggregated`, so `onVisibilityChanged` and
+  `onAttachedToWindow` feed the same gate.
 
 ## CI/CD
 
@@ -202,6 +274,12 @@ and verification procedure. State any inability to reproduce the failure.
   page units rather than reading private zoom state. `ScaleGestureDetector`
   ignores spans under ~27mm (about 170px at the default mdpi test density),
   so synthetic pinches need wider spans; double taps need real event times.
+- Multi-finger undo/redo requires every fingertip to stay within touch slop.
+  Track pointer IDs and validate release/history samples; centroid/span alone
+  miss symmetric movement and misclassify jitter after a finger lifts.
+- Robolectric reports no input devices, so a first launch in an activity test
+  starts with finger drawing on. Tests that need pen mode attach a stylus
+  through `ShadowInputManager.addInputDevice` (see `MainActivityChromeTest`).
 
 ## Commit messages
 
