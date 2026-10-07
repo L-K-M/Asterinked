@@ -63,7 +63,12 @@ internal class AsteriskLoader(context: Context) : View(context) {
     }
 
     private fun sync() {
-        if (isAttachedToWindow && isShown) animator.start() else animator.cancel()
+        // start() on a running animator rewinds it; keep the loop idempotent.
+        if (isAttachedToWindow && isShown) {
+            if (!animator.isStarted) animator.start()
+        } else {
+            animator.cancel()
+        }
     }
 
     override fun onDraw(canvas: Canvas) {

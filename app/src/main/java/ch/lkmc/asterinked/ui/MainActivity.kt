@@ -596,7 +596,13 @@ internal class MainActivity : ComponentActivity() {
             // so announce it once the screen is up.
             loading.alpha = 0f
             loading.animate().alpha(1f).setStartDelay(Motion.LOADING_DELAY).setDuration(Motion.SHORT).start()
-            loading.post { loading.announceForAccessibility(getString(R.string.opening)) }
+            // A fast restore can leave LOADING before the post runs: only
+            // announce while the screen is still up.
+            loading.post {
+                if (loading.visibility == View.VISIBLE) {
+                    loading.announceForAccessibility(getString(R.string.opening))
+                }
+            }
         }
         applyInsets()
     }
