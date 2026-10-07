@@ -35,6 +35,13 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   Model tests inject a fake and a queue-backed executor
   (`EditorViewModelPagingTest`) to decide exactly when worker tasks and
   main-thread posts run; `PdfRenderer` itself only runs on devices.
+- Production `DocumentSession`s share one process-owned FIFO worker. Clearing
+  an editor suppresses callbacks and skips queued previews, but drains writes
+  and closes its service before the next editor restores. Never shut down that
+  worker from an editor or use independent production queues: an old snapshot
+  can overwrite new ink and prune its source. Injected workers are session-owned
+  and terminate after queued writes and close. `EditorWorkerLifetimeTest` drives
+  two production sessions with controlled rendering and real draft storage.
 
 ## Toolchain quirks — don't "fix" these
 

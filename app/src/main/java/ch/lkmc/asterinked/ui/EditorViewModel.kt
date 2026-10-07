@@ -12,7 +12,7 @@ import androidx.lifecycle.MutableLiveData
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.document.DocumentProblem
 import ch.lkmc.asterinked.document.DocumentOperations
-import ch.lkmc.asterinked.document.DocumentService
+import ch.lkmc.asterinked.document.DocumentSession
 import ch.lkmc.asterinked.document.Draft
 import ch.lkmc.asterinked.document.OpenDocument
 import ch.lkmc.asterinked.document.PageSpec
@@ -23,7 +23,6 @@ import java.io.File
 import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
@@ -44,13 +43,17 @@ internal data class EditorState(
 /** Something to tell the user once; [tone] says whether it went well. */
 internal data class EditorMessage(val text: String, val tone: Tone)
 
-internal class EditorViewModel internal constructor(
+internal class EditorViewModel private constructor(
     application: Application,
-    private val service: DocumentOperations,
-    private val worker: ExecutorService,
+    private val session: DocumentSession,
 ) : AndroidViewModel(application) {
-    constructor(application: Application) : this(application, DocumentService(application), Executors.newSingleThreadExecutor())
+    constructor(application: Application) : this(application, DocumentSession.process(application))
 
+    internal constructor(application: Application, service: DocumentOperations, worker: ExecutorService) :
+        this(application, DocumentSession.owned(service, worker))
+
+    private val service = session.operations
+    private val worker = session.worker
     private val main = Handler(Looper.getMainLooper())
     // Page the user is on, readable from the worker so queued renders of pages
     // already flipped past are skipped.
@@ -226,7 +229,9 @@ internal class EditorViewModel internal constructor(
         for (page in listOf(draft.page - 1, draft.page + 1)) {
             if (page !in current.pages.indices) continue
             worker.execute {
-                if (abs(page - visiblePage.get()) <= 1) runCatching { service.render(draft.copy(page = page)) }
+                val visible = visiblePage.get()
+                if (visible == NO_PAGE || abs(page - visible) > 1) return@execute
+                runCatching { service.render(draft.copy(page = page)) }
             }
         }
     }
@@ -259,9 +264,8 @@ internal class EditorViewModel internal constructor(
 
     override fun onCleared() {
         cleared = true
-        // Queued draft writes still run before the renderer is released.
-        worker.execute { service.close() }
-        worker.shutdown()
+        visiblePage.set(NO_PAGE)
+        session.close()
     }
 
     private companion object {

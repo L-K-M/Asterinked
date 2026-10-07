@@ -3,6 +3,7 @@ package ch.lkmc.asterinked.ui
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Looper
+import androidx.lifecycle.ViewModelStore
 import ch.lkmc.asterinked.document.DocumentOperations
 import ch.lkmc.asterinked.document.Draft
 import ch.lkmc.asterinked.document.OpenDocument
@@ -21,7 +22,9 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.AbstractExecutorService
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
@@ -95,6 +98,60 @@ class EditorViewModelPagingTest {
         assertEquals(3, documents.saved.single().ink[0]!!.size)
     }
 
+    @Test fun clearingDrainsQueuedInkAndClosesTheServiceBeforeWorkerTermination() {
+        settle()
+        documents.saved.clear()
+        model.goToPage(5)
+        repeat(3) { model.addStroke(stroke()) }
+        val clearedState = state
+
+        clearModel()
+
+        assertTrue("Injected executors remain session-owned", worker.isShutdown)
+        assertFalse("Close must follow the queued writes", documents.closed)
+        assertFalse(worker.isTerminated)
+        worker.runAll()
+        idleMain()
+
+        assertEquals(3, documents.saved.single().ink.getValue(5).size)
+        assertEquals("Cleared queued previews must be skipped", listOf(0, 1), documents.rendered)
+        assertTrue(documents.closed)
+        assertTrue(worker.isTerminated)
+        assertSame("Cleared callbacks cannot update the editor", clearedState, state)
+    }
+
+    @Test fun postedRenderAndSaveErrorsAreSuppressedAfterClear() {
+        settle()
+        documents.failSaves = true
+        documents.renderFailures += 5
+        model.goToPage(5)
+        worker.runAll() // The errors are posted to main, but have not landed yet.
+        val clearedState = state
+
+        clearModel()
+        worker.runAll()
+        idleMain()
+
+        assertSame(clearedState, state)
+        assertNull(state.message)
+        assertTrue(documents.closed)
+    }
+
+    @Test fun aCompletedRestoreCannotPublishAfterClear() {
+        worker.runAll() // Restore has completed, but its main-thread post is pending.
+        val clearedState = state
+
+        clearModel()
+        worker.runAll()
+        idleMain()
+
+        assertSame(clearedState, state)
+        assertTrue(documents.closed)
+        assertEquals("Suppressed restore must not queue prefetch", listOf(0), documents.rendered)
+    }
+
+    private fun clearModel() = ViewModelStore().apply { put("editor", model) }.clear()
+
     private fun stroke() = InkStroke(listOf(InkPoint(10f, 10f, 0.5f), InkPoint(20f, 20f, 0.5f)), 0, 2f)
 
     private fun idleMain() = shadowOf(Looper.getMainLooper()).idle()
@@ -115,6 +172,7 @@ class EditorViewModelPagingTest {
         }
 
         override fun execute(command: Runnable) {
+            if (shutdown) throw RejectedExecutionException("Worker is shut down")
             tasks.addLast(command)
         }
 
@@ -122,7 +180,10 @@ class EditorViewModelPagingTest {
             shutdown = true
         }
 
-        override fun shutdownNow(): MutableList<Runnable> = tasks.toMutableList().also { shutdown = true }
+        override fun shutdownNow(): MutableList<Runnable> = tasks.toMutableList().also {
+            shutdown = true
+            tasks.clear()
+        }
         override fun isShutdown() = shutdown
         override fun isTerminated() = shutdown && tasks.isEmpty()
         override fun awaitTermination(timeout: Long, unit: TimeUnit) = true
@@ -134,26 +195,38 @@ class EditorViewModelPagingTest {
         private val cache = mutableMapOf<Int, Bitmap>()
         val rendered = mutableListOf<Int>()
         val saved = mutableListOf<Draft>()
+        val renderFailures = mutableSetOf<Int>()
+        var failSaves = false
+        var closed = false
+            private set
 
         override fun restore(): OpenDocument {
             val draft = Draft(source, "fake.pdf")
             return OpenDocument(draft, pages, render(draft))
         }
 
-        override fun render(draft: Draft): Bitmap = cache.getOrPut(draft.page) {
-            rendered += draft.page
-            Bitmap.createBitmap(4, 6, Bitmap.Config.ARGB_8888)
+        override fun render(draft: Draft): Bitmap {
+            check(!closed)
+            if (draft.page in renderFailures) throw IOException("Render failed")
+            return cache.getOrPut(draft.page) {
+                rendered += draft.page
+                Bitmap.createBitmap(4, 6, Bitmap.Config.ARGB_8888)
+            }
         }
 
         override fun cachedPreview(draft: Draft): Bitmap? = cache[draft.page]
 
         override fun saveDraft(draft: Draft) {
+            check(!closed)
+            if (failSaves) throw IOException("Save failed")
             saved += draft
         }
 
         override fun open(uri: Uri): OpenDocument = throw UnsupportedOperationException()
         override fun export(draft: Draft, destination: Uri) = throw UnsupportedOperationException()
         override fun share(draft: Draft): File = throw UnsupportedOperationException()
-        override fun close() = Unit
+        override fun close() {
+            closed = true
+        }
     }
 }
