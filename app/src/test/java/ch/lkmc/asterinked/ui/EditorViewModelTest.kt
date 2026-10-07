@@ -9,6 +9,7 @@ import ch.lkmc.asterinked.document.DocumentOperations
 import ch.lkmc.asterinked.document.DocumentProblem
 import ch.lkmc.asterinked.document.Draft
 import ch.lkmc.asterinked.document.OpenDocument
+import ch.lkmc.asterinked.document.OpenResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -79,7 +80,7 @@ class EditorViewModelTest {
             return null
         }
 
-        override fun open(uri: Uri): OpenDocument {
+        override fun open(uri: Uri, current: Draft?): OpenResult {
             calls += "open"
             throw DocumentException(DocumentProblem.SOURCE_UNREADABLE)
         }

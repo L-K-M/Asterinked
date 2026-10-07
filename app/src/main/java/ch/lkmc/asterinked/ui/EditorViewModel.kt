@@ -15,6 +15,7 @@ import ch.lkmc.asterinked.document.DocumentOperations
 import ch.lkmc.asterinked.document.DocumentSession
 import ch.lkmc.asterinked.document.Draft
 import ch.lkmc.asterinked.document.OpenDocument
+import ch.lkmc.asterinked.document.OpenResult
 import ch.lkmc.asterinked.document.PageSpec
 import ch.lkmc.asterinked.document.toProblem
 import ch.lkmc.asterinked.ink.InkHistory
@@ -83,9 +84,16 @@ internal class EditorViewModel private constructor(
             return
         }
         if (current.busy) return
-        perform({ service.open(uri) }) {
-            history.clear()
-            show(it)
+        // Read on the main thread; the worker only gets this snapshot.
+        val shown = current.draft
+        perform({ service.open(uri, shown) }) { result ->
+            when (result) {
+                is OpenResult.Opened -> {
+                    history.clear()
+                    show(result.document)
+                }
+                is OpenResult.AlreadyOpen -> keep(result.draft)
+            }
         }
     }
 
@@ -175,6 +183,16 @@ internal class EditorViewModel private constructor(
         // A restored page that failed to render shows blank with its ink; try again.
         if (document.preview == null) renderVisible(document.draft)
         prefetchAround(document.draft)
+    }
+
+    // The same PDF again, say tapped once more in Files: ink, page, preview and
+    // undo history stay, and only the name follows the file.
+    private fun keep(draft: Draft) {
+        val renamed = draft.name != current.draft?.name
+        val hasNotes = draft.ink.values.any { it.isNotEmpty() }
+        val notice = EditorMessage(text(if (hasNotes) R.string.already_open_with_notes else R.string.already_open), Tone.INFO)
+        publish(withHistory(current.copy(draft = draft, busy = false, message = notice)))
+        if (renamed) saveDraft(draft)
     }
 
     private fun edit(draft: Draft, before: List<InkStroke>, after: List<InkStroke>) {

@@ -9,6 +9,7 @@ import ch.lkmc.asterinked.document.DocumentOperations
 import ch.lkmc.asterinked.document.DocumentProblem
 import ch.lkmc.asterinked.document.Draft
 import ch.lkmc.asterinked.document.OpenDocument
+import ch.lkmc.asterinked.document.OpenResult
 import ch.lkmc.asterinked.document.PageSpec
 import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
@@ -85,7 +86,7 @@ class EditorViewModelRestoreTest {
 
         override fun cachedPreview(draft: Draft): Bitmap? = preview.takeIf { rendered }
         override fun saveDraft(draft: Draft) = Unit
-        override fun open(uri: Uri): OpenDocument = throw UnsupportedOperationException()
+        override fun open(uri: Uri, current: Draft?): OpenResult = throw UnsupportedOperationException()
         override fun export(draft: Draft, destination: Uri) = throw UnsupportedOperationException()
         override fun share(draft: Draft): File = throw UnsupportedOperationException()
         override fun close() = Unit

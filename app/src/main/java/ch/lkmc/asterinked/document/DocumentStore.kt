@@ -12,6 +12,8 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.security.DigestInputStream
+import java.security.MessageDigest
 import java.util.UUID
 
 internal data class Draft(
@@ -49,25 +51,51 @@ internal data class Draft(
     }
 }
 
+/**
+ * A fresh private copy of a picked PDF and the SHA-256 of its bytes.
+ * [displayName] is null when the provider named nothing; the draft then
+ * carries a fallback name.
+ */
+internal class ImportedPdf(val draft: Draft, val digest: ByteArray, val displayName: String?)
+
 internal class DocumentStore(context: Context, private val draftIo: DraftFileIo = DraftFileIo()) {
     private val resolver = context.contentResolver
     private val directory = File(context.filesDir, "documents").apply { mkdirs() }
     private val draftFile = AtomicFile(File(directory, "draft.json"))
     private val brokenFile = File(directory, "draft.broken.json")
 
-    fun import(uri: Uri): Draft {
+    fun import(uri: Uri): ImportedPdf {
         val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) cursor.getString(0) else null
-        } ?: "Document.pdf"
+        }
         val file = File(directory, "${UUID.randomUUID()}.pdf")
         try {
+            val digest = MessageDigest.getInstance(DIGEST_ALGORITHM)
             val input = resolver.openInputStream(uri) ?: throw IOException("Cannot read this PDF.")
-            input.use { source -> file.outputStream().use { source.copyTo(it) } }
-            return Draft(file, name)
+            // Hashing on the way through reads the provider's stream only once.
+            DigestInputStream(input, digest).use { source -> file.outputStream().use { source.copyTo(it) } }
+            return ImportedPdf(Draft(file, name ?: "Document.pdf"), digest.digest(), name)
         } catch (error: Exception) {
             file.delete()
             throw error
         }
+    }
+
+    /**
+     * Whether [imported] holds the same bytes as [source], a PDF imported
+     * earlier. A source that is gone or unreadable matches nothing, so the
+     * import then replaces it like any other PDF.
+     */
+    fun sameBytes(imported: ImportedPdf, source: File): Boolean {
+        // Sizes differ for almost every other PDF, which spares reading this one.
+        if (source.length() != imported.draft.source.length()) return false
+        val digest = MessageDigest.getInstance(DIGEST_ALGORITHM)
+        try {
+            source.forEachBlock { buffer, bytes -> digest.update(buffer, 0, bytes) }
+        } catch (error: IOException) {
+            return false
+        }
+        return MessageDigest.isEqual(imported.digest, digest.digest())
     }
 
     fun writePdf(file: File, uri: Uri) {
@@ -172,6 +200,7 @@ internal class DocumentStore(context: Context, private val draftIo: DraftFileIo 
         const val KIND_KEY = "kind"
         const val BACKUP_SUFFIX = ".bak"
         const val PENDING_SUFFIX = ".new"
+        const val DIGEST_ALGORITHM = "SHA-256"
     }
 }
 

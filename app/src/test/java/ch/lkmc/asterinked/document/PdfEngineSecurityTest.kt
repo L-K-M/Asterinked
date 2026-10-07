@@ -82,9 +82,9 @@ class PdfEngineSecurityTest {
         val documents = File(app.filesDir, "documents")
         val junk = file("junk").apply { writeText("not a pdf at all") }
 
-        assertProblem(DocumentProblem.NOT_A_PDF) { service.open(Uri.fromFile(junk)) }
-        assertProblem(DocumentProblem.PASSWORD_PROTECTED) { service.open(Uri.fromFile(protectedPdf(user = "secret"))) }
-        assertProblem(DocumentProblem.SOURCE_UNREADABLE) { service.open(Uri.fromFile(File(app.cacheDir, "missing.pdf"))) }
+        assertProblem(DocumentProblem.NOT_A_PDF) { service.open(Uri.fromFile(junk), current = null) }
+        assertProblem(DocumentProblem.PASSWORD_PROTECTED) { service.open(Uri.fromFile(protectedPdf(user = "secret")), current = null) }
+        assertProblem(DocumentProblem.SOURCE_UNREADABLE) { service.open(Uri.fromFile(File(app.cacheDir, "missing.pdf")), current = null) }
 
         assertTrue("Failed imports leave no private copy", documents.listFiles().orEmpty().none { it.extension == "pdf" })
     }
@@ -94,7 +94,7 @@ class PdfEngineSecurityTest {
         val documents = File(app.filesDir, "documents")
 
         // PDFBox parses nested arrays recursively; this depth overflows its stack.
-        assertProblem(DocumentProblem.NOT_A_PDF) { service.open(Uri.fromFile(deeplyNestedPdf(depth = 100_000))) }
+        assertProblem(DocumentProblem.NOT_A_PDF) { service.open(Uri.fromFile(deeplyNestedPdf(depth = 100_000)), current = null) }
 
         assertTrue("A failed import leaves no private copy", documents.listFiles().orEmpty().none { it.extension == "pdf" })
     }
