@@ -742,8 +742,12 @@ internal class MainActivity : ComponentActivity() {
 
     // A notice an unread error suppressed stays pending in the state; re-render
     // once the error has had its run. Still suppressed? The next show() re-arms.
+    private val retry = Runnable { model.state.value?.let(::show) }
+
     private fun retrySuppressed() {
-        notice.postDelayed({ model.state.value?.let(::show) }, Tone.ERROR.millis.toLong())
+        // One retry in flight: re-arming replaces the one already pending.
+        notice.removeCallbacks(retry)
+        notice.postDelayed(retry, Tone.ERROR.millis.toLong())
     }
 
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
