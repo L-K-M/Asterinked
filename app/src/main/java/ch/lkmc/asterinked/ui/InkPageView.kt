@@ -8,6 +8,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PointF
 import android.graphics.RectF
 import android.graphics.RenderNode
 import android.view.GestureDetector
@@ -29,8 +30,6 @@ import ch.lkmc.asterinked.ink.InkStrokeBuilder
 import java.util.Collections
 import java.util.IdentityHashMap
 import kotlin.math.abs
-import kotlin.math.hypot
-import kotlin.math.max
 import kotlin.math.min
 
 internal enum class InputMode { PEN, TOUCH }
@@ -95,9 +94,7 @@ internal class InkPageView(context: Context) : View(context) {
     // Multi-finger tap detection (two fingers undo, three redo).
     private var tapPointers = 0
     private var tapDownAt = 0L
-    private var tapCentroidX = 0f
-    private var tapCentroidY = 0f
-    private var tapSpan = 0f
+    private val tapOrigins = mutableMapOf<Int, PointF>()
     private var tapValid = false
     private var inputMode = InputMode.PEN
     private var inkColor = Color.rgb(25, 38, 46)
@@ -108,7 +105,7 @@ internal class InkPageView(context: Context) : View(context) {
     private val pageMargin = PAGE_MARGIN_DP * density
     private val swipeDistance = SWIPE_DISTANCE_DP * density
     private val swipeVelocity = SWIPE_VELOCITY_DP * density
-    private val multiTapSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+    private val multiTapSlopSquared = ViewConfiguration.get(context).scaledTouchSlop.toFloat().let { it * it }
 
     /** Called with +1 or -1 when a finger swipes the page at fit zoom in pen mode. */
     var onTurnPage: (Int) -> Unit = {}
@@ -167,6 +164,7 @@ internal class InkPageView(context: Context) : View(context) {
     }
 
     fun configure(mode: InputMode, color: Int, width: Float, kind: InkKind = InkKind.PEN, onStroke: (InkStroke) -> Unit) {
+        tapValid = false
         cancelStroke()
         inputMode = mode
         inkColor = color
@@ -180,6 +178,7 @@ internal class InkPageView(context: Context) : View(context) {
         val document = draft?.source?.name
         val key = draft?.let { "${it.source.name}:${it.page}" }
         if (pageKey != key) {
+            tapValid = false
             cancelStroke()
             cancelZoomAnimation()
             if (document != null && document == documentKey) {
@@ -193,7 +192,10 @@ internal class InkPageView(context: Context) : View(context) {
             pageKey = key
             documentKey = document
         }
-        if (state.busy) cancelStroke()
+        if (state.busy) {
+            tapValid = false
+            cancelStroke()
+        }
         isEnabled = !state.busy && draft != null
         preview = state.preview
         spec = draft?.let { state.pages[it.page] }
@@ -412,61 +414,57 @@ internal class InkPageView(context: Context) : View(context) {
         lastFocusY = focusY
     }
 
-    // Two or three fingertips landing and lifting together, without the pen
-    // taking part and without travelling, undo or redo. The centroid and the
-    // span are the references: a symmetric pinch keeps its centroid still, so
-    // both must stay within the slop for the gesture to count as a tap.
+    // Track each fingertip by ID: symmetric motion can leave the centroid and
+    // span unchanged, and lifting a finger must not reset the remaining ones.
     private fun trackMultiTap(event: MotionEvent) {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            tapOrigins.clear()
+            tapPointers = 1
+            tapDownAt = event.eventTime
+            tapValid = event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER
+            tapOrigins[event.getPointerId(0)] = PointF(event.x, event.y)
+            return
+        }
+
+        if (event.flags and MotionEvent.FLAG_CANCELED != 0) tapValid = false
+        if (tapValid) checkTapMovement(event)
+
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                tapPointers = 1
-                tapDownAt = event.eventTime
-                tapValid = event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER
-                tapCentroidX = event.x
-                tapCentroidY = event.y
-                tapSpan = 0f
-            }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 tapPointers = maxOf(tapPointers, event.pointerCount)
-                if (tapPointers > 3 || event.getToolType(event.actionIndex) != MotionEvent.TOOL_TYPE_FINGER) tapValid = false
-                tapCentroidX = centroid(event, true)
-                tapCentroidY = centroid(event, false)
-                tapSpan = span(event)
+                val index = event.actionIndex
+                if (tapPointers > MAX_TAP_FINGERS || event.getToolType(index) != MotionEvent.TOOL_TYPE_FINGER) tapValid = false
+                tapOrigins[event.getPointerId(index)] = PointF(event.getX(index), event.getY(index))
             }
-            MotionEvent.ACTION_MOVE -> if (tapValid) {
-                // One finger of a pair moving the full slop moves the centroid half.
-                if (abs(centroid(event, true) - tapCentroidX) > multiTapSlop ||
-                    abs(centroid(event, false) - tapCentroidY) > multiTapSlop ||
-                    abs(span(event) - tapSpan) > multiTapSlop) tapValid = false
-            }
+            MotionEvent.ACTION_POINTER_UP -> tapOrigins.remove(event.getPointerId(event.actionIndex))
             MotionEvent.ACTION_UP -> {
                 if (tapValid && tapPointers >= 2 && event.eventTime - tapDownAt <= MULTI_TAP_WINDOW_MS) {
                     if (tapPointers == 2) onUndo() else onRedo()
                 }
                 tapValid = false
+                tapOrigins.clear()
             }
-            MotionEvent.ACTION_CANCEL -> tapValid = false
+            MotionEvent.ACTION_CANCEL -> {
+                tapValid = false
+                tapOrigins.clear()
+            }
         }
     }
 
-    private fun centroid(event: MotionEvent, x: Boolean): Float {
-        var sum = 0f
-        for (pointer in 0 until event.pointerCount) sum += if (x) event.getX(pointer) else event.getY(pointer)
-        return sum / event.pointerCount
-    }
-
-    private fun span(event: MotionEvent): Float {
-        var minX = Float.MAX_VALUE
-        var maxX = Float.MIN_VALUE
-        var minY = Float.MAX_VALUE
-        var maxY = Float.MIN_VALUE
+    private fun checkTapMovement(event: MotionEvent) {
         for (pointer in 0 until event.pointerCount) {
-            minX = min(minX, event.getX(pointer))
-            maxX = max(maxX, event.getX(pointer))
-            minY = min(minY, event.getY(pointer))
-            maxY = max(maxY, event.getY(pointer))
+            val origin = tapOrigins[event.getPointerId(pointer)] ?: continue
+            for (sample in 0..event.historySize) {
+                val x = if (sample == event.historySize) event.getX(pointer) else event.getHistoricalX(pointer, sample)
+                val y = if (sample == event.historySize) event.getY(pointer) else event.getHistoricalY(pointer, sample)
+                val dx = x - origin.x
+                val dy = y - origin.y
+                if (dx * dx + dy * dy <= multiTapSlopSquared) continue
+
+                tapValid = false
+                return
+            }
         }
-        return hypot(maxX - minX, maxY - minY)
     }
 
     private fun zoomAround(target: Float, focusX: Float, focusY: Float) {
@@ -628,6 +626,7 @@ internal class InkPageView(context: Context) : View(context) {
         const val SWIPE_DIRECTION_RATIO = 1.5f
         // Two fingertips need a moment longer to land together than one.
         const val MULTI_TAP_WINDOW_MS = 300L
+        const val MAX_TAP_FINGERS = 3
         const val ERASER_RADIUS_DP = 10f
         // Most pens report the side button as primary; older S Pens report secondary.
         const val STYLUS_BUTTONS = MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_SECONDARY

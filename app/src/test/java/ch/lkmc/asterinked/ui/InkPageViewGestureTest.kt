@@ -191,6 +191,53 @@ class InkPageViewGestureTest {
         assertEquals(listOf("undo", "redo"), historyGestures)
     }
 
+    @Test fun multiFingerTapsCancelFingerInkInTouchMode() {
+        val view = pageView(InputMode.TOUCH)
+        multiTap(view, fingers = 2)
+        multiTap(view, fingers = 3)
+        assertEquals(listOf("undo", "redo"), historyGestures)
+        assertTrue("The first finger's unfinished stroke was cancelled", strokes.isEmpty())
+    }
+
+    @Test fun aTapSurvivesJitterAfterOneFingerLifts() {
+        val view = pageView(InputMode.PEN)
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 260f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_MOVE, listOf(finger(0, 261f)))
+        send(view, MotionEvent.ACTION_UP, listOf(finger(0, 261f)))
+        assertEquals(listOf("undo"), historyGestures)
+    }
+
+    @Test fun movementReportedOnlyOnReleaseIsNotATap() {
+        val view = pageView(InputMode.PEN)
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 260f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(finger(0, 260f), finger(1, 420f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_UP, listOf(finger(0, 260f)))
+        assertTrue(historyGestures.isEmpty())
+    }
+
+    @Test fun oppositeMotionWithAnUnchangedCentroidAndSpanIsNotATap() {
+        val view = pageView(InputMode.PEN)
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 260f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_MOVE, listOf(finger(0, 340f), finger(1, 260f)))
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(finger(0, 340f), finger(1, 260f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_UP, listOf(finger(0, 340f)))
+        assertTrue(historyGestures.isEmpty())
+    }
+
+    @Test fun aCancelledFingerDoesNotTriggerUndo() {
+        val view = pageView(InputMode.PEN)
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 260f)))
+        send(view, MotionEvent.ACTION_POINTER_DOWN, listOf(finger(0, 260f), finger(1, 340f)), actionIndex = 1)
+        send(view, MotionEvent.ACTION_POINTER_UP, listOf(finger(0, 260f), finger(1, 340f)),
+            actionIndex = 1, flags = MotionEvent.FLAG_CANCELED)
+        send(view, MotionEvent.ACTION_UP, listOf(finger(0, 260f)))
+        assertTrue(historyGestures.isEmpty())
+    }
+
     @Test fun aTwoFingerDragIsNotAnUndo() {
         val view = pageView(InputMode.PEN)
         pinch(view, 200f to 400f, 100f to 500f)
@@ -307,14 +354,14 @@ class InkPageViewGestureTest {
 
     private var downTime = 0L
 
-    private fun send(view: InkPageView, action: Int, pointers: List<Pointer>, actionIndex: Int = 0) {
+    private fun send(view: InkPageView, action: Int, pointers: List<Pointer>, actionIndex: Int = 0, flags: Int = 0) {
         if (action == MotionEvent.ACTION_DOWN) downTime = clock
         clock += 4
         val properties = pointers.map { MotionEvent.PointerProperties().apply { id = it.id; toolType = it.tool } }.toTypedArray()
         val coordinates = pointers.map { MotionEvent.PointerCoords().apply { x = it.x; y = it.y; pressure = 0.6f } }.toTypedArray()
         val source = if (pointers.any { it.tool == MotionEvent.TOOL_TYPE_STYLUS }) InputDevice.SOURCE_STYLUS else InputDevice.SOURCE_TOUCHSCREEN
         val masked = action or (actionIndex shl MotionEvent.ACTION_POINTER_INDEX_SHIFT)
-        val event = MotionEvent.obtain(downTime, clock, masked, pointers.size, properties, coordinates, 0, 0, 1f, 1f, 0, 0, source, 0)
+        val event = MotionEvent.obtain(downTime, clock, masked, pointers.size, properties, coordinates, 0, 0, 1f, 1f, 0, 0, source, flags)
         try { view.onTouchEvent(event) } finally { event.recycle() }
     }
 
