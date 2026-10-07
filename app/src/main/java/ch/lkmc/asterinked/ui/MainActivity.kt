@@ -786,13 +786,14 @@ internal class MainActivity : ComponentActivity() {
         if (ready && notice.shown == null && state.replacing == null) maybeHintGestures()
         // The model holds a replacement until the user decides, so a rotation
         // during the question asks again.
-        // A question about a PDF that no longer waits goes, and so does the
-        // reference to it; a newer one asks afresh.
-        if (confirmingFor !== state.replacing) {
+        // The question shows only while the editor is idle, since no answer can
+        // be taken during other work, and only about the PDF still waiting; a
+        // newer one asks afresh.
+        if (state.busy || confirmingFor !== state.replacing) {
             confirming?.dismiss()
             confirming = null
-            confirmingFor = null
         }
+        if (confirmingFor !== state.replacing) confirmingFor = null
         state.replacing?.takeIf { !state.busy && confirming == null }?.let(::confirmReplacing)
         // A PDF from another app opens once the editor is idle; one that arrives
         // while a replacement waits for its answer opens after it.

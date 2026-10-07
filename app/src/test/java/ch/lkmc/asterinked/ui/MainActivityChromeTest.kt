@@ -368,6 +368,8 @@ class MainActivityChromeTest {
 
             controller.newIntent(Intent(Intent.ACTION_VIEW, Uri.parse("content://downloads/report.pdf")))
             settle(activity)
+            EditorScreens.awaitIdle(activity)
+            settle(activity)
 
             assertNull("Only a different PDF asks, once it is known", ShadowDialog.getLatestDialog()?.takeIf { it.isShowing })
             // No provider serves the address here, so the attempted open reports it.
@@ -418,6 +420,24 @@ class MainActivityChromeTest {
             EditorScreens.publish(activity, EditorScreens.editing().copy(replacing = OpenDocument(Draft(File("b.pdf"), "B.pdf"), emptyList(), null)))
 
             assertFalse(first.isShowing)
+            assertTrue(ShadowDialog.getLatestDialog().isShowing)
+        }
+    }
+
+    // While a save runs the question cannot be answered, so it steps aside and
+    // returns once the editor is idle.
+    @Test fun theQuestionWaitsOutASave() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            settle(activity)
+            val other = OpenDocument(Draft(File("other.pdf"), "Other.pdf"), emptyList(), null)
+            val waiting = EditorScreens.editing().copy(replacing = other)
+            EditorScreens.publish(activity, waiting)
+
+            EditorScreens.swap(activity, waiting.copy(busy = true))
+            assertNull(ShadowDialog.getLatestDialog()?.takeIf { it.isShowing })
+
+            EditorScreens.swap(activity, waiting)
             assertTrue(ShadowDialog.getLatestDialog().isShowing)
         }
     }
