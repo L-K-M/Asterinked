@@ -14,6 +14,7 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.animation.DecelerateInterpolator
 import ch.lkmc.asterinked.R
 import ch.lkmc.asterinked.document.PageSpec
@@ -28,6 +29,7 @@ import ch.lkmc.asterinked.ink.InkStrokeBuilder
 import java.util.Collections
 import java.util.IdentityHashMap
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.min
 
 internal enum class InputMode { PEN, TOUCH }
@@ -88,6 +90,9 @@ internal class InkPageView(context: Context) : View(context) {
     private var lastFocusY = 0f
     private var gestureScaled = false
     private var penGesture = false
+    private var fingerGesture = FingerGesture.TAP
+    private var fingerDownX = 0f
+    private var fingerDownY = 0f
     private var zoomAnimator: ValueAnimator? = null
     private var inputMode = InputMode.PEN
     private var inkColor = Color.rgb(25, 38, 46)
@@ -98,12 +103,23 @@ internal class InkPageView(context: Context) : View(context) {
     private val pageMargin = PAGE_MARGIN_DP * density
     private val swipeDistance = SWIPE_DISTANCE_DP * density
     private val swipeVelocity = SWIPE_VELOCITY_DP * density
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
 
     /** Called with +1 or -1 when a finger swipes the page at fit zoom in pen mode. */
     var onTurnPage: (Int) -> Unit = {}
 
     /** Receives the strokes one erase gesture removed, once the gesture ends. */
     var onErase: (Collection<InkStroke>) -> Unit = {}
+
+    /** Called whenever a stylus or its eraser end touches or hovers over the page. */
+    var onStylusSeen: () -> Unit = {}
+
+    /**
+     * Called when one finger (or a mouse) drags in pen mode without zooming or
+     * turning the page. Without a stylus that only nudges the page, so the
+     * screen seems to ignore the user.
+     */
+    var onFingerDragInPenMode: () -> Unit = {}
 
     var tool = InkTool.PEN
         set(value) {
@@ -115,6 +131,7 @@ internal class InkPageView(context: Context) : View(context) {
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
             gestureScaled = true
+            fingerGesture = FingerGesture.OTHER
             cancelZoomAnimation()
             return true
         }
@@ -130,6 +147,7 @@ internal class InkPageView(context: Context) : View(context) {
         // only if no scale happened, keeps that gesture working.
         override fun onDoubleTapEvent(e: MotionEvent): Boolean {
             if (inputMode != InputMode.PEN || e.actionMasked != MotionEvent.ACTION_UP || gestureScaled) return false
+            fingerGesture = FingerGesture.OTHER
             animateZoom(if (zoom > FIT_ZOOM_TOLERANCE) 1f else DOUBLE_TAP_ZOOM, e.x, e.y)
             return true
         }
@@ -140,6 +158,7 @@ internal class InkPageView(context: Context) : View(context) {
             val distance = e2.x - start.x
             val horizontal = abs(velocityX) >= abs(velocityY) * SWIPE_DIRECTION_RATIO
             if (!horizontal || abs(velocityX) < swipeVelocity || abs(distance) < swipeDistance) return false
+            fingerGesture = FingerGesture.OTHER
             onTurnPage(if (distance < 0) 1 else -1)
             return true
         }
@@ -337,7 +356,10 @@ internal class InkPageView(context: Context) : View(context) {
         val index = event.actionIndex
         val stylus = event.getToolType(index) == MotionEvent.TOOL_TYPE_STYLUS
         val eraserEnd = event.getToolType(index) == MotionEvent.TOOL_TYPE_ERASER
-        if (stylus || eraserEnd) penGesture = true
+        if (stylus || eraserEnd) {
+            penGesture = true
+            onStylusSeen()
+        }
         if ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) &&
             (stylus || eraserEnd || (inputMode == InputMode.TOUCH && event.pointerCount == 1))) {
             if (pageRect.contains(event.getX(index), event.getY(index))) {
@@ -363,9 +385,37 @@ internal class InkPageView(context: Context) : View(context) {
         }
         // Pan before scaling: the pinch then zooms around where the fingers are now.
         followFingers(event)
+        trackFingerGesture(event)
         scaleDetector.onTouchEvent(event)
         gestureDetector.onTouchEvent(event)
+        // After the detectors, which mark a zoom or page turn on this same UP.
+        if (action == MotionEvent.ACTION_UP && fingerGesture == FingerGesture.DRAG && inputMode == InputMode.PEN) {
+            onFingerDragInPenMode()
+        }
         return true
+    }
+
+    // Hover reaches the view before contact, so a pen is noticed even when the
+    // user has not written yet. Mouse and accessibility hover are not pens.
+    override fun onHoverEvent(event: MotionEvent): Boolean {
+        val tool = event.getToolType(event.actionIndex)
+        if (tool == MotionEvent.TOOL_TYPE_STYLUS || tool == MotionEvent.TOOL_TYPE_ERASER) onStylusSeen()
+        return super.onHoverEvent(event)
+    }
+
+    private fun trackFingerGesture(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                fingerGesture = FingerGesture.TAP
+                fingerDownX = event.x
+                fingerDownY = event.y
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> fingerGesture = FingerGesture.OTHER
+            MotionEvent.ACTION_MOVE -> {
+                val moved = hypot(event.x - fingerDownX, event.y - fingerDownY) > touchSlop
+                if (fingerGesture == FingerGesture.TAP && moved) fingerGesture = FingerGesture.DRAG
+            }
+        }
     }
 
     // The page follows the centroid of the fingers, so a pinch also pans, two
@@ -540,6 +590,16 @@ internal class InkPageView(context: Context) : View(context) {
     }
 
     private fun maxPan(pageSize: Float, viewSize: Int): Float = ((pageSize - viewSize) / 2f + pageMargin).coerceAtLeast(0f)
+
+    /** What a gesture without the pen has done so far. */
+    private enum class FingerGesture {
+        /** One pointer, still within the touch slop. */
+        TAP,
+        /** One pointer that moved, and nothing else happened. */
+        DRAG,
+        /** A second finger, a zoom or a page turn. */
+        OTHER,
+    }
 
     private companion object {
         const val NO_POINTER = -1

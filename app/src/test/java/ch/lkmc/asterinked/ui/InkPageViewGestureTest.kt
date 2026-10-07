@@ -30,6 +30,8 @@ import java.time.Duration
 class InkPageViewGestureTest {
     private val strokes = mutableListOf<InkStroke>()
     private val turns = mutableListOf<Int>()
+    private var drags = 0
+    private var stylusSightings = 0
     private var clock = 1_000L
 
     @Test fun twoFingersPanInTouchMode() {
@@ -170,6 +172,58 @@ class InkPageViewGestureTest {
         assertTrue(turns.isEmpty())
     }
 
+    @Test fun aOneFingerDragInPenModeIsReported() {
+        val view = pageView(InputMode.PEN)
+        slowDrag(view, MotionEvent.TOOL_TYPE_FINGER)
+        assertEquals("A finger drag", 1, drags)
+        slowDrag(view, MotionEvent.TOOL_TYPE_MOUSE)
+        assertEquals("A mouse drag counts like a finger", 2, drags)
+        assertTrue("Too slow to turn the page", turns.isEmpty())
+    }
+
+    @Test fun zoomingTurningAndTappingAreNotReportedAsDrags() {
+        val view = pageView(InputMode.PEN)
+        swipe(view, from = 450f, to = 150f) // at fit zoom: turns the page
+        clock += 1_000
+        pinch(view, 200f to 400f, 100f to 500f)
+        clock += 1_000
+        doubleTap(view, 300f, 400f)
+        clock += 1_000
+        doubleTap(view, 300f, 400f)
+        clock += 1_000
+        drag(view, listOf(260f to 400f, 340f to 400f), dx = 60f)
+        clock += 1_000
+        send(view, MotionEvent.ACTION_DOWN, listOf(finger(0, 300f)))
+        send(view, MotionEvent.ACTION_UP, listOf(finger(0, 300f)))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
+        assertEquals("The swipe turned the page", listOf(1), turns)
+        assertEquals(0, drags)
+
+        view.configure(InputMode.TOUCH, Color.BLACK, 2f) { strokes.add(it) }
+        clock += 1_000
+        slowDrag(view, MotionEvent.TOOL_TYPE_FINGER)
+        assertEquals("A finger inks in touch mode", 1, strokes.size)
+        assertEquals(0, drags)
+    }
+
+    @Test fun stylusContactAndHoverAreReported() {
+        val view = pageView(InputMode.PEN)
+        hover(view, MotionEvent.TOOL_TYPE_FINGER, InputDevice.SOURCE_TOUCHSCREEN)
+        hover(view, MotionEvent.TOOL_TYPE_MOUSE, InputDevice.SOURCE_MOUSE)
+        slowDrag(view, MotionEvent.TOOL_TYPE_FINGER)
+        assertEquals("Fingers, TalkBack hover and mice are not pens", 0, stylusSightings)
+
+        hover(view, MotionEvent.TOOL_TYPE_STYLUS, InputDevice.SOURCE_STYLUS)
+        assertTrue("A hovering pen", stylusSightings > 0)
+        stylusSightings = 0
+        hover(view, MotionEvent.TOOL_TYPE_ERASER, InputDevice.SOURCE_STYLUS)
+        assertTrue("A hovering eraser end", stylusSightings > 0)
+        stylusSightings = 0
+        send(view, MotionEvent.ACTION_DOWN, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 400f)))
+        send(view, MotionEvent.ACTION_UP, listOf(Pointer(7, MotionEvent.TOOL_TYPE_STYLUS, 300f, 400f)))
+        assertTrue("A pen on the page", stylusSightings > 0)
+    }
+
     @Test fun zoomSurvivesPageTurnButNotANewDocument() {
         val view = pageView(InputMode.PEN)
         val fit = unitsPer100px(view)
@@ -186,6 +240,8 @@ class InkPageViewGestureTest {
     private fun pageView(mode: InputMode) = InkPageView(RuntimeEnvironment.getApplication()).apply {
         configure(mode, Color.BLACK, 2f) { strokes.add(it) }
         onTurnPage = { turns.add(it) }
+        onFingerDragInPenMode = { drags++ }
+        onStylusSeen = { stylusSightings++ }
         show(state(page = 0))
         layout(0, 0, 600, 800)
         redraw(this)
@@ -255,6 +311,30 @@ class InkPageViewGestureTest {
         send(view, MotionEvent.ACTION_UP, listOf(finger(0, to)))
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
         redraw(view)
+    }
+
+    // Too slow to fling, so it neither turns the page nor counts as a swipe.
+    private fun slowDrag(view: InkPageView, tool: Int) {
+        val at = { x: Float -> Pointer(0, tool, x, 400f) }
+        send(view, MotionEvent.ACTION_DOWN, listOf(at(300f)))
+        for (step in 1..4) {
+            clock += 100
+            send(view, MotionEvent.ACTION_MOVE, listOf(at(300f + 15f * step)))
+        }
+        send(view, MotionEvent.ACTION_UP, listOf(at(360f)))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
+        redraw(view)
+    }
+
+    // Through the generic-motion dispatch, as the window delivers hover.
+    private fun hover(view: InkPageView, tool: Int, source: Int) {
+        for (action in listOf(MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE, MotionEvent.ACTION_HOVER_EXIT)) {
+            clock += 4
+            val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = tool })
+            val coordinates = arrayOf(MotionEvent.PointerCoords().apply { x = 300f; y = 400f })
+            val event = MotionEvent.obtain(clock, clock, action, 1, properties, coordinates, 0, 0, 1f, 1f, 0, 0, source, 0)
+            try { view.dispatchGenericMotionEvent(event) } finally { event.recycle() }
+        }
     }
 
     private fun finger(id: Int, x: Float) = Pointer(id, MotionEvent.TOOL_TYPE_FINGER, x, 400f)

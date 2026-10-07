@@ -19,6 +19,7 @@
     <string name="opening">Opening…</string>
     <string name="input_hint">Pen writes · Swipe to turn pages · Double-tap to zoom</string>
     <string name="touch_hint">Finger or pen writes · Two fingers pan and zoom</string>
+    <string name="finger_drag_hint">Fingers move the page. To write with a finger, turn on the hand button.</string>
     <string name="eraser_hint">Drag across strokes to erase them</string>
     <string name="highlight_hint">Drag across text to highlight it</string>
     <string name="working">Working…</string>
