@@ -32,9 +32,8 @@ internal class InkHistory {
      * the visible [page], as it always has. Returns null if nothing is left.
      */
     fun undo(page: Int, ink: Map<Int, List<InkStroke>>): PageInk? {
-        val edit = undo.lastOrNull()?.takeIf { it.after === ink.strokesOn(it.page) }?.also { undo.removeAt(undo.lastIndex) }
-            ?: newestStroke(page, ink)
-            ?: return null
+        dropStale(ink)
+        val edit = undo.removeLastOrNull() ?: newestStroke(page, ink) ?: return null
         redo += edit
         return PageInk(edit.page, edit.before)
     }
@@ -51,7 +50,9 @@ internal class InkHistory {
         return PageInk(edit.page, edit.after)
     }
 
-    fun canUndo(page: Int, ink: Map<Int, List<InkStroke>>): Boolean = undo.isNotEmpty() || ink.strokesOn(page).isNotEmpty()
+    // Matches undo(): an edit that still applies, or else the visible page's newest stroke.
+    fun canUndo(page: Int, ink: Map<Int, List<InkStroke>>): Boolean =
+        undo.any { it.applies(ink) } || ink.strokesOn(page).isNotEmpty()
 
     fun canRedo(): Boolean = redo.isNotEmpty()
 
@@ -60,14 +61,20 @@ internal class InkHistory {
         redo.clear()
     }
 
-    // The fallback for ink without history. Recorded edits that no longer match
-    // the ink are stale, so they go too.
+    // Edits on top that no longer match their page's ink are stale and go;
+    // older edits that still match stay undoable.
+    private fun dropStale(ink: Map<Int, List<InkStroke>>) {
+        while (undo.isNotEmpty() && !undo.last().applies(ink)) undo.removeAt(undo.lastIndex)
+    }
+
+    // The fallback for ink without history: remove the newest stroke.
     private fun newestStroke(page: Int, ink: Map<Int, List<InkStroke>>): Edit? {
-        undo.clear()
         val strokes = ink.strokesOn(page)
         if (strokes.isEmpty()) return null
         return Edit(page, strokes.dropLast(1), strokes)
     }
+
+    private fun Edit.applies(ink: Map<Int, List<InkStroke>>) = after === ink.strokesOn(page)
 
     private fun Map<Int, List<InkStroke>>.strokesOn(page: Int): List<InkStroke> = this[page].orEmpty()
 }

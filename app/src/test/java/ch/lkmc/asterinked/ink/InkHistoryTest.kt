@@ -113,5 +113,26 @@ class InkHistoryTest {
         assertFalse(history.canRedo())
     }
 
+    @Test fun aStaleEditDoesNotCostTheOlderOnes() {
+        val history = InkHistory()
+        val first = listOf(a)
+        history.record(0, emptyList(), first)
+        history.record(1, emptyList(), listOf(b))
+        // Page 1's ink was replaced outside the history; page 0 still matches.
+        val ink = mapOf(0 to first, 1 to listOf(c))
+
+        assertTrue(history.canUndo(5, ink))
+        assertEquals(PageInk(0, emptyList()), history.undo(5, ink))
+    }
+
+    @Test fun undoIsOfferedOnlyWhenItWouldDoSomething() {
+        val history = InkHistory()
+        history.record(1, emptyList(), listOf(b))
+        val stale = mapOf(1 to listOf(c))
+
+        assertFalse("The only edit is stale and the visible page is empty", history.canUndo(5, stale))
+        assertNull(history.undo(5, stale))
+    }
+
     private fun stroke(x: Float) = InkStroke(listOf(InkPoint(x, x, 1f)), 0, 2f)
 }
