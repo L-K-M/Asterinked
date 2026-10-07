@@ -5,6 +5,7 @@ import android.os.Looper
 import android.widget.Button
 import android.widget.FrameLayout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -68,11 +69,11 @@ class NoticeBarTest {
 
     @Test fun aSuccessDoesNotHideAnUnreadError() {
         notice.show("Couldn’t save", Tone.ERROR)
-        notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") {})
+        assertFalse(notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") {}))
         assertEquals("Couldn’t save", notice.shown)
         assertNull(notice.actionLabel)
         advance(Tone.ERROR.millis + ANIMATION_MS)
-        notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") {})
+        assertTrue(notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") {}))
         assertEquals("PDF saved.", notice.shown)
     }
 
@@ -98,6 +99,17 @@ class NoticeBarTest {
         assertTrue(ran)
         advance(ANIMATION_MS)
         assertNull(notice.shown)
+    }
+
+    // A second tap during the fade-out finds the tag already cleared.
+    @Test fun anActionCannotFireTwiceWhileDismissing() {
+        var count = 0
+        notice.show("PDF saved.", Tone.SUCCESS, NoticeAction("Open") { count++ })
+
+        actionButton()!!.performClick()
+        actionButton()!!.performClick()
+
+        assertEquals(1, count)
     }
 
     @Test fun anActionNoticeStaysLongEnoughToReachIt() {

@@ -566,17 +566,21 @@ internal class MainActivity : ComponentActivity() {
                 MessageAction.SAVE_COPY -> NoticeAction(getString(R.string.save_copy)) { launchPicker { savePdf.launch(exportName()) } }
                 null -> null
             }
-            notice.show(it.text, it.tone, action)
-            model.acknowledgeMessage()
+            // A suppressed notice stays pending: a later render retries once the
+            // error has cleared instead of dropping the message unseen.
+            if (notice.show(it.text, it.tone, action)) model.acknowledgeMessage()
         }
         state.shared?.let {
             model.acknowledgeShare()
             sendToShareSheet(it)
         }
         state.exported?.let {
-            model.acknowledgeExport()
-            notice.show(getString(R.string.pdf_saved), Tone.SUCCESS,
-                NoticeAction(getString(R.string.open)) { openExported(it) })
+            // Same rule: if an unread error suppressed the flash, exported stays
+            // set and the next render offers Open again once the error clears.
+            if (notice.show(getString(R.string.pdf_saved), Tone.SUCCESS,
+                    NoticeAction(getString(R.string.open)) { openExported(it) })) {
+                model.acknowledgeExport()
+            }
         }
         // Cleared only once the user decides, so a rotation during the prompt asks
         // again; a newer PDF that arrived meanwhile stays pending.

@@ -216,9 +216,10 @@ internal class EditorViewModel internal constructor(
                     if (cleared) return@post
                     // The file still holds the previous notes: put the marker back
                     // so the draft does not claim strokes that never reached it.
+                    // A different open document is untouched — never blank it.
                     val restored = current.draft?.takeIf { it.source == latest.source }
                         ?.let { if (restoreSavedInk != null) it.copy(savedInk = restoreSavedInk) else it }
-                    publish(current.copy(draft = restored,
+                    publish(current.copy(draft = restored ?: current.draft,
                         message = EditorMessage(text(R.string.notes_not_saved), Tone.ERROR, MessageAction.SAVE_COPY)))
                 }
             }

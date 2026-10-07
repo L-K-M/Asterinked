@@ -45,7 +45,9 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
         setOnClickListener {
             // Dismiss first: an action that shows a follow-up notice (a failed
             // "Save copy" reporting its own error) must not kill what it raised.
+            // Clear the tag so a double-tap during the fade cannot run it twice.
             val pending = tag as? NoticeAction
+            tag = null
             dismiss()
             pending?.run()
         }
@@ -77,10 +79,11 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
         setOnClickListener { dismiss() }
     }
 
-    fun show(text: CharSequence, tone: Tone, action: NoticeAction? = null) {
+    /** Returns false when an unread error suppressed the notice. */
+    fun show(text: CharSequence, tone: Tone, action: NoticeAction? = null): Boolean {
         // Nothing that can wait wipes out an error the user has not read yet:
         // a success flash must not hide a failed write's Save copy action.
-        if (tone != Tone.ERROR && this.tone == Tone.ERROR && isVisible) return
+        if (tone != Tone.ERROR && this.tone == Tone.ERROR && isVisible) return false
 
         this.tone = tone
         message.text = text
@@ -93,8 +96,10 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
         removeCallbacks(hide)
         // An action needs longer than a glance: give the user time to reach it.
         val millis = if (action == null) tone.millis else ACTION_MILLIS
+        // A notice with a control also earns the interactive-content extension.
+        val controls = if (action == null) 0 else AccessibilityManager.FLAG_CONTENT_CONTROLS
         postDelayed(hide, accessibility.getRecommendedTimeoutMillis(millis,
-            AccessibilityManager.FLAG_CONTENT_ICONS or AccessibilityManager.FLAG_CONTENT_TEXT).toLong())
+            AccessibilityManager.FLAG_CONTENT_ICONS or AccessibilityManager.FLAG_CONTENT_TEXT or controls).toLong())
         // Restarting the animation also cancels a dismissal in progress.
         if (visibility != VISIBLE) {
             visibility = VISIBLE
@@ -102,6 +107,7 @@ internal class NoticeBar(context: Context) : MaxWidthLayout(context) {
             translationY = ui.dp(Space.L).toFloat()
         }
         animate().alpha(1f).translationY(0f).setDuration(Motion.MEDIUM).setInterpolator(Motion.EASING).start()
+        return true
     }
 
     fun dismiss() {
