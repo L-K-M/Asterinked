@@ -134,5 +134,76 @@ class InkHistoryTest {
         assertNull(history.undo(5, stale))
     }
 
+    @Test fun anEqualListCopyIsStillStaleForUndoAndRedo() {
+        val history = InkHistory()
+        val before = listOf(a, b)
+        val after = listOf(a, c)
+        history.record(0, before, after)
+
+        val unrelated = after.toMutableList()
+        val undone = history.undo(0, mapOf(0 to unrelated))!!.strokes
+        assertEquals("A copied list uses tail removal, not the recorded erase", listOf(a), undone)
+        assertSame(unrelated, history.redo(mapOf(0 to undone))!!.strokes)
+        val again = history.undo(0, mapOf(0 to unrelated))!!.strokes
+
+        assertNull(history.redo(mapOf(0 to again.toMutableList())))
+        assertFalse(history.canRedo())
+        assertNull("Rejected redo is discarded even for the original list", history.redo(mapOf(0 to again)))
+    }
+
+    @Test fun anUnrelatedEmptyListCannotRestoreErasedInk() {
+        val history = InkHistory()
+        val erased = ArrayList<InkStroke>()
+        history.record(0, listOf(a, b), erased)
+
+        val unrelated = mapOf(0 to ArrayList<InkStroke>())
+        assertNull(history.undo(0, unrelated))
+        assertFalse(history.canUndo(0, unrelated))
+        assertFalse(history.canRedo())
+    }
+
+    @Test fun aDisconnectedRecordDiscardsOlderUndoOnMismatch() {
+        val history = InkHistory()
+        val older = listOf(a)
+        history.record(0, emptyList(), older)
+        val before = listOf(b)
+        val after = before + c
+        history.record(0, before, after)
+
+        val undone = history.undo(0, mapOf(0 to after))!!.strokes
+        assertSame(before, undone)
+        val fallback = history.undo(0, mapOf(0 to undone))!!.strokes
+        assertTrue("The old stroke cannot be restored across the mismatch", fallback.isEmpty())
+        assertFalse(history.canUndo(0, mapOf(0 to fallback)))
+        val redone = history.redo(mapOf(0 to fallback))!!.strokes
+        assertSame(before, redone)
+        assertSame(after, history.redo(mapOf(0 to redone))!!.strokes)
+    }
+
+    @Test fun noOpRecordsRemainUndoableAndRedoable() {
+        val history = InkHistory()
+        val strokes = listOf(a)
+        history.record(0, strokes, strokes)
+
+        assertSame(strokes, history.undo(0, mapOf(0 to strokes))!!.strokes)
+        assertSame(strokes, history.redo(mapOf(0 to strokes))!!.strokes)
+    }
+
+    @Test fun clearDiscardsTheWholeSessionHistory() {
+        val history = InkHistory()
+        val first = listOf(a)
+        val second = listOf(b)
+        history.record(0, emptyList(), first)
+        history.record(1, emptyList(), second)
+        val undone = history.undo(0, mapOf(0 to first, 1 to second))!!
+        val ink = mapOf(0 to first, undone.page to undone.strokes)
+
+        history.clear()
+
+        assertFalse(history.canRedo())
+        assertFalse(history.canUndo(1, ink))
+        assertEquals("Remaining ink keeps the explicit tail-removal fallback", PageInk(0, emptyList()), history.undo(0, ink))
+    }
+
     private fun stroke(x: Float) = InkStroke(listOf(InkPoint(x, x, 1f)), 0, 2f)
 }
