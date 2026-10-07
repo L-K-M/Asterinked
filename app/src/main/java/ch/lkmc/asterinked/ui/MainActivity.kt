@@ -133,13 +133,13 @@ internal class MainActivity : ComponentActivity() {
         window.isNavigationBarContrastEnforced = false
         super.onCreate(savedInstanceState)
         // Pen settings persist across launches, not only across recreation.
-        val penColor = settings.getInt(COLOR_KEY, DEFAULT_COLOR)
-        val penWidth = settings.getInt(WIDTH_KEY, DEFAULT_WIDTH)
-        colorIndices[InkKind.PEN] = penColor.coerceIn(COLORS.indices)
-        widthIndices[InkKind.PEN] = penWidth.coerceIn(WIDTHS.indices)
-        // Both tools shared the pen's keys before; the highlighter starts from them once.
-        colorIndices[InkKind.HIGHLIGHTER] = settings.getInt(HIGHLIGHT_COLOR_KEY, penColor).coerceIn(HIGHLIGHT_COLORS.indices)
-        widthIndices[InkKind.HIGHLIGHTER] = settings.getInt(HIGHLIGHT_WIDTH_KEY, penWidth).coerceIn(HIGHLIGHT_WIDTHS.indices)
+        // Both tools shared the pen's keys before; the others start from them once.
+        val sharedColor = settings.getInt(COLOR_KEY, DEFAULT_COLOR)
+        val sharedWidth = settings.getInt(WIDTH_KEY, DEFAULT_WIDTH)
+        for (kind in InkKind.entries) {
+            colorIndices[kind] = settings.getInt(colorKey(kind), sharedColor).coerceIn(COLORS.indices)
+            widthIndices[kind] = settings.getInt(widthKey(kind), sharedWidth).coerceIn(WIDTHS.indices)
+        }
         mode = InputMode.entries.firstOrNull { it.name == settings.getString(MODE_KEY, null) } ?: InputMode.PEN
         kind = InkKind.entries.firstOrNull { it.name == settings.getString(KIND_KEY, null) } ?: InkKind.PEN
         // The eraser is a momentary tool: it survives rotation, but a new launch writes.
@@ -489,13 +489,22 @@ internal class MainActivity : ComponentActivity() {
         page.configure(mode, colors[colorIndex], width, kind, model::addStroke)
         page.tool = tool
         settings.edit {
-            putInt(COLOR_KEY, colorIndices.getValue(InkKind.PEN))
-            putInt(WIDTH_KEY, widthIndices.getValue(InkKind.PEN))
-            putInt(HIGHLIGHT_COLOR_KEY, colorIndices.getValue(InkKind.HIGHLIGHTER))
-            putInt(HIGHLIGHT_WIDTH_KEY, widthIndices.getValue(InkKind.HIGHLIGHTER))
+            for ((kind, index) in colorIndices) putInt(colorKey(kind), index)
+            for ((kind, index) in widthIndices) putInt(widthKey(kind), index)
             putString(MODE_KEY, mode.name)
             putString(KIND_KEY, kind.name)
         }
+    }
+
+    // The pen keeps the keys both tools used before.
+    private fun colorKey(kind: InkKind) = when (kind) {
+        InkKind.PEN -> COLOR_KEY
+        InkKind.HIGHLIGHTER -> HIGHLIGHT_COLOR_KEY
+    }
+
+    private fun widthKey(kind: InkKind) = when (kind) {
+        InkKind.PEN -> WIDTH_KEY
+        InkKind.HIGHLIGHTER -> HIGHLIGHT_WIDTH_KEY
     }
 
     private fun currentTool(): ToolChoice = when {
