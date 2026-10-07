@@ -99,10 +99,10 @@ class DocumentStorePersistenceTest {
         File(dir, "draft.json").writeText(
             """{"source":"${source.name}","name":"w.pdf","page":0,""" +
                 """"ink":{"0":[{"color":1,"width":0,"points":$points},""" +
-                """{"color":1,"width":-3,"points":$points}]},"savedInk":{}}""",
+                """{"color":1,"width":-3,"points":$points},{"color":1,"width":5,"points":$points}]},"savedInk":{}}""",
         )
         val widths = DocumentStore(app).restore()!!.ink.getValue(0).map { it.width }
-        assertEquals(listOf(2.2f, 2.2f), widths)
+        assertEquals(listOf(2.2f, 2.2f, 5f), widths)
     }
 
     @Test
