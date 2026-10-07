@@ -145,7 +145,11 @@ internal class EditorViewModel internal constructor(
             // A retry of the remembered target that can no longer be written
             // is a dead end: forget it so the next Save asks for a new file.
             if (draft.destination == uri && error.toProblem(DocumentProblem.UNEXPECTED) == DocumentProblem.DESTINATION_UNWRITABLE) {
-                publish(current.copy(draft = current.draft?.copy(destination = null)))
+                val cleared = current.draft?.copy(destination = null)
+                publish(current.copy(draft = cleared))
+                // Persist the clearing too: a grant that outlives the file would
+                // otherwise resurrect the dead target on the next restore.
+                cleared?.let { saveDraft(it) }
             }
         }) {
             publish(current.copy(draft = saved, busy = false, message = EditorMessage(text(R.string.pdf_saved), Tone.SUCCESS)))
