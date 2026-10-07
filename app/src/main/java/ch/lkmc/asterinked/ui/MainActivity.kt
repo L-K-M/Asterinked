@@ -112,6 +112,10 @@ internal class MainActivity : ComponentActivity() {
     private var pageDialog: AlertDialog? = null
     private var lastDestination: Uri? = null
 
+    // A grant taken for a file whose export then failed is not tracked by
+    // lastDestination; hold it until the outcome is known so it can be given back.
+    private var unclaimedGrant: Uri? = null
+
     private val openPdf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(model::open)
     }
@@ -127,6 +131,7 @@ internal class MainActivity : ComponentActivity() {
                 // one Save needs, so keep at least that when possible.
                 runCatching { contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
             }
+            unclaimedGrant = it
             model.export(it)
         }
     }
@@ -588,6 +593,14 @@ internal class MainActivity : ComponentActivity() {
         if (destination != lastDestination) {
             lastDestination?.let(::releaseGrant)
             lastDestination = destination
+        }
+        // An export that never claimed its picked file (a failed first save or
+        // save-as) leaves the grant orphaned; give it back once the dust settles.
+        unclaimedGrant?.let { staged ->
+            when {
+                staged == destination -> unclaimedGrant = null
+                !state.busy -> { unclaimedGrant = null; releaseGrant(staged) }
+            }
         }
         // Once a destination is remembered the button writes back to it; until
         // then every save goes through the picker.
