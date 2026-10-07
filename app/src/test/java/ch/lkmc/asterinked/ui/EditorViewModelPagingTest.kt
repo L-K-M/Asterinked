@@ -135,6 +135,9 @@ class EditorViewModelPagingTest {
         assertNull(state.draft!!.destination)
         assertEquals(listOf(destination), documents.exportedTo)
         assertTrue(state.message != null)
+        // The clearing is written back: a stale grant cannot resurrect the dead
+        // target on the next restore.
+        assertNull(documents.saved.last().destination)
     }
 
     private fun stroke() = InkStroke(listOf(InkPoint(10f, 10f, 0.5f), InkPoint(20f, 20f, 0.5f)), 0, 2f)
