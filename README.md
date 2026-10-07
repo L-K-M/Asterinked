@@ -24,13 +24,14 @@ Pen-based PDF annotation for Android 10 and newer.
    Undo and redo sit at the left of the tool bar; undo reaches your last edit on
    any page and turns back to it. A two-finger tap on the page undoes, a
    three-finger tap redoes.
-4. Change pages with the arrows on the page pill (tap the page number to jump
-   to a page or the previous/next page with notes),
-   which steps aside while you write and returns after a short pause,
-   then **Save copy** to export the whole document, or tap the share icon to send
-   an annotated copy straight to another app. Sharing does not mark notes as
-   exported. With a keyboard: Ctrl+Z, Ctrl+Shift+Z, Ctrl+S, Ctrl+O, Page Up
-   and Page Down.
+4. Change pages with the arrows on the page pill, which steps aside while you
+   write and returns after a short pause; tap the page number to jump to a page
+   or to the previous or next page with notes. **Save copy** exports the whole
+   document; once it has a file, **Save** writes back to it, and a long press
+   saves a copy elsewhere. After saving, **Open** shows the copy in your PDF
+   viewer. The share icon sends an annotated copy straight to another app;
+   sharing does not mark notes as exported. With a keyboard: Ctrl+Z,
+   Ctrl+Shift+Z, Ctrl+S, Ctrl+O, Page Up and Page Down.
 
 The app follows the system's dark theme and text size; the PDF page stays white.
 
@@ -40,8 +41,8 @@ accumulate duplicate ink. The imported file stays untouched unless you explicitl
 choose it as an export destination through a document provider.
 
 The current PDF and completed strokes are stored privately on the device and
-restored after reopening. Opening another PDF replaces that draft; export notes
-you want to keep first. Cloud backups are disabled. Some Android devices may
+restored after reopening. Opening the same PDF again keeps its notes; opening
+another PDF replaces that draft, so export notes you want to keep first. Cloud backups are disabled. Some Android devices may
 transfer the draft and pen settings to a new phone.
 
 ## Build

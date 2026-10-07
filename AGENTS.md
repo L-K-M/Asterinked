@@ -133,8 +133,9 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   so this needs a device check.
 - Every tappable control is at least 48dp square; `MainActivityLayoutTest`
   enforces it, with no overlaps, on phone, landscape, tablet and 200% text.
-- Unselected swatches need 3:1 boundary contrast against the toolbar. Use
-  `on_surface_variant` for their edge; `outline` is too faint in both themes.
+- Unselected swatches need 3:1 boundary contrast against the toolbar. Their
+  edge is the theme's `swatch_edge` (`on_surface_variant` by day, a mid grey
+  at night so graphite still reads as a filled dot); `outline` is too faint.
   `ChoiceDotContrastTest` verifies rendered edges without changing ink colours.
 - The tool bar wraps from its measured, inset-adjusted width. Narrow phones
   need three rows to keep 48dp targets; `screenWidthDp` is not the usable width.
