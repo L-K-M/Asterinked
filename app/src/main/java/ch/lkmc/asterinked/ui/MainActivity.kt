@@ -680,8 +680,8 @@ internal class MainActivity : ComponentActivity() {
     // the page, so say once per session how to write with it.
     private fun explainFingerDrag() {
         if (stylusSeen || handButtonUsed || fingerHintShown) return
-        fingerHintShown = true
-        hint(R.string.finger_drag_hint)
+        // An error on screen holds the hint back; the next drag offers it again.
+        fingerHintShown = hint(R.string.finger_drag_hint)
     }
 
     // Gestures do the navigating; tell a new user once, then get out of the way.
@@ -703,7 +703,6 @@ internal class MainActivity : ComponentActivity() {
             state.busy -> Screen.LOADING
             else -> Screen.WELCOME
         })
-        if (ready) maybeHintGestures()
         title.text = draft?.name.orEmpty()
         showStatus(state.statusText())
         progress.visibility = if (draft != null && state.busy) View.VISIBLE else View.GONE
@@ -772,6 +771,9 @@ internal class MainActivity : ComponentActivity() {
                 model.acknowledgeExport()
             }
         }
+        // Only into an empty notice bar, so no message replaces it unseen; a
+        // dismissed notice renders again and offers it then.
+        if (ready && notice.shown == null) maybeHintGestures()
         // Cleared only once the user decides, so a rotation during the prompt asks
         // again; a newer PDF that arrived meanwhile stays pending.
         val uri = incoming

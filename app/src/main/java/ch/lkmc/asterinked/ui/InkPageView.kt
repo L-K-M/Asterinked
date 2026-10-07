@@ -84,7 +84,8 @@ internal class InkPageView(context: Context) : View(context) {
     private var eraserAt: InkPoint? = null
     // Where a hovering stylus would land, in page units; null while it is away or down.
     private var hoverAt: InkPoint? = null
-    private var hoverErases = false
+    // The pen itself asks to erase: its eraser end or a held side button.
+    private var hoverPenErases = false
     private val hoverRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val hoverHalo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = HOVER_HALO_COLOR }
     private val hoverMarker = Paint(Paint.ANTI_ALIAS_FLAG).apply { blendMode = BlendMode.MULTIPLY }
@@ -159,8 +160,13 @@ internal class InkPageView(context: Context) : View(context) {
      */
     var onFingerDragInPenMode: () -> Unit = {}
 
-    // Like configure(), a new tool applies from the next stroke.
+    // Like configure(), a new tool applies from the next stroke; a resting
+    // pen's ring shows the new tool at once.
     var tool = InkTool.PEN
+        set(value) {
+            field = value
+            if (hoverAt != null) invalidate()
+        }
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
@@ -213,6 +219,7 @@ internal class InkPageView(context: Context) : View(context) {
         inkWidth = width
         inkKind = kind
         this.onStroke = onStroke
+        if (hoverAt != null) invalidate()
     }
 
     fun show(state: EditorState) {
@@ -308,7 +315,7 @@ internal class InkPageView(context: Context) : View(context) {
     // few dp on screen; a pale halo keeps it visible over ink of its own colour.
     // A light highlighter tint would vanish as a ring, so it previews the mark.
     private fun drawHover(canvas: Canvas, at: InkPoint, scale: Float) {
-        if (hoverErases) {
+        if (hoverPenErases || tool == InkTool.ERASER) {
             drawEraserRing(canvas, at, scale)
             return
         }
@@ -339,7 +346,7 @@ internal class InkPageView(context: Context) : View(context) {
         val shown = hoverAt
         val hovering = event.actionMasked == MotionEvent.ACTION_HOVER_ENTER || event.actionMasked == MotionEvent.ACTION_HOVER_MOVE
         hoverAt = if (hovering && isEnabled && pageRect.contains(event.x, event.y)) pagePoint(event.x, event.y, 1f) else null
-        hoverErases = erasesWhenHovering(event)
+        hoverPenErases = penErases(event)
         if (shown != null || hoverAt != null) invalidate()
         return true
     }
@@ -350,13 +357,13 @@ internal class InkPageView(context: Context) : View(context) {
         val button = event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS || event.actionMasked == MotionEvent.ACTION_BUTTON_RELEASE
         if (!button || hoverAt == null) return super.onGenericMotionEvent(event)
 
-        hoverErases = erasesWhenHovering(event)
+        hoverPenErases = penErases(event)
         invalidate()
         return true
     }
 
-    private fun erasesWhenHovering(event: MotionEvent): Boolean =
-        event.getToolType(0) == MotionEvent.TOOL_TYPE_ERASER || tool == InkTool.ERASER || event.buttonState and STYLUS_BUTTONS != 0
+    private fun penErases(event: MotionEvent): Boolean =
+        event.getToolType(0) == MotionEvent.TOOL_TYPE_ERASER || event.buttonState and STYLUS_BUTTONS != 0
 
     override fun onDetachedFromWindow() {
         cancelZoomAnimation()
@@ -770,6 +777,7 @@ internal class InkPageView(context: Context) : View(context) {
     private class FingerTaps(private val slop: Float) {
         private val starts = HashMap<Int, PointF>()
         private var fingers = 0
+        private var lifted = false
         private var ruledOut = false
 
         /** Returns the number of fingers when [event] completes a tap, otherwise null. */
@@ -778,6 +786,7 @@ internal class InkPageView(context: Context) : View(context) {
             if (action == MotionEvent.ACTION_DOWN) {
                 starts.clear()
                 fingers = 0
+                lifted = false
                 ruledOut = false
             }
             if (action == MotionEvent.ACTION_CANCEL || event.flags and MotionEvent.FLAG_CANCELED != 0) ruledOut = true
@@ -794,9 +803,10 @@ internal class InkPageView(context: Context) : View(context) {
             return null
         }
 
+        // All fingers land before any lifts: one landing again is not a tap.
         private fun land(event: MotionEvent, index: Int) {
             fingers++
-            if (event.getToolType(index) != MotionEvent.TOOL_TYPE_FINGER || fingers > REDO_FINGERS) ruledOut = true
+            if (event.getToolType(index) != MotionEvent.TOOL_TYPE_FINGER || fingers > REDO_FINGERS || lifted) ruledOut = true
             starts[event.getPointerId(index)] = PointF(event.getX(index), event.getY(index))
         }
 
@@ -804,6 +814,7 @@ internal class InkPageView(context: Context) : View(context) {
         private fun lift(event: MotionEvent, index: Int) {
             checkMoved(event, index)
             starts.remove(event.getPointerId(index))
+            lifted = true
         }
 
         private fun checkMoved(event: MotionEvent, index: Int) {

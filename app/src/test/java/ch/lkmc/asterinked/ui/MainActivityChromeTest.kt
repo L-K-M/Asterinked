@@ -234,6 +234,38 @@ class MainActivityChromeTest {
         }
     }
 
+    // A message on the first editor must not consume the one-time gesture hint.
+    @Test fun theGestureHintWaitsForAMessageToClear() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            settle(activity)
+            val error = app.getString(R.string.error_out_of_memory)
+            EditorScreens.publish(activity, EditorScreens.editing().copy(message = EditorMessage(error, Tone.ERROR)))
+            val root = activity.window.decorView
+            assertEquals(error, notice(root).shown?.toString())
+
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis((Tone.ERROR.millis + NOTICE_ANIMATION_MS).toLong()))
+
+            assertEquals(app.getString(R.string.touch_hint), notice(root).shown?.toString())
+        }
+    }
+
+    // A finger hint an error held back is offered again on the next drag.
+    @Test fun aFingerHintAnErrorHeldBackComesBack() {
+        attachStylus()
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val root = editor(controller.get())
+            notice(root).show("Couldn’t save", Tone.ERROR)
+            drag(page(root), MotionEvent.TOOL_TYPE_FINGER)
+            assertEquals("Couldn’t save", notice(root).shown?.toString())
+
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis((Tone.ERROR.millis + NOTICE_ANIMATION_MS).toLong()))
+            drag(page(root), MotionEvent.TOOL_TYPE_FINGER)
+
+            assertEquals(fingerHint, notice(root).shown?.toString())
+        }
+    }
+
     @Test fun noFingerHintForSomeoneWhoUsedTheHandButton() {
         attachStylus()
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->

@@ -298,6 +298,20 @@ class InkPageViewTest {
         assertTrue("The eraser ring instead", pixelsNear(view, 310, 400, reach = 2) { Color.red(it) < 200 })
     }
 
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun theRingFollowsAToolChangeWhileThePenRests() {
+        val view = pageView(InputMode.PEN, mutableListOf()).apply { configure(InputMode.PEN, Color.rgb(32, 85, 184), 2f) {} }
+        hover(view, MotionEvent.ACTION_HOVER_MOVE, 300f, 400f)
+
+        view.tool = InkTool.ERASER
+
+        assertFalse("No ink ring once the eraser is picked", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+        assertTrue("The eraser ring instead", pixelsNear(view, 310, 400, reach = 2) { Color.red(it) < 200 })
+
+        view.tool = InkTool.PEN
+        assertTrue("The ink ring again", pixelsNear(view, 300, 400) { Color.blue(it) > 150 && Color.red(it) < 100 })
+    }
+
     // Hover events go to onHoverEvent; button presses while hovering are other
     // generic motion events, as the framework dispatches them.
     private fun hover(view: InkPageView, action: Int, x: Float, y: Float, buttons: Int = 0) {
