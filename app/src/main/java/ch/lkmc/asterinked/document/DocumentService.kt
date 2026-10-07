@@ -3,6 +3,7 @@ package ch.lkmc.asterinked.document
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.util.Log
 import android.util.LruCache
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import java.io.File
@@ -115,8 +116,10 @@ internal class DocumentService(context: Context) : DocumentOperations {
     private fun previewOrNull(draft: Draft): Bitmap? = try {
         renderPage(draft)
     } catch (error: Exception) {
+        Log.w(TAG, "The restored page did not render; the editor retries", error)
         null
     } catch (error: OutOfMemoryError) {
+        Log.w(TAG, "The restored page did not render; the editor retries", error)
         null
     }
 
@@ -142,5 +145,6 @@ internal class DocumentService(context: Context) : DocumentOperations {
         /** Matches the cache-path in res/xml/shared_files.xml. */
         const val SHARED_DIRECTORY = "shared"
         private const val PREVIEW_HEAP_SHARE = 6
+        private const val TAG = "Asterinked"
     }
 }

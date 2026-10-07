@@ -103,6 +103,7 @@ internal class DocumentStore(context: Context) {
             // Content that cannot be decoded never will be: set it aside, once,
             // so the next launch starts clean instead of failing again. Read
             // errors above are not set aside; they may pass.
+            brokenFile.delete()
             draftFile.baseFile.renameTo(brokenFile)
             draftFile.delete()
             throw DocumentException(DocumentProblem.DRAFT_UNREADABLE, error)

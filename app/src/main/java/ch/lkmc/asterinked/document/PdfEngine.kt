@@ -42,14 +42,17 @@ internal class PdfEngine(private val scratchDirectory: File) {
     // accepted; a PDF that needs a password fails in load().
     fun inspect(source: File): List<PageSpec> = load(source).use { document ->
         if (!document.currentAccessPermission.canModify()) throw DocumentException(DocumentProblem.EDITING_NOT_ALLOWED)
-        if (document.numberOfPages == 0) throw DocumentException(DocumentProblem.NO_PAGES)
-        document.pages.map { page ->
+        val pages = document.pages.map { page ->
             val crop = page.cropBox
             if (!crop.width.isFinite() || !crop.height.isFinite() || crop.width <= 0 || crop.height <= 0) {
                 throw DocumentException(DocumentProblem.NOT_A_PDF)
             }
             PageSpec(crop.lowerLeftX, crop.lowerLeftY, crop.width, crop.height, page.rotation)
         }
+        // Counted from the pages found, not the tree's /Count, which can claim
+        // pages that are not there.
+        if (pages.isEmpty()) throw DocumentException(DocumentProblem.NO_PAGES)
+        pages
     }
 
     fun render(source: File, pageIndex: Int): Bitmap = rendererFor(source).openPage(pageIndex).use { page ->
