@@ -12,6 +12,7 @@ import ch.lkmc.asterinked.ink.InkPoint
 import ch.lkmc.asterinked.ink.InkStroke
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -133,6 +134,7 @@ class EditorViewModelHistoryTest {
         model.open(Uri.parse("content://test/replacement.pdf"))
         settle()
         // The edits above are unexported, so the replacement waits for a yes.
+        assertNotNull(state.replacing)
         model.replaceDraft()
         settle()
         assertEquals(File("replacement.pdf"), state.draft!!.source)
