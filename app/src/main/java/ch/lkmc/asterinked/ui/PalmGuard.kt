@@ -21,23 +21,20 @@ internal class PalmGuard {
     private val pens = HashSet<Int>()
     private val fingers = HashSet<Int>()
     private val palms = HashSet<Int>()
+    // Palms whose control has nothing pressed: swallowed at DOWN, or cancelled once.
+    private val settled = HashSet<Int>()
     private var penLiftedAt = NEVER
 
     /** Follows every pointer in the window; call before the event is dispatched. */
     fun track(event: MotionEvent) {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                pens.clear()
-                fingers.clear()
-                palms.clear()
+                forget()
                 land(event, 0)
             }
             MotionEvent.ACTION_POINTER_DOWN -> land(event, event.actionIndex)
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> lift(event, event.actionIndex)
-            MotionEvent.ACTION_CANCEL -> {
-                pens.clear()
-                fingers.clear()
-            }
+            MotionEvent.ACTION_CANCEL -> forget()
         }
     }
 
@@ -54,6 +51,7 @@ internal class PalmGuard {
 
         fingers += id
         palms -= id
+        settled -= id
         val penNearby = pens.isNotEmpty() || event.eventTime - penLiftedAt < PEN_LIFT_GRACE_MS
         if (penNearby) palms += id
     }
@@ -68,12 +66,23 @@ internal class PalmGuard {
     // A control that already saw the finger land is cancelled, so it neither
     // clicks nor stays pressed when the palm lifts.
     private fun filter(control: View, event: MotionEvent): Boolean {
-        if (event.getPointerId(event.actionIndex) !in palms) return false
-        if (event.actionMasked == MotionEvent.ACTION_DOWN) return true
+        val id = event.getPointerId(event.actionIndex)
+        if (id !in palms) return false
 
+        // Swallowed at DOWN, the control saw nothing; a finger that turned
+        // into a palm later is cancelled once.
+        val first = settled.add(id)
+        if (!first || event.actionMasked == MotionEvent.ACTION_DOWN) return true
         val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
         try { control.onTouchEvent(cancel) } finally { cancel.recycle() }
         return true
+    }
+
+    private fun forget() {
+        pens.clear()
+        fingers.clear()
+        palms.clear()
+        settled.clear()
     }
 
     private fun isPen(tool: Int) = tool == MotionEvent.TOOL_TYPE_STYLUS || tool == MotionEvent.TOOL_TYPE_ERASER

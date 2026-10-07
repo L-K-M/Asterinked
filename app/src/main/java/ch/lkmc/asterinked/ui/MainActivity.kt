@@ -715,10 +715,10 @@ internal class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun controls(view: View): List<View> = when {
-        view.isClickable -> listOf(view)
-        view is ViewGroup -> (0 until view.childCount).flatMap { controls(view.getChildAt(it)) }
-        else -> emptyList()
+    // Every clickable view, including any inside a clickable container.
+    private fun controls(view: View): List<View> = buildList {
+        if (view.isClickable) add(view)
+        if (view is ViewGroup) for (index in 0 until view.childCount) addAll(controls(view.getChildAt(index)))
     }
 
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }

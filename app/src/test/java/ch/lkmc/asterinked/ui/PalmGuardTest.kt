@@ -1,6 +1,7 @@
 package ch.lkmc.asterinked.ui
 
 import android.app.Activity
+import android.content.Context
 import android.os.Looper
 import android.view.InputDevice
 import android.view.MotionEvent
@@ -26,7 +27,7 @@ class PalmGuardTest {
     private var clicks = 0
     // Attached to a window: a detached view's posted click never runs.
     private val control = Robolectric.buildActivity(Activity::class.java).setup().get().let { activity ->
-        Button(activity).apply {
+        CountingButton(activity).apply {
             setOnClickListener { clicks++ }
             guard.protect(this)
             activity.setContentView(this, ViewGroup.LayoutParams(SIZE, SIZE))
@@ -48,6 +49,19 @@ class PalmGuardTest {
 
         assertEquals(0, clicks)
         assertFalse("Not left pressed", control.isPressed)
+    }
+
+    @Test fun aPalmIsCancelledOnceNotOnEveryMove() {
+        window(MotionEvent.ACTION_DOWN, listOf(FINGER))
+        own(MotionEvent.ACTION_DOWN)
+        window(MotionEvent.ACTION_POINTER_DOWN, listOf(FINGER, PEN), actionIndex = 1)
+        repeat(5) { own(MotionEvent.ACTION_MOVE) }
+        window(MotionEvent.ACTION_POINTER_UP, listOf(FINGER, PEN), actionIndex = 1)
+        window(MotionEvent.ACTION_UP, listOf(FINGER))
+        own(MotionEvent.ACTION_UP)
+
+        assertEquals(0, clicks)
+        assertEquals("One cancel clears the press", 1, control.cancels)
     }
 
     @Test fun aHandThatLiftsAfterThePenDoesNotClick() {
@@ -114,6 +128,15 @@ class PalmGuardTest {
         }.toTypedArray()
         val coordinates = pointers.map { MotionEvent.PointerCoords().apply { x = SIZE / 2f; y = SIZE / 2f } }.toTypedArray()
         return MotionEvent.obtain(downTime, clock, action, pointers.size, properties, coordinates, 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0)
+    }
+
+    private class CountingButton(context: Context) : Button(context) {
+        var cancels = 0
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            if (event.actionMasked == MotionEvent.ACTION_CANCEL) cancels++
+            return super.onTouchEvent(event)
+        }
     }
 
     private companion object {
