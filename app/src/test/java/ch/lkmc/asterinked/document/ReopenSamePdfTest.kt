@@ -103,6 +103,20 @@ class ReopenSamePdfTest {
         assertTrue("The waiting PDF survives the write", waiting.exists())
     }
 
+    // A service closed while a PDF still waits for the question leaves no copy
+    // behind, whether or not that PDF was discarded first.
+    @Test fun closingTheServiceDropsAWaitingPdf() {
+        savedDraft(DocumentStore(app))
+        val service = DocumentService(app)
+        val waiting = file("other.pdf", OTHER)
+        waiting(service) += waiting
+
+        service.close()
+
+        assertFalse("The waiting copy is gone", waiting.exists())
+        assertTrue(waiting(service).isEmpty())
+    }
+
     @Test fun differentBytesAreOpenedAsAnotherPdf() {
         val store = DocumentStore(app)
         val current = savedDraft(store)
