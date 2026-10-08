@@ -1,11 +1,13 @@
 # Asterinked
 
+Pen-based PDF annotation for Android.
+
+<img src="media-sources/screenshot.jpeg" width="600">
+
 > [!IMPORTANT]
 > LLM disclosure: This codebase was written with substantial help from large language models: AI coding agents working from the [`AGENTS.md`](AGENTS.md) brief in this repo.
 
 **Latest release:** v<!-- version -->0.3.1<!-- /version --> · [Download](https://github.com/L-K-M/Asterinked/releases/latest)
-
-Pen-based PDF annotation for Android 10 and newer.
 
 1. **Open PDF** through Android's document picker, or open or share a PDF to
    Asterinked from another app (Files, email, a browser download).
