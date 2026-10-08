@@ -204,7 +204,7 @@ class ReopenSamePdfTest {
     private fun savedDraft(store: DocumentStore): Draft {
         val stroke = InkStroke(listOf(InkPoint(10f, 20f, 0.5f), InkPoint(30f, 40f, 0.75f)), 1, 2f)
         val draft = Draft(file("current.pdf", CURRENT), "Report.pdf", page = 1, ink = mapOf(1 to listOf(stroke)))
-        store.saveDraft(draft)
+        store.saveDraft(draft, emptySet())
         return draft
     }
 

@@ -57,7 +57,7 @@ class DocumentStoreCommitTest {
         val source = File(directory, "replacement.pdf").apply { writeBytes(byteArrayOf(4, 5, 6)) }
         val replacement = Draft(source, "Replacement.pdf", ink = previous.ink, savedInk = previous.ink)
 
-        DocumentStore(app).saveDraft(replacement)
+        DocumentStore(app).saveDraft(replacement, emptySet())
 
         assertEquals(replacement, DocumentStore(app).restore())
         assertArrayEquals(byteArrayOf(4, 5, 6), source.readBytes())
@@ -96,7 +96,7 @@ class DocumentStoreCommitTest {
         val source = File(directory, "previous.pdf").apply { writeBytes(byteArrayOf(1, 2, 3)) }
         val ink = mapOf(2 to listOf(InkStroke(listOf(InkPoint(10f, 20f, 0.5f)), 1, 2f)))
         val previous = Draft(source, "Previous.pdf", page = 2, ink = ink)
-        DocumentStore(app).saveDraft(previous)
+        DocumentStore(app).saveDraft(previous, emptySet())
         return previous
     }
 
@@ -115,7 +115,7 @@ class DocumentStoreCommitTest {
         beforeSave()
 
         val store = DocumentStore(app, FaultyDraftFileIo(injected))
-        val failure = runCatching { store.saveDraft(Draft(replacement, "Replacement.pdf")) }.exceptionOrNull()
+        val failure = runCatching { store.saveDraft(Draft(replacement, "Replacement.pdf"), emptySet()) }.exceptionOrNull()
         // DocumentService removes the newly imported source when saving fails.
         replacement.delete()
 

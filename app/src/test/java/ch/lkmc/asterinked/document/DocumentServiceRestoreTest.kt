@@ -57,7 +57,7 @@ class DocumentServiceRestoreTest {
             document.save(source)
         }
         val ink = mapOf(0 to listOf(InkStroke(listOf(InkPoint(1f, 1f, 1f)), 1, 2f)))
-        DocumentStore(app).saveDraft(Draft(source, "Unreadable.pdf", ink = ink))
+        DocumentStore(app).saveDraft(Draft(source, "Unreadable.pdf", ink = ink), emptySet())
         assertTrue(source.setReadable(false, false))
 
         try {

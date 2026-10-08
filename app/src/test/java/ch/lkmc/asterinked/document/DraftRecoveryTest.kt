@@ -40,7 +40,7 @@ class DraftRecoveryTest {
 
     @Test fun aDraftWhosePdfIsMissingIsReportedOnce() {
         val source = File(directory, "lost.pdf").apply { writeBytes(byteArrayOf(1)) }
-        DocumentStore(app).saveDraft(Draft(source, "Lost.pdf", ink = mapOf(0 to listOf(stroke()))))
+        DocumentStore(app).saveDraft(Draft(source, "Lost.pdf", ink = mapOf(0 to listOf(stroke()))), emptySet())
         source.delete()
 
         assertUnreadable { DocumentStore(app).restore() }

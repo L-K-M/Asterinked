@@ -52,7 +52,7 @@ class EditorWorkerLifetimeTest {
         ShadowDocuments.next.clear()
         directory = File(app.filesDir, "documents").apply { deleteRecursively(); mkdirs() }
         source = File(directory, "first.pdf").apply { writeText("original source") }
-        DocumentStore(app).saveDraft(Draft(source, source.name))
+        DocumentStore(app).saveDraft(Draft(source, source.name), emptySet())
     }
 
     @After fun closeSessions() {
@@ -249,7 +249,7 @@ class EditorWorkerLifetimeTest {
 
         fun adopt(document: OpenDocument) {
             check(closed.count != 0L)
-            store.saveDraft(document.draft)
+            store.saveDraft(document.draft, emptySet())
         }
 
         fun discard(document: OpenDocument) {
@@ -270,7 +270,7 @@ class EditorWorkerLifetimeTest {
 
         fun saveDraft(draft: Draft) {
             check(closed.count != 0L)
-            store.saveDraft(draft)
+            store.saveDraft(draft, emptySet())
             saveCount++
             events += "$name:save"
             saved.countDown()

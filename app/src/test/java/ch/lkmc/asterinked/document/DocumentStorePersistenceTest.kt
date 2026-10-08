@@ -51,7 +51,7 @@ class DocumentStorePersistenceTest {
             ),
         )
         val savedInk = mapOf(0 to listOf(ink.getValue(0).first()))
-        store.saveDraft(Draft(source, "Persist.pdf", page = 2, ink = ink, savedInk = savedInk))
+        store.saveDraft(Draft(source, "Persist.pdf", page = 2, ink = ink, savedInk = savedInk), emptySet())
 
         val restored = store.restore()
         assertNotNull(restored)
@@ -76,7 +76,7 @@ class DocumentStorePersistenceTest {
         val source = File(dir, "kinds.pdf").apply { writeBytes(byteArrayOf(9)) }
         val pen = InkStroke(listOf(InkPoint(1f, 1f, 1f)), 1, 1f)
         val marker = InkStroke(listOf(InkPoint(2f, 2f, 1f)), 2, 12f, InkKind.HIGHLIGHTER)
-        store.saveDraft(Draft(source, "k.pdf", ink = mapOf(0 to listOf(pen, marker))))
+        store.saveDraft(Draft(source, "k.pdf", ink = mapOf(0 to listOf(pen, marker))), emptySet())
 
         val json = File(dir, "draft.json").readText()
         assertEquals("Pen strokes omit the key", 1, Regex("\"kind\"").findAll(json).count())
@@ -96,12 +96,12 @@ class DocumentStorePersistenceTest {
 
         // Without a persisted grant nothing is written: a stale destination
         // would resurrect as a Save button that cannot work.
-        store.saveDraft(Draft(source, "d.pdf", destination = uri))
+        store.saveDraft(Draft(source, "d.pdf", destination = uri), emptySet())
         assertNull(store.restore()?.destination)
         assertEquals(false, File(dir, "draft.json").readText().contains("destination"))
 
         app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        store.saveDraft(Draft(source, "d.pdf", destination = uri))
+        store.saveDraft(Draft(source, "d.pdf", destination = uri), emptySet())
         assertEquals(uri, store.restore()?.destination)
 
         // A grant the user revoked later drops the destination on read.
@@ -115,7 +115,7 @@ class DocumentStorePersistenceTest {
         val dir = File(app.filesDir, "documents").apply { mkdirs() }
         val source = File(dir, "clean.pdf").apply { writeBytes(byteArrayOf(9)) }
         val ink = mapOf(0 to listOf(InkStroke(listOf(InkPoint(1f, 1f, 1f)), 1, 1f)))
-        store.saveDraft(Draft(source, "c.pdf", ink = ink, savedInk = ink))
+        store.saveDraft(Draft(source, "c.pdf", ink = ink, savedInk = ink), emptySet())
         assertEquals(false, store.restore()!!.dirty)
     }
 
@@ -125,7 +125,7 @@ class DocumentStorePersistenceTest {
         val dir = File(app.filesDir, "documents").apply { mkdirs() }
         val source = File(dir, "widths.pdf").apply { writeBytes(byteArrayOf(3)) }
         val stroke = InkStroke(listOf(InkPoint(1f, 1f, 1f)), 1, 2f)
-        store.saveDraft(Draft(source, "w.pdf", ink = mapOf(0 to listOf(stroke, stroke))))
+        store.saveDraft(Draft(source, "w.pdf", ink = mapOf(0 to listOf(stroke, stroke))), emptySet())
 
         // org.json refuses NaN/Infinity at parse time (such drafts take the
         // broken-draft path), but zero and negative widths parse fine.

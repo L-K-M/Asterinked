@@ -16,11 +16,11 @@ class DraftReplacementTest {
         val directory = File(app.filesDir, "documents").apply { deleteRecursively(); mkdirs() }
         val first = File(directory, "first.pdf").apply { writeText("first") }
         val store = DocumentStore(app)
-        store.saveDraft(Draft(first, "first.pdf"))
+        store.saveDraft(Draft(first, "first.pdf"), emptySet())
         val replacement = File(directory, "next.pdf").apply { writeText("next") }
         assertTrue(first.exists())
 
-        store.saveDraft(Draft(replacement, "next.pdf"))
+        store.saveDraft(Draft(replacement, "next.pdf"), emptySet())
 
         assertTrue(replacement.exists())
         assertEquals(replacement, store.restore()!!.source)

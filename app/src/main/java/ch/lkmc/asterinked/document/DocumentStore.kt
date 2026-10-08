@@ -109,7 +109,7 @@ internal class DocumentStore(context: Context, private val draftIo: DraftFileIo 
     }
 
     /** Writes [draft] and prunes every other PDF except those in [keep]. */
-    fun saveDraft(draft: Draft, keep: Set<File> = emptySet()) {
+    fun saveDraft(draft: Draft, keep: Set<File>) {
         val json = JSONObject()
             .put("source", draft.source.name)
             .put("name", draft.name)
