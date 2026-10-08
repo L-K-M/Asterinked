@@ -166,7 +166,11 @@ The adaptive icon's foreground webp files are generated; regenerate them from
   different PDF for `adopt` or `discard`, and the model asks first when the
   draft has unexported notes. A newer open replaces the PDF waiting for that
   answer; the waiting PDF's address survives process death in the model's
-  `SavedStateHandle`, and clearing the model discards its copy.
+  `SavedStateHandle`, and clearing the model discards its copy. Closing the
+  service deletes any copy still waiting, such as one whose open finished
+  after the editor was left. A draft write prunes every other PDF in
+  `documents/`, so `DocumentStore.saveDraft` takes the files to keep
+  explicitly: the service passes the copies still waiting.
 - The page-number button opens page and note navigation. Note destinations
   come from current draft ink, skip empty pages and do not wrap at the ends.
   Reopen the dialog to refresh destinations; document replacement dismisses it.

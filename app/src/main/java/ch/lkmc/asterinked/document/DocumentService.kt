@@ -144,6 +144,10 @@ internal class DocumentService(context: Context) : DocumentOperations {
     override fun saveDraft(draft: Draft) = during(DocumentProblem.DRAFT_NOT_SAVED) { store.saveDraft(draft, waiting) }
 
     override fun close() {
+        // Nothing adopts a waiting copy after this, so none may outlive the
+        // service, even one the caller did not discard.
+        waiting.forEach(File::delete)
+        waiting.clear()
         previews.evictAll()
         engine.close()
     }

@@ -103,6 +103,21 @@ class ReopenSamePdfTest {
         assertTrue("The waiting PDF survives the write", waiting.exists())
     }
 
+    // An editor left before its open finished never asked, so nothing discards
+    // the imported copy; closing the service must not leave it behind.
+    @Test fun closingTheServiceDropsAWaitingPdf() {
+        val current = savedDraft(DocumentStore(app))
+        val service = DocumentService(app)
+        val waiting = file("other.pdf", OTHER)
+        waiting(service) += waiting
+
+        service.close()
+
+        assertFalse("The waiting copy is gone", waiting.exists())
+        assertTrue(waiting(service).isEmpty())
+        assertTrue("The draft's PDF stays", current.source.exists())
+    }
+
     @Test fun differentBytesAreOpenedAsAnotherPdf() {
         val store = DocumentStore(app)
         val current = savedDraft(store)
@@ -204,7 +219,7 @@ class ReopenSamePdfTest {
     private fun savedDraft(store: DocumentStore): Draft {
         val stroke = InkStroke(listOf(InkPoint(10f, 20f, 0.5f), InkPoint(30f, 40f, 0.75f)), 1, 2f)
         val draft = Draft(file("current.pdf", CURRENT), "Report.pdf", page = 1, ink = mapOf(1 to listOf(stroke)))
-        store.saveDraft(draft)
+        store.saveDraft(draft, emptySet())
         return draft
     }
 
