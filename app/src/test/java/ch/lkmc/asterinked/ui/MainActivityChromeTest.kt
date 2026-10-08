@@ -438,7 +438,7 @@ class MainActivityChromeTest {
             assertNull(ShadowDialog.getLatestDialog()?.takeIf { it.isShowing })
 
             EditorScreens.swap(activity, waiting)
-            assertTrue(ShadowDialog.getLatestDialog().isShowing)
+            assertTrue("The question returns once the editor is idle", ShadowDialog.getLatestDialog()?.isShowing == true)
         }
     }
 
