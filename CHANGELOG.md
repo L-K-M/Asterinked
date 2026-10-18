@@ -4,6 +4,14 @@ All notable changes to Asterinked are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Release assets are named `asterinked-vX.Y.Z-android-universal.apk` (plus
+  `.sha256`), following the family naming rule `<base>-<vX.Y.Z>-<os>-<arch>`;
+  `scripts/build.sh` stages the same name (debug builds:
+  `asterinked-debug-vX.Y.Z-android-universal.apk`).
+
 ## [0.1.0] - 2026-09-26
 
 ### Added
