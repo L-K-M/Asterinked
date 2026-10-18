@@ -63,7 +63,9 @@ scripts/install.sh                                    # build + install + launch
 
 Debug APK: `app/build/outputs/apk/debug/app-debug.apk`. PR builds also publish
 it as the `asterinked-debug-<sha>` GitHub Actions artifact; `scripts/build.sh`
-stages `dist/asterinked-v<version>-<variant>.apk`. Both build types are signed
+stages `dist/asterinked-v<version>-android-universal.apk` (debug builds:
+`asterinked-debug-v<version>-android-universal.apk`), the same name releases
+publish. Both build types are signed
 with the checked-in `app/debug.keystore` — sideload-only, deliberate
 (docs/decisions/0001). Dependency versions live in `gradle/libs.versions.toml`.
 

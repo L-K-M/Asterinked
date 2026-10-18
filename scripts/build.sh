@@ -41,11 +41,11 @@ VERSION="$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]*)"
 if [ "$VARIANT" = "release" ]; then
   TASK="assembleRelease"
   APK="app/build/outputs/apk/release/app-release.apk"
-  OUT="dist/asterinked-v${VERSION}-release.apk"
+  OUT="dist/asterinked-v${VERSION}-android-universal.apk"
 else
   TASK="assembleDebug"
   APK="app/build/outputs/apk/debug/app-debug.apk"
-  OUT="dist/asterinked-v${VERSION}-debug.apk"
+  OUT="dist/asterinked-debug-v${VERSION}-android-universal.apk"
 fi
 
 if [ "$CHECK" -eq 1 ]; then
