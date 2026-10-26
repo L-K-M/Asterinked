@@ -1,0 +1,8 @@
+{
+  "_comment": "JetBrains/kotlin tag v2.2.10, license/NOTICE.txt (Apache-2.0 4(d)); the kotlin-stdlib jar carries no NOTICE",
+  "hash": "Apache-2.0-kotlin-stdlib-NOTICE",
+  "spdxId": "Apache-2.0",
+  "name": "Kotlin NOTICE",
+  "url": "https://github.com/JetBrains/kotlin/blob/v2.2.10/license/NOTICE.txt",
+  "content": "NOTICE file of Kotlin:\n\n=========================================================================\n   ==  NOTICE file corresponding to the section 4 d of                    ==\n   ==  the Apache License, Version 2.0,                                   ==\n   ==  in this case for the Kotlin Compiler distribution.                 ==\n   =========================================================================\n\n   Kotlin Compiler\n   Copyright 2010-2024 JetBrains s.r.o and respective authors and developers\n"
+}

@@ -1,0 +1,7 @@
+{
+  "_comment": "Kotlin/kotlinx.coroutines tag 1.9.0, license/NOTICE.txt (Apache-2.0 4(d)); the jars carry no NOTICE",
+  "uniqueId": "org.jetbrains.kotlinx:kotlinx-coroutines-core",
+  "licenses": [
+    "Apache-2.0-kotlinx-coroutines-NOTICE"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "_comment": "Same kotlinx.coroutines NOTICE as kotlinx-coroutines-core: Kotlin/kotlinx.coroutines tag 1.9.0, license/NOTICE.txt (Apache-2.0 4(d)); the AAR carries no NOTICE",
+  "uniqueId": "org.jetbrains.kotlinx:kotlinx-coroutines-android",
+  "licenses": [
+    "Apache-2.0-kotlinx-coroutines-NOTICE"
+  ]
+}

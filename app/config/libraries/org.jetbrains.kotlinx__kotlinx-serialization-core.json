@@ -1,0 +1,7 @@
+{
+  "_comment": "Kotlin/kotlinx.serialization tag v1.7.3, license/NOTICE.txt (Apache-2.0 4(d)); the jar carries no NOTICE",
+  "uniqueId": "org.jetbrains.kotlinx:kotlinx-serialization-core",
+  "licenses": [
+    "Apache-2.0-kotlinx-serialization-core-NOTICE"
+  ]
+}

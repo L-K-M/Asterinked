@@ -3,12 +3,17 @@
 # Gradle graph (AboutLibraries, res/raw/aboutlibraries.json); content no POM
 # describes comes from app/config/libraries.
 
-# Components that must always be listed. The toolbar icons are drawables whose
-# names R8 shortens in release builds, so no claim can find them.
+# Components that must always be listed. AboutLibraries skips a dependency
+# whose POM it cannot resolve with only a debug log line, so the code the app
+# bundles beyond AndroidX is named here. The icons are drawables whose names
+# R8 shortens in release builds, so no claim can find them.
 require = [
   "com.tom-roush:pdfbox-android",
+  "org.bouncycastle:bcpkix-jdk15to18",
   "org.bouncycastle:bcprov-jdk15to18",
+  "org.bouncycastle:bcutil-jdk15to18",
   "org.jetbrains.kotlin:kotlin-stdlib",
+  "org.jetbrains.kotlinx:kotlinx-coroutines-core",
   "asterinked:material-symbols",
 ]
 

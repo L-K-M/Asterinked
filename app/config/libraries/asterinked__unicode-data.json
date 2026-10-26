@@ -1,0 +1,13 @@
+{
+  "_comment": "https://www.unicode.org/license.txt (Unicode License v3); https://www.unicode.org/copyright.html applies it to all Unicode Data Files, and the shipped files point to Unicode's terms of use",
+  "uniqueId": "asterinked:unicode-data",
+  "licenses": [
+    "Unicode-3.0-unicode-data"
+  ],
+  "name": "Unicode Character Database files (PdfBox-Android assets)",
+  "artifactVersion": "2.0.27.0",
+  "website": "https://www.unicode.org/ucd/",
+  "description": "assets/com/tom_roush/fontbox/resources/unicode/Scripts.txt (Scripts-10.0.0.txt, © 2017 Unicode®, Inc.) and assets/com/tom_roush/pdfbox/resources/text/BidiMirroring.txt (BidiMirroring-8.0.0.txt, Copyright (c) 1991-2015 Unicode, Inc.), shipped by PdfBox-Android 2.0.27.0. Unicode and the Unicode Logo are registered trademarks of Unicode, Inc. in the U.S. and other countries.",
+  "developers": [],
+  "tag": "bundled"
+}

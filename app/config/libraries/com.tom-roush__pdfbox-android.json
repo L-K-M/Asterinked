@@ -1,0 +1,9 @@
+{
+  "_comment": "TomRoush/PdfBox-Android tag v2.0.27.0, LICENSE.txt: Apache-2.0 plus the pdfbox.org, Adobe AFM, Adobe CMap and PaDaF terms; the AAR carries no licence file; TomRoush/PdfBox-Android tag v2.0.27.0, NOTICE.txt (Apache-2.0 4(d)); the AAR omits it",
+  "uniqueId": "com.tom-roush:pdfbox-android",
+  "licenses": [
+    "Apache-2.0-pdfbox-android",
+    "Apache-2.0-pdfbox-android-NOTICE"
+  ],
+  "description": "Android port of Apache PDFBox. The fonts and data files it ships in assets/com/tom_roush/ are listed separately."
+}

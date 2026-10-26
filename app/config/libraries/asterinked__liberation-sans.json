@@ -1,0 +1,13 @@
+{
+  "_comment": "liberationfonts/liberation-fonts tag 2.1.5, LICENSE. The shipped font's name table reads Version 2.1.5, 'Digitized data copyright (c) 2010 Google Corporation. Copyright (c) 2012 Red Hat, Inc.' and 'Licensed under the SIL Open Font License, Version 1.1'",
+  "uniqueId": "asterinked:liberation-sans",
+  "licenses": [
+    "OFL-1.1-liberation-sans"
+  ],
+  "name": "Liberation Sans Regular",
+  "artifactVersion": "2.1.5",
+  "website": "https://github.com/liberationfonts/liberation-fonts/tree/2.1.5",
+  "description": "assets/com/tom_roush/pdfbox/resources/ttf/LiberationSans-Regular.ttf, PdfBox-Android's fallback font. Liberation is a trademark of Red Hat, Inc.",
+  "developers": [],
+  "tag": "bundled"
+}

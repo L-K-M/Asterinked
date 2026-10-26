@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.aboutlibraries.android)
 }
 
 android {
@@ -55,6 +56,31 @@ android {
 // skipping the test run and leaving the PDFium check without input.
 tasks.withType<Test>().matching { it.name == "testDebugUnitTest" }.configureEach {
     outputs.dir(layout.buildDirectory.dir("test-output/raster-proof"))
+}
+
+// Third-party notices: res/raw/aboutlibraries.json in every APK, built offline
+// and reproducibly from the resolved dependency graph plus config/libraries and
+// config/licenses (texts no POM carries, PDFBox-Android's fonts and data files,
+// the interface icons). scripts/android_notices.py checks it in CI. Fails on a
+// dependency without a licence or with one outside the allow-list.
+aboutLibraries {
+    offlineMode = true
+    collect {
+        configPath = file("config")
+        fetchRemoteLicense = false
+        fetchRemoteFunding = false
+    }
+    library {
+        requireLicense = true
+    }
+    license {
+        strictMode = com.mikepenz.aboutlibraries.plugin.StrictMode.FAIL
+        // Bouncy Castle's POM names its MIT-style licence without an SPDX id, and the
+        // plugin keeps that name even though config/licenses supplies the text.
+        allowedLicenses.addAll(
+            "Apache-2.0", "APAFML", "BSD-3-Clause", "Bouncy Castle Licence", "BSL-1.0", "OFL-1.1", "Unicode-3.0",
+        )
+    }
 }
 
 dependencies {

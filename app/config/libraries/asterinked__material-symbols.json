@@ -1,0 +1,17 @@
+{
+  "_comment": "Each of the 19 drawables matches google/material-design-icons at commit 10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7 path for path: symbols/android/<name>/materialsymbolsrounded/<name>_24px.xml or <name>_fill1_24px.xml for ink_eraser, error, fit_screen, ink_highlighter, info, chevron_right, chevron_left, folder_open, ink_pen, redo, download, share, check_circle, touch_app and undo. The repository's LICENSE is Apache-2.0 and it has no NOTICE.",
+  "uniqueId": "asterinked:material-symbols",
+  "name": "Material Symbols (interface icons)",
+  "artifactVersion": "10ecc14",
+  "website": "https://github.com/google/material-design-icons/tree/10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7/symbols/android",
+  "description": "The app's 24 dp icons (res/drawable/ic_*.xml except ic_asterisk and ic_launcher_monochrome) are Material Symbols Rounded by Google. Their path data is unchanged; Asterinked changed only the colour attributes (black fill, no theme tint).",
+  "developers": [
+    {
+      "name": "Google"
+    }
+  ],
+  "licenses": [
+    "Apache-2.0"
+  ],
+  "tag": "bundled"
+}

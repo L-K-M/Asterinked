@@ -1,0 +1,10 @@
+{
+  "_comment": "JetBrains/kotlin tag v2.2.10, license/NOTICE.txt (Apache-2.0 4(d)); the kotlin-stdlib jar carries no NOTICE; JetBrains/kotlin v2.2.10 license/README.md: libraries/stdlib/src/kotlin/time is derived from ThreeTen-Backport; text from license/third_party/threetenbp_license.txt; JetBrains/kotlin v2.2.10 license/README.md: libraries/stdlib/jvm/src/kotlin/util/MathJVM.kt is derived from Boost special math functions (Copyright Eric Ford & Hubert Holin 2001); text from license/third_party/boost_LICENSE.txt",
+  "uniqueId": "org.jetbrains.kotlin:kotlin-stdlib",
+  "licenses": [
+    "Apache-2.0-kotlin-stdlib-NOTICE",
+    "BSD-3-Clause-kotlin-stdlib-threetenbp",
+    "BSL-1.0-kotlin-stdlib-boost"
+  ],
+  "description": "The Kotlin standard library. It contains code derived from GWT and Guava (Apache-2.0), ThreeTen-Backport (BSD-3-Clause) and Boost (BSL-1.0), as JetBrains/kotlin license/README.md lists."
+}
