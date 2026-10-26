@@ -193,6 +193,27 @@ CI uses Gradle's build cache, so `testDebugUnitTest` can come back
 that task in `app/build.gradle.kts`, which makes a cache hit restore them;
 keep that declaration in step with the fixture path.
 
+## Licensing
+
+- Asterinked's own code is Unlicense (`LICENSE`). CI checks that the README
+  License section names it and says where the third-party notices ship.
+- Before adding a dependency or a bundled file (fonts, icons, data), confirm
+  its license allows redistribution in the APK.
+- The AboutLibraries plugin builds `res/raw/aboutlibraries.json` (shown by
+  `LicensesActivity`) from the resolved graph plus `app/config/`, offline and
+  strict: a license outside the allow-list fails the build. CI and the release
+  workflow run `scripts/android_notices.py check` and `scan` on every APK
+  that leaves CI; `android-notices.toml` ties each PDFBox-Android asset to its
+  entry and lists components that must appear. When they fail, add the missing
+  text with `scripts/android_notices.py stub` from the upstream file at the
+  shipped version and record that source in `--reason`; never type a license
+  text from memory. A version bump of PDFBox-Android, Bouncy Castle or Kotlin
+  needs its texts in `app/config/` checked against the new release.
+- The plugin silently skips a dependency whose POM it cannot resolve, as
+  happens with `--offline` and a cache filled by other builds; `require` in
+  `android-notices.toml` catches that, so generate the definitions
+  (`./gradlew :app:prepareLibraryDefinitionsRelease`) online.
+
 ## Releasing
 
 `scripts/release.sh X.Y.Z --push` (shared lkm-release engine) bumps

@@ -120,8 +120,23 @@ your palm, zoom, undo/redo, rotate the device, background/reopen, save, then ope
 the exported PDF in another viewer. Check ink alignment and text selection.
 Real stylus latency and hardware palm rejection require a physical device.
 
-## Dependencies
+## License
 
-App source: [Unlicense](LICENSE). AndroidX and
-[PDFBox-Android](https://github.com/TomRoush/PdfBox-Android) are Apache-2.0;
-their bundled notices and dependency licenses continue to apply.
+Asterinked's own code is released under the [Unlicense](LICENSE). The APK
+bundles AndroidX, Kotlin and kotlinx libraries,
+[PDFBox-Android](https://github.com/TomRoush/PdfBox-Android) with Bouncy
+Castle, the font and data files PDFBox-Android carries (Liberation Sans under
+the SIL Open Font License 1.1, Adobe font metrics, CMaps and glyph lists, and
+Unicode data tables) and Material Symbols icons. These keep their own licenses
+(Apache-2.0, the MIT-style Bouncy Castle Licence, OFL-1.1, BSD-3-Clause,
+Adobe's AFM terms and the Unicode License v3). Their notices ship inside the
+APK and appear under Open-source licences on the start screen, which shows
+while no PDF is open.
+
+The Unlicense covers Asterinked's own code only. These files in the repository
+are third-party and keep their own licenses: the icons in
+`app/src/main/res/drawable/ic_*.xml` other than `ic_asterisk.xml` and
+`ic_launcher_monochrome.xml` (Material Symbols by Google, Apache-2.0) and the
+Gradle wrapper (`gradlew`, `gradlew.bat`, `gradle/wrapper/`; Gradle,
+Apache-2.0). The texts in `app/config/` are the bundled components' licenses
+and notices, not this project's.

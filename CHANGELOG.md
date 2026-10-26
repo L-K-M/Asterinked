@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- The APK carries the licence texts and NOTICE files of every bundled
+  component (AndroidX, Kotlin, PDFBox-Android, Bouncy Castle, its fonts and
+  data files, the Material Symbols icons), shown under Open-source licences
+  on the start screen. CI and the release workflow check them in each APK.
+
 ### Changed
 - Release assets are named `asterinked-vX.Y.Z-android-universal.apk` (plus
   `.sha256`), following the family naming rule `<base>-<vX.Y.Z>-<os>-<arch>`;
