@@ -532,6 +532,10 @@ internal class MainActivity : ComponentActivity() {
             breakStrategy = LineBreaker.BREAK_STRATEGY_BALANCED
             setLineSpacing(0f, BODY_LINE_SPACING)
         }, spaced(Space.L))
+        // The bundled components' licences and notices (README "License").
+        content.addView(ui.textButton(R.string.open_source_licenses, TextStyle.CAPTION) {
+            startActivity(Intent(this, LicensesActivity::class.java))
+        }, spaced(Space.XL))
 
         // Scrolls only when large text no longer fits; otherwise centred.
         return ScrollView(this).apply {

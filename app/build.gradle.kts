@@ -61,8 +61,9 @@ tasks.withType<Test>().matching { it.name == "testDebugUnitTest" }.configureEach
 // Third-party notices: res/raw/aboutlibraries.json in every APK, built offline
 // and reproducibly from the resolved dependency graph plus config/libraries and
 // config/licenses (texts no POM carries, PDFBox-Android's fonts and data files,
-// the interface icons). scripts/android_notices.py checks it in CI. Fails on a
-// dependency without a licence or with one outside the allow-list.
+// the interface icons). LicensesActivity shows it and scripts/android_notices.py
+// checks it in CI. Fails on a dependency without a licence or with one outside
+// the allow-list.
 aboutLibraries {
     offlineMode = true
     collect {
