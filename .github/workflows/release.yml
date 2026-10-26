@@ -75,12 +75,15 @@ jobs:
           (cd dist && sha256sum "$APK" > "$APK.sha256")
 
       # The published APK must carry its third-party notices, including the
-      # fonts and data files PDFBox-Android ships (android-notices.toml).
+      # fonts and data files PDFBox-Android ships (android-notices.toml). scan
+      # downloads jars and AARs the restored Gradle cache lacks.
       - name: Check third-party notices in the APK
         run: |
           APK="dist/asterinked-${GITHUB_REF_NAME}-android-universal.apk"
           python3 -I scripts/android_notices.py check "$APK" --config android-notices.toml
-          python3 -I scripts/android_notices.py scan "$APK" --config android-notices.toml
+          python3 -I scripts/android_notices.py scan "$APK" --config android-notices.toml \
+            --fetch-from https://dl.google.com/dl/android/maven2 \
+            --fetch-from https://repo.maven.apache.org/maven2
 
       - name: Upload verified release artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

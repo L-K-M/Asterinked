@@ -213,6 +213,10 @@ keep that declaration in step with the fixture path.
   happens with `--offline` and a cache filled by other builds; `require` in
   `android-notices.toml` catches that, so generate the definitions
   (`./gradlew :app:prepareLibraryDefinitionsRelease`) online.
+- `scan` reads jars and AARs from the Gradle cache. setup-gradle restores
+  metadata without every artifact (Kotlin Multiplatform AndroidX modules go
+  missing), so CI passes `--fetch-from` for Google's Maven and Maven Central;
+  add any repository the build gains.
 
 ## Releasing
 

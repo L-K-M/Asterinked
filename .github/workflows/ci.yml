@@ -80,12 +80,15 @@ jobs:
 
       # Both APKs must carry their third-party notices: the debug APK is
       # published below, the release APK proves R8 keeps them before a tag.
-      # scan reads the resolved jars and AARs from this job's Gradle cache.
+      # scan reads the resolved jars and AARs from this job's Gradle cache and
+      # downloads those a restored cache lacks from the build's repositories.
       - name: Check third-party notices in the APKs
         run: |
           for apk in app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/app-release.apk; do
             python3 -I scripts/android_notices.py check "$apk" --config android-notices.toml
-            python3 -I scripts/android_notices.py scan "$apk" --config android-notices.toml
+            python3 -I scripts/android_notices.py scan "$apk" --config android-notices.toml \
+              --fetch-from https://dl.google.com/dl/android/maven2 \
+              --fetch-from https://repo.maven.apache.org/maven2
           done
 
       - name: Upload debug APK
