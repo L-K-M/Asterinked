@@ -31,6 +31,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The README scopes the Unlicense to Asterinked's own code and says where
+      # the bundled components' notices ship; it once claimed notices the APK
+      # did not carry.
+      - name: Check license statements
+        run: |
+          section="$(awk '/^## /{p = ($0 == "## License")} p' README.md)"
+          for text in '## License' '[Unlicense](LICENSE)' 'Open-source licences'; do
+            grep -qF "$text" <<<"$section" \
+              || { echo "::error file=README.md::the License section must contain '$text'"; exit 1; }
+          done
+
       # Supply-chain gate: reject a tampered gradle-wrapper.jar.
       - uses: gradle/actions/wrapper-validation@v6
 
@@ -66,6 +77,16 @@ jobs:
 
       - name: Re-render test exports with PDFium
         run: python3 scripts/verify_pdf.py
+
+      # Both APKs must carry their third-party notices: the debug APK is
+      # published below, the release APK proves R8 keeps them before a tag.
+      # scan reads the resolved jars and AARs from this job's Gradle cache.
+      - name: Check third-party notices in the APKs
+        run: |
+          for apk in app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/app-release.apk; do
+            python3 -I scripts/android_notices.py check "$apk" --config android-notices.toml
+            python3 -I scripts/android_notices.py scan "$apk" --config android-notices.toml
+          done
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v7
