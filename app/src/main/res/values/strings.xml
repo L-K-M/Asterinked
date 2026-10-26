@@ -18,6 +18,7 @@
     <string name="welcome_title">Make room for your thoughts.</string>
     <string name="welcome_body">Open a PDF and write directly on its pages. Save a copy with your handwriting included.</string>
     <string name="welcome_caption">You can also open a PDF in Asterinked from Files, email or your browser.</string>
+    <string name="open_source_licenses">Open-source licences</string>
     <string name="opening">Opening…</string>
     <string name="input_hint">Pen writes · Swipe to turn pages · Double-tap to zoom · Tap with two fingers to undo, three to redo</string>
     <string name="touch_hint">Finger or pen writes · Two fingers pan and zoom · Tap with two fingers to undo, three to redo</string>

@@ -1,0 +1,13 @@
+{
+  "_comment": "Header notices of the CMap files in the PdfBox-Android 2.0.27.0 AAR: Identity-H verbatim, the other copyright lines, and Adobe-Japan1-7's notice verbatim",
+  "uniqueId": "asterinked:adobe-cmaps",
+  "licenses": [
+    "BSD-3-Clause-adobe-cmaps"
+  ],
+  "name": "Adobe CMap resources (PdfBox-Android assets)",
+  "artifactVersion": "2.0.27.0",
+  "website": "https://github.com/TomRoush/PdfBox-Android/tree/v2.0.27.0/library/src/main/assets/com/tom_roush/fontbox/resources/cmap",
+  "description": "The 92 CMap files in assets/com/tom_roush/fontbox/resources/cmap/, shipped by PdfBox-Android 2.0.27.0.",
+  "developers": [],
+  "tag": "bundled"
+}

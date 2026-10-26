@@ -1,0 +1,60 @@
+# Overrides for scripts/android_notices.py, which CI and the release workflow
+# run on every APK that leaves CI. Maven components come from the resolved
+# Gradle graph (AboutLibraries, res/raw/aboutlibraries.json); content no POM
+# describes comes from app/config/libraries.
+
+# Components that must always be listed. AboutLibraries skips a dependency
+# whose POM it cannot resolve with only a debug log line, so the code the app
+# bundles beyond AndroidX is named here. The icons are drawables whose names
+# R8 shortens in release builds, so no claim can find them.
+require = [
+  "com.tom-roush:pdfbox-android",
+  "org.bouncycastle:bcpkix-jdk15to18",
+  "org.bouncycastle:bcprov-jdk15to18",
+  "org.bouncycastle:bcutil-jdk15to18",
+  "org.jetbrains.kotlin:kotlin-stdlib",
+  "org.jetbrains.kotlinx:kotlinx-coroutines-core",
+  "asterinked:material-symbols",
+]
+
+# PDFBox-Android's CMaps, glyph lists and Unicode tables have no file
+# extension the checker watches by default.
+watch = ["assets/com/tom_roush/**"]
+
+[[claim]]
+paths = ["assets/com/tom_roush/pdfbox/resources/ttf/LiberationSans-Regular.ttf"]
+requires = ["asterinked:liberation-sans"]
+requires_text = ["SIL OPEN FONT LICENSE Version 1.1", "Copyright (c) 2012 Red Hat, Inc."]
+reason = "Font in the PdfBox-Android AAR's assets; OFL-1.1 condition 2 needs its copyright and licence with every copy"
+
+[[claim]]
+paths = ["assets/com/tom_roush/pdfbox/resources/afm/*.afm"]
+requires = ["asterinked:adobe-core14-afm"]
+requires_text = ["the AFM files are not distributed without this file"]
+reason = "Adobe Core 14 font metrics in the PdfBox-Android AAR; Adobe's terms require their licence paragraph alongside"
+
+[[claim]]
+paths = ["assets/com/tom_roush/fontbox/resources/cmap/*"]
+requires = ["asterinked:adobe-cmaps"]
+reason = "Adobe CMap resources in the PdfBox-Android AAR (BSD-3-Clause headers)"
+
+[[claim]]
+paths = [
+  "assets/com/tom_roush/pdfbox/resources/glyphlist/glyphlist.txt",
+  "assets/com/tom_roush/pdfbox/resources/glyphlist/zapfdingbats.txt",
+]
+requires = ["asterinked:adobe-glyph-list"]
+reason = "Adobe Glyph List and ZapfDingbats glyph list in the PdfBox-Android AAR (BSD-3-Clause headers)"
+
+[[claim]]
+paths = ["assets/com/tom_roush/pdfbox/resources/glyphlist/additional.txt"]
+requires = ["com.tom-roush:pdfbox-android"]
+reason = "Apache PDFBox's own glyph additions (ASF Apache-2.0 header), covered by PdfBox-Android's entry"
+
+[[claim]]
+paths = [
+  "assets/com/tom_roush/fontbox/resources/unicode/Scripts.txt",
+  "assets/com/tom_roush/pdfbox/resources/text/BidiMirroring.txt",
+]
+requires = ["asterinked:unicode-data"]
+reason = "Unicode Character Database files in the PdfBox-Android AAR (Unicode terms of use)"

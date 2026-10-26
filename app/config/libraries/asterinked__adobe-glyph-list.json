@@ -1,0 +1,13 @@
+{
+  "_comment": "Header notices of glyphlist.txt (verbatim) and zapfdingbats.txt (its copyright line) in the PdfBox-Android 2.0.27.0 AAR",
+  "uniqueId": "asterinked:adobe-glyph-list",
+  "licenses": [
+    "BSD-3-Clause-adobe-glyph-list"
+  ],
+  "name": "Adobe Glyph List (PdfBox-Android assets)",
+  "artifactVersion": "2.0.27.0",
+  "website": "https://github.com/TomRoush/PdfBox-Android/tree/v2.0.27.0/library/src/main/assets/com/tom_roush/pdfbox/resources/glyphlist",
+  "description": "glyphlist.txt (Adobe Glyph List, table version 2.0) and zapfdingbats.txt (ITC Zapf Dingbats Glyph List, table version 2.0) in assets/com/tom_roush/pdfbox/resources/glyphlist/, shipped by PdfBox-Android 2.0.27.0.",
+  "developers": [],
+  "tag": "bundled"
+}

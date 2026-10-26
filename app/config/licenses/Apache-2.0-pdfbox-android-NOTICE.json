@@ -1,0 +1,8 @@
+{
+  "_comment": "TomRoush/PdfBox-Android tag v2.0.27.0, NOTICE.txt (Apache-2.0 4(d)); the AAR omits it",
+  "hash": "Apache-2.0-pdfbox-android-NOTICE",
+  "spdxId": "Apache-2.0",
+  "name": "PdfBox-Android NOTICE",
+  "url": "https://github.com/TomRoush/PdfBox-Android/blob/v2.0.27.0/NOTICE.txt",
+  "content": "NOTICE file of PdfBox-Android:\n\nApache PDFBox\nCopyright 2014 The Apache Software Foundation\n\nThis product includes software developed at\nThe Apache Software Foundation (http://www.apache.org/).\n\nBased on source code originally developed in the PDFBox and \nFontBox projects.\n\nCopyright (c) 2002-2007, www.pdfbox.org\n\nBased on source code originally developed in the PaDaF project.\nCopyright (c) 2010 Atos Worldline SAS\n\nIncludes the Adobe Glyph List\nCopyright 1997, 1998, 2002, 2007, 2010 Adobe Systems Incorporated.\n\nIncludes the Zapf Dingbats Glyph List\nCopyright 2002, 2010 Adobe Systems Incorporated.\n\nIncludes the Script Property (Scripts-10.0.0.txt)\nCopyright 2017 Unicode, Inc.\n"
+}

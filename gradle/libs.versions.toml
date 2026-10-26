@@ -5,6 +5,7 @@ lifecycle = "2.11.0"
 pdfbox = "2.0.27.0"
 junit = "4.13.2"
 robolectric = "4.17"
+aboutlibraries = "15.2.0"
 
 [libraries]
 activity = { module = "androidx.activity:activity-ktx", version.ref = "activity" }
@@ -17,3 +18,4 @@ robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectr
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+aboutlibraries-android = { id = "com.mikepenz.aboutlibraries.plugin.android", version.ref = "aboutlibraries" }
